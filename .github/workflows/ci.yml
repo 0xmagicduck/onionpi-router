@@ -85,6 +85,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: VERSION, package.json and __init__.py agree
         run: ./scripts/check-version.sh
+      - name: Workflows parse
+        run: |
+          python3 -c "
+          import glob, sys, yaml
+          status = 0
+          for path in sorted(glob.glob('.github/**/*.yml', recursive=True)):
+              try:
+                  yaml.safe_load(open(path, encoding='utf-8'))
+              except yaml.YAMLError as error:
+                  print(f'::error file={path}::{error}')
+                  status = 1
+          sys.exit(status)
+          "
       - name: Every packaged script is installed and removed
         run: |
           status=0

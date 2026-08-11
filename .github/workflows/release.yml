@@ -25,6 +25,11 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # A step-level `if` cannot read the secrets context, only env, so the
+      # optional signing key is lifted here to make it testable.
+      SIGNING_KEY: ${{ secrets.ONIONPI_GPG_PRIVATE_KEY }}
+      SIGNING_PASSPHRASE: ${{ secrets.ONIONPI_GPG_PASSPHRASE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,10 +84,7 @@ jobs:
       # Optional: set the two secrets and every release becomes verifiable by a
       # Pi configured with ONIONPI_UPDATE_REQUIRE_SIGNATURE=1.
       - name: Sign SHA256SUMS
-        if: ${{ secrets.ONIONPI_GPG_PRIVATE_KEY != '' }}
-        env:
-          SIGNING_KEY: ${{ secrets.ONIONPI_GPG_PRIVATE_KEY }}
-          SIGNING_PASSPHRASE: ${{ secrets.ONIONPI_GPG_PASSPHRASE }}
+        if: env.SIGNING_KEY != ''
         run: |
           printf '%s' "$SIGNING_KEY" | gpg --batch --import
           gpg --batch --yes --pinentry-mode loopback \
@@ -106,15 +108,19 @@ jobs:
           # "edge" is a moving pointer: the previous build is replaced so a Pi
           # on that channel always sees exactly one candidate.
           gh release delete edge --yes --cleanup-tag 2>/dev/null || true
+          cat >/tmp/edge-notes.md <<EOF
+          Construction automatique de ${GITHUB_SHA:0:7} sur \`main\`.
+
+          Canal \`edge\`: une Raspberry Pi configurée sur ce canal installera
+          cette version à sa prochaine vérification. Utilisez \`stable\` pour ne
+          recevoir que les versions étiquetées.
+          EOF
+          sed -i 's/^          //' /tmp/edge-notes.md
           gh release create edge dist/* \
             --title "OnionPi edge (${{ steps.version.outputs.version }})" \
             --prerelease \
             --target "$GITHUB_SHA" \
-            --notes "Construction automatique de ${GITHUB_SHA:0:7} sur main.
-
-Canal \`edge\`: une Raspberry Pi configurée sur ce canal installera cette
-version à sa prochaine vérification. Utilisez \`stable\` pour ne recevoir que
-les versions étiquetées."
+            --notes-file /tmp/edge-notes.md
 
       - uses: actions/upload-artifact@v4
         with:

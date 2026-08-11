@@ -31,6 +31,27 @@ step() {
 if [[ "$ONLY" == all || "$ONLY" == meta ]]; then
   step "Cohérence des versions" ./scripts/check-version.sh
   step "Secrets" ./scripts/check-secrets.sh
+  # A workflow that does not parse fails in zero seconds with "workflow file
+  # issue" and no log to read, so it is worth catching here.
+  step "YAML des workflows" "$PYTHON" - <<'PY'
+import glob
+import sys
+
+try:
+    import yaml
+except ImportError:
+    print("pyyaml absent, contrôle ignoré")
+    sys.exit(0)
+
+status = 0
+for path in sorted(glob.glob(".github/**/*.yml", recursive=True)):
+    try:
+        yaml.safe_load(open(path, encoding="utf-8"))
+    except yaml.YAMLError as error:
+        print(f"{path}: {error}")
+        status = 1
+sys.exit(status)
+PY
 fi
 
 if [[ "$ONLY" == all || "$ONLY" == backend ]]; then
