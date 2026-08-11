@@ -140,6 +140,7 @@ jobs:
         if: needs.build.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release create "v${{ needs.build.outputs.version }}" dist/* \
             --title "OnionPi ${{ needs.build.outputs.version }}" \
@@ -149,6 +150,7 @@ jobs:
         if: needs.build.outputs.channel == 'edge'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           # "edge" is a moving pointer: the previous build is replaced so a Pi
           # on that channel always sees exactly one candidate.
