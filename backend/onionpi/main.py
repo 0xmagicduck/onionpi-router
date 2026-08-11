@@ -31,7 +31,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .agent import ACTIONS, AgentError, PrivilegedAgent
-from .auth import LoginLimiter, RateLimiter, hash_password, token_hash, verify_password
+from .auth import (
+    LoginLimiter,
+    RateLimiter,
+    dummy_verify,
+    hash_password,
+    token_hash,
+    verify_password,
+)
 from .circumvention import CircumventionError, CircumventionManager
 from .config import Settings, get_settings
 from .database import Database
@@ -305,6 +312,10 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
     if not login_limiter.allow(address):
         raise HTTPException(status_code=429, detail="Trop de tentatives. Réessayez dans quelques minutes.")
     user = database.user_by_name(payload.username)
+    # An unknown name must cost what a known one costs, or the response time
+    # says which accounts exist.
+    if user is None:
+        dummy_verify()
     if not user or not verify_password(payload.password, user["password_hash"]):
         login_limiter.failure(address)
         time.sleep(0.2)
@@ -744,7 +755,13 @@ async def import_configuration(
     session: dict[str, Any] = Depends(csrf_session),
 ) -> dict[str, Any]:
     document = payload.document
-    if int(document.get("version", 0)) != 1:
+    try:
+        version = int(document.get("version", 0))
+    except (TypeError, ValueError) as error:
+        raise HTTPException(
+            status_code=400, detail="Format de configuration non reconnu"
+        ) from error
+    if version != 1:
         raise HTTPException(status_code=400, detail="Format de configuration non reconnu")
     applied: list[str] = []
     failures: list[str] = []
