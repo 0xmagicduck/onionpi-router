@@ -92,10 +92,23 @@ sudo onionpi-update --apply --force
 
    Cette empreinte est celle de `packaging/keys/onionpi-release.asc`, que
    `install.sh` convertit en trousseau `/etc/onionpi/update-signing-key.gpg`.
-   La clé publique voyage donc **avec le code déjà installé** : une mise à jour
-   ne peut être acceptée que si elle est signée par une clé qui se trouvait sur
-   l’appareil avant même que cette mise à jour existe. Un compte GitHub
-   compromis ne suffit plus, il faut aussi la clé privée.
+   La clé publique voyage donc **avec le code déjà installé** : une archive ne
+   peut être acceptée que si elle est signée par une clé qui se trouvait sur
+   l’appareil avant même que cette archive existe.
+
+   Ce que cela couvre, et ce que cela ne couvre pas :
+
+   - couvert : une archive modifiée entre GitHub et la Pi, un miroir hostile,
+     un fichier remplacé sur la page de publication, et une publication faite
+     par quelqu’un qui n’a pas accès aux secrets de ce dépôt ;
+   - **non couvert** : un attaquant capable d’écrire dans ce dépôt. Un
+     workflow qu’il ajoute peut demander `ONIONPI_GPG_PRIVATE_KEY` au coffre
+     d’Actions et signer ce qu’il veut. La clé de signature vit dans le même
+     système que le code qu’elle authentifie, et c’est la limite de ce montage.
+
+   Pour cette séparation-là, il faut sortir la clé du CI : la garder hors
+   ligne, signer `SHA256SUMS` à la main et téléverser le `.asc` sur la
+   publication. Le client de mise à jour ne voit aucune différence.
 
    Vérifier à la main ce que la Pi vérifie toute seule :
 
