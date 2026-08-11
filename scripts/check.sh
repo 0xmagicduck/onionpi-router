@@ -71,6 +71,7 @@ if [[ "$ONLY" == all || "$ONLY" == frontend ]]; then
 fi
 
 if [[ "$ONLY" == all || "$ONLY" == shell ]]; then
+  step "Exécution d’une version publiée" packaging/tests/release-runtime.sh
   step "Matrice d’interruption" packaging/tests/update-interruption-matrix.sh
   if command -v shellcheck >/dev/null; then
     # shellcheck disable=SC2046

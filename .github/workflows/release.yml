@@ -57,6 +57,7 @@ jobs:
       - name: Appliance interruption matrix
         run: |
           scripts/check-resource-budget.sh
+          packaging/tests/release-runtime.sh
           packaging/tests/update-interruption-matrix.sh
 
       - name: Fail-closed network VM

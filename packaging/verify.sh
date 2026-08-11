@@ -20,7 +20,7 @@ warn()  { printf '  [ATTENTION] %s\n' "$1"; }
 fail()  { printf '  [ERREUR] %s\n' "$1"; failed=1; }
 
 printf 'Services\n'
-for service in tor dnsmasq nftables onionpi-firewall onionpi-ap nginx onionpi NetworkManager; do
+for service in tor dnsmasq onionpi-firewall onionpi-ap nginx onionpi NetworkManager; do
   if systemctl is-active --quiet "$service"; then ok "$service"; else fail "$service est arrêté"; fi
 done
 
@@ -42,7 +42,8 @@ if rules="$(nft list table inet onionpi 2>/dev/null)"; then
   grep -qE "iifname \"$WIFI_INTERFACE\" counter packets [0-9]+ bytes [0-9]+ drop" <<<"$rules" \
     && ok 'coupe-circuit de routage en place' || fail 'coupe-circuit de routage absent'
   if grep -q 'set blocked_clients' <<<"$rules"; then
-    blocked="$(grep -cE '^[0-9a-f]{2}(:[0-9a-f]{2}){5}$' /var/lib/onionpi/blocked-macs.txt 2>/dev/null || echo 0)"
+    blocked="$(grep -cE '^[0-9a-f]{2}(:[0-9a-f]{2}){5}$' /var/lib/onionpi/blocked-macs.txt 2>/dev/null || true)"
+    blocked="${blocked:-0}"
     ok "blocage d’appareils opérationnel ($blocked bloqué(s))"
   else
     fail 'jeu blocked_clients absent: le blocage d’appareils ne fonctionnera pas'
@@ -94,7 +95,8 @@ fi
 
 printf 'Filtrage DNS\n'
 if [[ -r /etc/onionpi/dns/block.hosts ]]; then
-  domains="$(grep -c '^0\.0\.0\.0 ' /etc/onionpi/dns/block.hosts 2>/dev/null || echo 0)"
+  domains="$(grep -c '^0\.0\.0\.0 ' /etc/onionpi/dns/block.hosts 2>/dev/null || true)"
+  domains="${domains:-0}"
   if (( domains > 0 )); then
     ok "$domains domaines filtrés"
   else

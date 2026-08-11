@@ -418,6 +418,9 @@ if [[ ! -f "$RELEASE_DIR/.complete" ]]; then
   install -m 0644 "$PROJECT_ROOT/VERSION" "$RELEASE_STAGE/VERSION"
   : >"$RELEASE_STAGE/.complete"
   chown -R root:root "$RELEASE_STAGE"
+  # mktemp keeps the staging root private (0700). The final release root must
+  # be traversable by the unprivileged service account once it is promoted.
+  chmod 0755 "$RELEASE_STAGE"
   sync -f "$RELEASE_STAGE"
   mv -T "$RELEASE_STAGE" "$RELEASE_DIR"
   sync -f "$RELEASES_ROOT"

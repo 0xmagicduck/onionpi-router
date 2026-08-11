@@ -5,6 +5,19 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [0.3.1] — 2026-08-12
+
+### Corrigé
+
+- Le répertoire racine d’une version préparée devient traversable avant sa
+  publication, afin que le service non privilégié puisse exécuter Python lors
+  de la première installation comme après une mise à jour.
+- Le service web démarre désormais Uvicorn avec l’interpréteur de la version
+  publiée, sans conserver le chemin temporaire utilisé pour préparer le venv.
+- Le contrôle d’installation ne signale plus le service générique `nftables`
+  comme arrêté lorsque le coupe-circuit OnionPi est actif, et les compteurs
+  vides sont correctement interprétés comme zéro.
+
 ## [0.3.0] — 2026-08-11
 
 Version appliance : mise à jour hermétique et récupérable après une coupure,
@@ -223,3 +236,4 @@ partage de fichiers, chat local et service onion optionnel.
 [0.2.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.2.0
 [0.2.1]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.2.1
 [0.3.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.3.0
+[0.3.1]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.3.1
