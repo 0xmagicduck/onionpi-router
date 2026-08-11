@@ -115,7 +115,10 @@ def test_health_is_public_and_unknown_api_routes_return_json_404() -> None:
     with TestClient(app) as client:
         health = client.get("/api/v1/health")
         assert health.status_code == 200
-        assert health.json()["status"] == "ok"
+        assert health.json() == {"status": "ok"}
+        # The one endpoint an unauthenticated Wi-Fi client can reach must not
+        # say which advisories apply to this appliance.
+        assert "version" not in health.json()
         # The SPA fallback must not answer 200 with index.html for the API.
         unknown = client.get("/api/v1/does-not-exist")
         assert unknown.status_code == 404
@@ -381,6 +384,54 @@ def test_system_actions_and_configuration_export() -> None:
             json={"document": {"version": 99}},
             headers={"X-CSRF-Token": csrf},
         ).status_code == 400
+
+
+def test_imported_configuration_obeys_the_same_limits_as_the_endpoints() -> None:
+    from onionpi import main as main_module
+
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        csrf = login(client)
+        oversized = {
+            "version": 1,
+            # Well past the 40 the POST /circumvention schema accepts, and past
+            # the 2000 domains and 512 devices the other two allow.
+            "circumvention": {
+                "mode": "manual",
+                "transport": "obfs4",
+                "country": "FR",
+                "custom_bridges": ["192.0.2.1:443"] * 60,
+            },
+            "dns_filter": {
+                "profiles": [],
+                "custom_blocked": [f"pub{index}.example.com" for index in range(2500)],
+                "allowed": [],
+            },
+            "blocked_devices": [
+                {"mac": "aa:bb:cc:dd:ee:ff", "label": "x"} for _ in range(main_module.MAX_IMPORTED_DEVICES + 5)
+            ],
+        }
+        response = client.post(
+            "/api/v1/system/config",
+            json={"document": oversized},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+        assert response.status_code == 200
+        failures = " ".join(response.json()["failures"])
+        assert "Contournement" in failures
+        assert "Filtrage DNS" in failures
+        assert "Appareils bloqués" in failures
+        # None of the oversized sections was applied.
+        state = client.get("/api/v1/circumvention").json()
+        assert len(state["custom_bridges"]) < 60
+
+
+def test_a_path_with_a_null_byte_is_refused_rather_than_crashing() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        login(client)
+        assert client.get("/api/v1/files", params={"path": "photos\x00.jpg"}).status_code == 400
 
 
 def test_update_page_reads_state_and_refuses_bad_schedules() -> None:

@@ -28,14 +28,16 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .agent import ACTIONS, AgentError, PrivilegedAgent
 from .auth import (
     LoginLimiter,
+    PasswordHashingBusy,
     RateLimiter,
     dummy_verify,
     hash_password,
+    hashing_slot,
     token_hash,
     verify_password,
 )
@@ -100,7 +102,7 @@ onion = OnionService(
     database,
     settings.onion_key_path,
     tor,
-    target=f"127.0.0.1:{settings.app_port}",
+    target=f"127.0.0.1:{settings.onion_target_port}",
     demo_mode=settings.demo_mode,
     on_event=lambda kind, message: database.add_activity(kind, message),
 )
@@ -111,6 +113,9 @@ updates = UpdateManager(
     settings.demo_mode,
 )
 speedtest_limiter = RateLimiter(events=3, window_seconds=120)
+#: An imported configuration cannot describe more clients than the nftables set
+#: holds anyway (onionpi-devices-apply stops at 512).
+MAX_IMPORTED_DEVICES = 512
 # Reaching GitHub through Tor is slow, and the privileged agent runs the check
 # inline. Waiting less than the script does would report a false failure.
 UPDATE_CHECK_TIMEOUT = 110.0
@@ -302,8 +307,14 @@ def csrf_session(
 
 @app.get("/api/v1/health")
 def health() -> dict[str, Any]:
-    """Unauthenticated liveness probe used by onionpi-verify and first boot."""
-    return {"status": "ok", "version": app.version}
+    """Unauthenticated liveness probe used by onionpi-verify and first boot.
+
+    Deliberately says nothing else: this is the one endpoint any Wi-Fi client
+    can reach without an account, and the installed version would tell whoever
+    asks which published advisories apply to this appliance. The interface
+    reads the version from /api/v1/status, behind the session.
+    """
+    return {"status": "ok"}
 
 
 @app.post("/api/v1/auth/login")
@@ -312,11 +323,20 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
     if not login_limiter.allow(address):
         raise HTTPException(status_code=429, detail="Trop de tentatives. Réessayez dans quelques minutes.")
     user = database.user_by_name(payload.username)
-    # An unknown name must cost what a known one costs, or the response time
-    # says which accounts exist.
-    if user is None:
-        dummy_verify()
-    if not user or not verify_password(payload.password, user["password_hash"]):
+    try:
+        with hashing_slot():
+            # An unknown name must cost what a known one costs, or the response
+            # time says which accounts exist.
+            if user is None:
+                dummy_verify()
+                valid = False
+            else:
+                valid = verify_password(payload.password, user["password_hash"])
+    except PasswordHashingBusy as error:
+        raise HTTPException(
+            status_code=429, detail="Trop de connexions simultanées. Réessayez dans un instant."
+        ) from error
+    if not valid:
         login_limiter.failure(address)
         time.sleep(0.2)
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
@@ -356,13 +376,27 @@ def change_password(
     session: dict[str, Any] = Depends(csrf_session),
 ) -> dict[str, Any]:
     user = database.user_by_name(session["username"])
-    if not user or not verify_password(payload.current_password, user["password_hash"]):
+    try:
+        with hashing_slot():
+            valid = bool(user) and verify_password(
+                payload.current_password, user["password_hash"]
+            )
+    except PasswordHashingBusy as error:
+        raise HTTPException(
+            status_code=429, detail="Trop de vérifications simultanées. Réessayez dans un instant."
+        ) from error
+    if not valid:
         time.sleep(0.2)
         raise HTTPException(status_code=403, detail="Mot de passe actuel incorrect")
     if payload.current_password == payload.new_password:
         raise HTTPException(status_code=400, detail="Choisissez un mot de passe différent")
     try:
-        new_hash = hash_password(payload.new_password)
+        with hashing_slot():
+            new_hash = hash_password(payload.new_password)
+    except PasswordHashingBusy as error:
+        raise HTTPException(
+            status_code=429, detail="Trop de vérifications simultanées. Réessayez dans un instant."
+        ) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     # create_user drops every session of the account, including this one, so a
@@ -766,52 +800,64 @@ async def import_configuration(
     applied: list[str] = []
     failures: list[str] = []
 
+    # Every section goes back through the schema of the endpoint that owns it.
+    # An imported document is exactly as untrusted as a direct POST, and reading
+    # its lists by hand used to hand the managers collections far larger than
+    # those endpoints accept.
     def restore() -> None:
-        policy = document.get("tor_policy") or {}
-        if policy:
+        policy = document.get("tor_policy")
+        if isinstance(policy, dict) and policy:
             try:
-                tor_policy.update(
-                    str(policy.get("exit_country", "")),
-                    int(policy.get("rotation_seconds", 0)),
-                )
+                wanted = TorPolicyRequest.model_validate(policy)
+                tor_policy.update(wanted.exit_country, wanted.rotation_seconds)
                 applied.append("Politique Tor")
-            except (PolicyError, TypeError, ValueError) as error:
+            except (PolicyError, ValidationError) as error:
                 failures.append(f"Politique Tor: {error}")
-        blocked = document.get("blocked_devices") or []
+        blocked = document.get("blocked_devices")
         if isinstance(blocked, list):
-            restored = 0
+            if len(blocked) > MAX_IMPORTED_DEVICES:
+                failures.append(f"Appareils bloqués: {MAX_IMPORTED_DEVICES} au maximum")
+                blocked = blocked[:MAX_IMPORTED_DEVICES]
+            requested: list[tuple[str, str]] = []
             for entry in blocked:
                 if not isinstance(entry, dict):
                     continue
                 try:
-                    device_guard.block(str(entry.get("mac", "")), str(entry.get("label", "")))
-                    restored += 1
-                except NetControlError as error:
+                    wanted_device = DeviceBlockRequest.model_validate({**entry, "blocked": True})
+                except ValidationError as error:
                     failures.append(f"Appareil bloqué: {error}")
-            if restored:
-                applied.append(f"{restored} appareil(s) bloqué(s)")
-        dns = document.get("dns_filter") or {}
-        if dns:
+                    continue
+                requested.append((wanted_device.mac, wanted_device.label))
+            if requested:
+                try:
+                    entries, rejected = device_guard.block_many(requested)
+                    failures.extend(f"Appareil bloqué: {reason}" for reason in rejected)
+                    if entries:
+                        applied.append(f"{len(entries)} appareil(s) bloqué(s)")
+                except NetControlError as error:
+                    failures.append(f"Appareils bloqués: {error}")
+        dns = document.get("dns_filter")
+        if isinstance(dns, dict) and dns:
             try:
+                wanted_dns = DnsFilterRequest.model_validate(dns)
                 dns_filter.update(
-                    list(dns.get("profiles", [])),
-                    list(dns.get("custom_blocked", [])),
-                    list(dns.get("allowed", [])),
+                    wanted_dns.profiles, wanted_dns.custom_blocked, wanted_dns.allowed
                 )
                 applied.append("Filtrage DNS")
-            except (NetControlError, TypeError) as error:
+            except (NetControlError, ValidationError) as error:
                 failures.append(f"Filtrage DNS: {error}")
-        bridges = document.get("circumvention") or {}
-        if bridges:
+        bridges = document.get("circumvention")
+        if isinstance(bridges, dict) and bridges:
             try:
+                wanted_bridges = CircumventionRequest.model_validate(bridges)
                 circumvention.update(
-                    mode=str(bridges.get("mode", "direct")),
-                    transport=str(bridges.get("transport", "snowflake")),
-                    country=str(bridges.get("country", "")),
-                    custom_bridges=list(bridges.get("custom_bridges", [])),
+                    mode=wanted_bridges.mode,
+                    transport=wanted_bridges.transport,
+                    country=wanted_bridges.country,
+                    custom_bridges=wanted_bridges.custom_bridges,
                 )
                 applied.append("Contournement")
-            except (CircumventionError, TypeError) as error:
+            except (CircumventionError, ValidationError) as error:
                 failures.append(f"Contournement: {error}")
 
     await asyncio.to_thread(restore)
@@ -821,11 +867,14 @@ async def import_configuration(
 
 def _safe_path(relative: str, require_exists: bool = False) -> Path:
     cleaned = relative.strip().lstrip("/")
-    candidate = (settings.shared_dir / cleaned).resolve()
     try:
+        candidate = (settings.shared_dir / cleaned).resolve()
         inside = os.path.commonpath([str(settings.shared_dir), str(candidate)]) == str(settings.shared_dir)
-    except ValueError:
-        inside = False
+    except ValueError as error:
+        # An embedded NUL byte makes resolve() raise, and two paths with nothing
+        # in common make commonpath raise. Both mean the request never named a
+        # file under the share, and neither should surface as a server error.
+        raise HTTPException(status_code=400, detail="Chemin invalide") from error
     if not inside:
         raise HTTPException(status_code=400, detail="Chemin invalide")
     if require_exists and not candidate.exists():

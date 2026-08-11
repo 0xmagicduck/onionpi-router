@@ -12,11 +12,23 @@ set -Eeuo pipefail
 REQUEST_FILE="/var/lib/onionpi/agent.request"
 RESULT_FILE="/var/lib/onionpi/agent.result"
 
+# /var/lib/onionpi belongs to the unprivileged application, which may therefore
+# replace any name inside it with a symlink between two of our own commands. A
+# plain `>` redirection would follow that symlink and let a compromised web
+# service overwrite an arbitrary file as root. `noclobber` turns the redirection
+# into an O_CREAT|O_EXCL open, which fails on anything that already exists —
+# symlink included — instead of writing through it, and the rename that follows
+# never follows a symlink either.
 reply() {
   local status="$1" message="$2"
-  printf '%s %s %s\n' "$nonce" "$status" "$message" >"$RESULT_FILE.tmp"
-  chmod 0644 "$RESULT_FILE.tmp"
-  mv "$RESULT_FILE.tmp" "$RESULT_FILE"
+  local temporary="$RESULT_FILE.$$-$RANDOM"
+  if ! (set -o noclobber; umask 022
+        printf '%s %s %s\n' "$nonce" "$status" "$message" >"$temporary") 2>/dev/null; then
+    rm -f -- "$temporary"
+    printf 'Écriture impossible dans %s.\n' "$temporary" >&2
+    return 1
+  fi
+  mv -f -- "$temporary" "$RESULT_FILE"
   printf '%s: %s\n' "$status" "$message"
 }
 

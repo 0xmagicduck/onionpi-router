@@ -9,7 +9,14 @@ BOOT=/boot/firmware
 STAGE="$BOOT/onionpi"
 SETUP=/var/lib/onionpi-setup
 
-exec >>/var/log/onionpi-firstrun.log 2>&1
+# The trace below is the only record of what this stage did, and it names the
+# credentials it handles. Create it unreadable before anything is written: the
+# default umask would leave the account's password hash in a world-readable
+# file for every user of the appliance to collect.
+LOGFILE=/var/log/onionpi-firstrun.log
+: >>"$LOGFILE"
+chmod 0600 "$LOGFILE"
+exec >>"$LOGFILE" 2>&1
 set -x
 date
 
@@ -21,8 +28,11 @@ if [ -s "$STAGE/hostname" ]; then
   [ "$CURRENT" = "$NEW_HOSTNAME" ] || hostname "$NEW_HOSTNAME" || true
 fi
 
-# Create the login account the same way Raspberry Pi Imager does.
+# Create the login account the same way Raspberry Pi Imager does. The trace is
+# off for the whole block: `set -x` prints assignments after expansion, so it
+# would copy the account's password hash into the log.
 if [ -s "$STAGE/userconf.txt" ]; then
+  set +x
   LOGIN="$(cut -d: -f1 <"$STAGE/userconf.txt")"
   LOGIN_HASH="$(cut -d: -f2- <"$STAGE/userconf.txt")"
   if [ -x /usr/lib/userconf-pi/userconf ]; then
@@ -34,6 +44,8 @@ if [ -s "$STAGE/userconf.txt" ]; then
       printf '%s:%s\n' "$LOGIN" "$LOGIN_HASH" | chpasswd -e
     fi
   fi
+  LOGIN_HASH=""
+  set -x
 fi
 
 if [ -s "$STAGE/authorized_keys" ]; then
