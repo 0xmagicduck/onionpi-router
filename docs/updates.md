@@ -82,7 +82,8 @@ sudo onionpi-update --apply --force
    résolution DNS de `api.github.com` reste dans Tor. Sans Tor, pas de mise à
    jour — plutôt que la même requête en clair.
 2. **L’empreinte.** L’archive doit correspondre à la ligne qui la concerne dans
-   `SHA256SUMS`.
+   `SHA256SUMS`. Le manifeste signé est récupéré avant l’archive, dont la taille
+   est limitée à 256 Mio par défaut (`ONIONPI_UPDATE_MAX_ARCHIVE_BYTES`).
 3. **La signature.** `SHA256SUMS.asc` doit être une signature OpenPGP valide de
    `SHA256SUMS`, faite par la clé de publication OnionPi :
 
@@ -160,6 +161,8 @@ journalctl -u onionpi-update -n 100 --no-pager
 
 L’interface montre la même chose : version installée, version disponible,
 prochaine vérification, dernière tentative et les trois derniers événements.
+L’état affiché est lu dans `/var/lib/onionpi-privileged/update.state`, un
+répertoire root seulement traversable en lecture par le groupe `onionpi`.
 
 ## Frontières de sécurité
 

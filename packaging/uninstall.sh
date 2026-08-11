@@ -41,7 +41,7 @@ if (( ! ASSUME_YES )); then
   [[ "$answer" =~ ^[oOyY]$ ]] || exit 0
 fi
 
-systemctl disable --now onionpi onionpi-firewall onionpi-relay.path 2>/dev/null || true
+systemctl disable --now onionpi onionpi-ap onionpi-firewall onionpi-relay.path 2>/dev/null || true
 systemctl disable --now onionpi-agent.path onionpi-boot-banner.service 2>/dev/null || true
 systemctl disable --now onionpi-update.timer 2>/dev/null || true
 # Hosting a Snowflake proxy was opt-in; leaving it running after an uninstall
@@ -51,7 +51,8 @@ nft delete table inet onionpi 2>/dev/null || true
 nmcli connection down onionpi-ap 2>/dev/null || true
 nmcli connection delete onionpi-ap 2>/dev/null || true
 
-rm -f /etc/systemd/system/onionpi.service /etc/systemd/system/onionpi-firewall.service
+rm -f /etc/systemd/system/onionpi.service /etc/systemd/system/onionpi-ap.service
+rm -f /etc/systemd/system/onionpi-firewall.service
 rm -f /etc/systemd/system/onionpi-relay.service /etc/systemd/system/onionpi-relay.path
 rm -f /etc/systemd/system/onionpi-agent.service /etc/systemd/system/onionpi-agent.path
 rm -f /etc/systemd/system/onionpi-boot-banner.service
@@ -79,6 +80,7 @@ done
 rm -f /etc/nginx/sites-enabled/onionpi /etc/nginx/sites-available/onionpi
 rm -f /etc/modprobe.d/onionpi-regdom.conf
 rm -rf /opt/onionpi
+rm -rf /var/cache/onionpi-update /var/lib/onionpi-privileged
 
 if [[ -f /etc/tor/torrc ]]; then
   sed -i '\|^%include /etc/tor/torrc\.d/onionpi\.conf$|d' /etc/tor/torrc

@@ -20,7 +20,7 @@ warn()  { printf '  [ATTENTION] %s\n' "$1"; }
 fail()  { printf '  [ERREUR] %s\n' "$1"; failed=1; }
 
 printf 'Services\n'
-for service in tor dnsmasq nftables onionpi-firewall nginx onionpi NetworkManager; do
+for service in tor dnsmasq nftables onionpi-firewall onionpi-ap nginx onionpi NetworkManager; do
   if systemctl is-active --quiet "$service"; then ok "$service"; else fail "$service est arrêté"; fi
 done
 

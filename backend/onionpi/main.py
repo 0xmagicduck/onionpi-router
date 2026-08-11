@@ -8,6 +8,7 @@ import secrets
 import shutil
 import time
 import unicodedata
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -15,20 +16,18 @@ from typing import Any
 from fastapi import (
     Depends,
     FastAPI,
-    File,
-    Form,
     Header,
     HTTPException,
     Query,
     Request,
     Response,
-    UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.datastructures import UploadFile
 
 from .agent import ACTIONS, AgentError, PrivilegedAgent
 from .auth import (
@@ -43,9 +42,11 @@ from .circumvention import CircumventionError, CircumventionManager
 from .config import Settings, get_settings
 from .database import Database
 from .diagnostics import build_diagnostics
+from .http_limits import BodyLimitMiddleware
 from .netcontrol import DeviceGuard, DnsFilter, NetControlError
 from .onion import OnionError, OnionService
 from .policy import PolicyError, TorPolicy
+from .protection import protection_snapshot
 from .relay import RelayError, SnowflakeRelay
 from .system import MetricsSampler, connected_devices, journal, system_snapshot, wifi_details
 from .tor_control import TorControlError, TorController
@@ -238,6 +239,13 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+app.add_middleware(
+    BodyLimitMiddleware,
+    request_limit=settings.max_request_bytes,
+    # Multipart framing and the path field need a small budget in addition to
+    # the file limit enforced again while the file is copied to its destination.
+    upload_limit=settings.max_upload_bytes + 1024**2,
+)
 
 
 @app.middleware("http")
@@ -309,36 +317,46 @@ def health() -> dict[str, Any]:
 @app.post("/api/v1/auth/login")
 def login(payload: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
     address = request.client.host if request.client else "unknown"
-    if not login_limiter.allow(address):
+    reservation = login_limiter.reserve(address)
+    if reservation is None:
         raise HTTPException(status_code=429, detail="Trop de tentatives. Réessayez dans quelques minutes.")
-    user = database.user_by_name(payload.username)
-    # An unknown name must cost what a known one costs, or the response time
-    # says which accounts exist.
-    if user is None:
-        dummy_verify()
-    if not user or not verify_password(payload.password, user["password_hash"]):
-        login_limiter.failure(address)
-        time.sleep(0.2)
-        raise HTTPException(status_code=401, detail="Identifiants incorrects")
-    login_limiter.success(address)
-    token = secrets.token_urlsafe(32)
-    csrf = secrets.token_urlsafe(24)
-    database.create_session(
-        token_hash(token, settings.session_secret), csrf, int(user["id"]), settings.session_ttl_seconds
-    )
-    response.set_cookie(
-        COOKIE_NAME,
-        token,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        # Tor already encrypts an onion connection end to end, but browsers
-        # that do not treat http://…onion as a secure context would simply drop
-        # a Secure cookie and make the login look broken.
-        secure=settings.cookie_secure and not _is_onion_request(request),
-        samesite="strict",
-        path="/",
-    )
-    return {"user": {"username": user["username"], "display_name": user["display_name"]}, "csrf": csrf}
+    authenticated = False
+    try:
+        user = database.user_by_name(payload.username)
+        # An unknown name must cost what a known one costs, or the response time
+        # says which accounts exist.
+        if user is None:
+            dummy_verify()
+        if not user or not verify_password(payload.password, user["password_hash"]):
+            time.sleep(0.2)
+            raise HTTPException(status_code=401, detail="Identifiants incorrects")
+        token = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(24)
+        database.create_session(
+            token_hash(token, settings.session_secret),
+            csrf,
+            int(user["id"]),
+            settings.session_ttl_seconds,
+        )
+        authenticated = True
+        response.set_cookie(
+            COOKIE_NAME,
+            token,
+            max_age=settings.session_ttl_seconds,
+            httponly=True,
+            # Tor already encrypts an onion connection end to end, but browsers
+            # that do not treat http://…onion as a secure context would simply drop
+            # a Secure cookie and make the login look broken.
+            secure=settings.cookie_secure and not _is_onion_request(request),
+            samesite="strict",
+            path="/",
+        )
+        return {
+            "user": {"username": user["username"], "display_name": user["display_name"]},
+            "csrf": csrf,
+        }
+    finally:
+        login_limiter.complete(reservation, success=authenticated)
 
 
 @app.get("/api/v1/auth/session")
@@ -350,38 +368,46 @@ def session_info(session: dict[str, Any] = Depends(current_session)) -> dict[str
 
 
 @app.post("/api/v1/auth/password")
-def change_password(
+async def change_password(
     payload: PasswordChangeRequest,
     response: Response,
     session: dict[str, Any] = Depends(csrf_session),
 ) -> dict[str, Any]:
-    user = database.user_by_name(session["username"])
-    if not user or not verify_password(payload.current_password, user["password_hash"]):
-        time.sleep(0.2)
+    user = await asyncio.to_thread(database.user_by_name, session["username"])
+    verified = user and await asyncio.to_thread(
+        verify_password, payload.current_password, user["password_hash"]
+    )
+    if not user or not verified:
+        await asyncio.sleep(0.2)
         raise HTTPException(status_code=403, detail="Mot de passe actuel incorrect")
     if payload.current_password == payload.new_password:
         raise HTTPException(status_code=400, detail="Choisissez un mot de passe différent")
     try:
-        new_hash = hash_password(payload.new_password)
+        new_hash = await asyncio.to_thread(hash_password, payload.new_password)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     # create_user drops every session of the account, including this one, so a
     # stolen cookie cannot survive a password change.
-    database.create_user(user["username"], user["display_name"], new_hash)
+    await asyncio.to_thread(
+        database.create_user, user["username"], user["display_name"], new_hash
+    )
+    await chat.disconnect_user(int(user["id"]))
     database.add_activity("secure", f"Mot de passe modifié pour {user['username']}")
     response.delete_cookie(COOKIE_NAME, path="/")
     return {"ok": True, "message": "Mot de passe modifié. Reconnectez-vous."}
 
 
 @app.post("/api/v1/auth/logout", status_code=204)
-def logout(
+async def logout(
     response: Response,
     request: Request,
     _: dict[str, Any] = Depends(csrf_session),
 ) -> Response:
     raw_token = request.cookies.get(COOKIE_NAME)
     if raw_token:
-        database.delete_session(token_hash(raw_token, settings.session_secret))
+        digest = token_hash(raw_token, settings.session_secret)
+        await asyncio.to_thread(database.delete_session, digest)
+        await chat.disconnect_token(digest)
     response.delete_cookie(COOKIE_NAME, path="/")
     response.status_code = 204
     return response
@@ -406,6 +432,9 @@ async def status(_: dict[str, Any] = Depends(current_session)) -> dict[str, Any]
         "system": system_data,
         "tor": tor_data,
         "network": network_data,
+        "protection": protection_snapshot(
+            tor_data, system_data.get("services", []), settings.demo_mode
+        ),
         "activities": database.activities(6),
     }
 
@@ -882,10 +911,17 @@ def list_files(
 
 @app.post("/api/v1/files/upload", status_code=201)
 async def upload_file(
-    file: UploadFile = File(...),
-    path: str = Form(default=""),
+    request: Request,
     session: dict[str, Any] = Depends(csrf_session),
 ) -> dict[str, Any]:
+    # Authentication and CSRF run before multipart parsing. An unauthenticated
+    # peer therefore cannot make python-multipart spool a large request first.
+    form = await request.form(max_files=1, max_fields=2, max_part_size=settings.max_upload_bytes)
+    file = form.get("file")
+    path_value = form.get("path", "")
+    if not isinstance(file, UploadFile) or not isinstance(path_value, str):
+        raise HTTPException(status_code=400, detail="Formulaire d’import invalide")
+    path = path_value
     directory = _safe_path(path, require_exists=True)
     if not directory.is_dir():
         raise HTTPException(status_code=400, detail="Destination invalide")
@@ -978,21 +1014,50 @@ async def logs(
 
 class ChatManager:
     def __init__(self) -> None:
-        self.connections: set[WebSocket] = set()
+        self._connections: dict[WebSocket, tuple[str, int]] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket) -> None:
+    @property
+    def online(self) -> int:
+        return len(self._connections)
+
+    async def connect(self, websocket: WebSocket, digest: str, user_id: int) -> None:
         await websocket.accept()
         async with self._lock:
-            self.connections.add(websocket)
+            self._connections[websocket] = (digest, user_id)
 
     async def disconnect(self, websocket: WebSocket) -> None:
         async with self._lock:
-            self.connections.discard(websocket)
+            self._connections.pop(websocket, None)
+
+    async def disconnect_token(self, digest: str) -> None:
+        await self._disconnect_matching(lambda metadata: metadata[0] == digest)
+
+    async def disconnect_user(self, user_id: int) -> None:
+        await self._disconnect_matching(lambda metadata: metadata[1] == user_id)
+
+    async def _disconnect_matching(
+        self, predicate: Callable[[tuple[str, int]], bool]
+    ) -> None:
+        async with self._lock:
+            selected = [
+                websocket
+                for websocket, metadata in self._connections.items()
+                if predicate(metadata)
+            ]
+            for websocket in selected:
+                self._connections.pop(websocket, None)
+        for websocket in selected:
+            try:
+                await websocket.close(code=1008)
+            except RuntimeError:
+                pass
 
     async def broadcast(self, payload: dict[str, Any]) -> None:
         stale: list[WebSocket] = []
-        for connection in list(self.connections):
+        async with self._lock:
+            connections = list(self._connections)
+        for connection in connections:
             try:
                 await connection.send_json(payload)
             except Exception:
@@ -1000,7 +1065,7 @@ class ChatManager:
         if stale:
             async with self._lock:
                 for connection in stale:
-                    self.connections.discard(connection)
+                    self._connections.pop(connection, None)
 
 
 chat = ChatManager()
@@ -1012,17 +1077,33 @@ async def chat_socket(websocket: WebSocket) -> None:
     if origin and origin.rstrip("/") not in _allowed_origins():
         await websocket.close(code=1008)
         return
-    session = _session_for_token(websocket.cookies.get(COOKIE_NAME))
+    raw_token = websocket.cookies.get(COOKIE_NAME)
+    digest = token_hash(raw_token, settings.session_secret) if raw_token else ""
+    session = database.session(digest) if digest else None
     if not session:
         await websocket.close(code=1008)
         return
-    await chat.connect(websocket)
+    await chat.connect(websocket, digest, int(session["user_id"]))
     limiter = RateLimiter(events=15, window_seconds=10)
     await websocket.send_json({"type": "history", "messages": database.messages(100)})
-    await chat.broadcast({"type": "presence", "online": len(chat.connections)})
+    await chat.broadcast({"type": "presence", "online": chat.online})
     try:
         while True:
-            raw = await websocket.receive_text()
+            # Logout/password changes close matching sockets immediately. This
+            # periodic database check also enforces expiry if a client remains
+            # connected without sending anything.
+            try:
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+            except TimeoutError:
+                if database.session(digest) is None:
+                    await websocket.close(code=1008)
+                    return
+                continue
+            refreshed_session = database.session(digest)
+            if refreshed_session is None:
+                await websocket.close(code=1008)
+                return
+            session = refreshed_session
             if len(raw) > 8192:
                 await websocket.send_json({"type": "error", "message": "Message invalide"})
                 continue
@@ -1050,7 +1131,7 @@ async def chat_socket(websocket: WebSocket) -> None:
         pass
     finally:
         await chat.disconnect(websocket)
-        await chat.broadcast({"type": "presence", "online": len(chat.connections)})
+        await chat.broadcast({"type": "presence", "online": chat.online})
 
 
 @app.exception_handler(HTTPException)

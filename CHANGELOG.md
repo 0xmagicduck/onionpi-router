@@ -7,6 +7,17 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Le point d’accès dépend maintenant du coupe-circuit et le remplacement de la
+  table nftables est transactionnel : une règle invalide ne laisse plus le
+  Wi-Fi client actif sans protection.
+- Les fichiers écrits par root et la préparation des mises à jour sont sortis
+  de l’espace dont l’application peut renommer les entrées.
+- Les tentatives de connexion concurrentes sont comptées avant scrypt, les
+  corps HTTP sont bornés avant parsing et les WebSockets suivent la révocation
+  des sessions.
+- L’image Raspberry Pi OS exige une empreinte SHA-256 et la trace de premier
+  démarrage ne journalise plus le condensat du mot de passe système.
+
 - **Fuite DNS lors du contrôle de l’adresse de sortie.** `TorController`
   interrogeait `check.torproject.org` par un proxy `socks5://`, ce qui fait
   résoudre le nom par le résolveur du système — celui du fournisseur d’accès —
@@ -29,6 +40,11 @@ numérotation [SemVer](https://semver.org/lang/fr/).
   un nom inconnu coûte maintenant le même scrypt qu’un nom connu.
 
 ### Renforcé
+
+- L’interface expose un état de protection agrégé et ne confond plus « Tor
+  connecté » avec « routeur protégé ».
+- Le manifeste OpenPGP est contrôlé avant l’archive de mise à jour, limitée à
+  256 Mio ; les secrets de signature CI ne sont visibles que par l’étape GPG.
 
 - `ONIONPI_DEMO_MODE` sur une installation réelle est signalé en `ERROR` dans le
   journal : ce mode rend chaque commande inopérante et chaque mesure fictive.

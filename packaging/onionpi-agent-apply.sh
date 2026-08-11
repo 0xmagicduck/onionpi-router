@@ -10,13 +10,20 @@ set -Eeuo pipefail
 # back so the interface can tell success from silence.
 
 REQUEST_FILE="/var/lib/onionpi/agent.request"
-RESULT_FILE="/var/lib/onionpi/agent.result"
+RESULT_FILE="/var/lib/onionpi-privileged/agent.result"
 
 reply() {
   local status="$1" message="$2"
-  printf '%s %s %s\n' "$nonce" "$status" "$message" >"$RESULT_FILE.tmp"
-  chmod 0644 "$RESULT_FILE.tmp"
-  mv "$RESULT_FILE.tmp" "$RESULT_FILE"
+  local temporary
+  # Root-created files never live in the application-owned state directory.
+  # Otherwise onionpi could pre-position a symlink and redirect this write.
+  temporary="$(mktemp /var/lib/onionpi-privileged/.agent.result.XXXXXX)"
+  trap 'rm -f -- "$temporary"' RETURN
+  printf '%s %s %s\n' "$nonce" "$status" "$message" >"$temporary"
+  chown root:onionpi "$temporary"
+  chmod 0640 "$temporary"
+  mv -fT "$temporary" "$RESULT_FILE"
+  trap - RETURN
   printf '%s: %s\n' "$status" "$message"
 }
 

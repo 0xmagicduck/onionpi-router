@@ -25,10 +25,10 @@ set -Eeuo pipefail
 
 CONFIG_FILE="/etc/onionpi/update.conf"
 OVERRIDES_FILE="/var/lib/onionpi/update.settings.json"
-STATE_FILE="/var/lib/onionpi/update.state"
+STATE_FILE="/var/lib/onionpi-privileged/update.state"
 LOCK_FILE="/run/onionpi-update.lock"
 INSTALL_ROOT="/opt/onionpi"
-STAGING_ROOT="/var/lib/onionpi/updates"
+STAGING_ROOT="/var/cache/onionpi-update"
 BACKUP_ROOT="/var/backups"
 TIMER_DROPIN="/etc/systemd/system/onionpi-update.timer.d/schedule.conf"
 
@@ -48,6 +48,7 @@ ONIONPI_UPDATE_ALLOW_OVERRIDES=1
 ONIONPI_UPDATE_API="https://api.github.com"
 ONIONPI_UPDATE_SOCKS="127.0.0.1:9050"
 ONIONPI_UPDATE_TIMEOUT=180
+ONIONPI_UPDATE_MAX_ARCHIVE_BYTES=268435456
 
 MODE="check"
 FORCE=0
@@ -147,6 +148,9 @@ read_overrides
   || die "Dépôt de mise à jour invalide: $ONIONPI_UPDATE_REPOSITORY"
 [[ "$ONIONPI_UPDATE_CHANNEL" =~ ^(stable|edge)$ ]] \
   || die "Canal de mise à jour invalide: $ONIONPI_UPDATE_CHANNEL"
+[[ "$ONIONPI_UPDATE_MAX_ARCHIVE_BYTES" =~ ^[0-9]+$ ]] \
+  && (( ONIONPI_UPDATE_MAX_ARCHIVE_BYTES >= 1048576 )) \
+  || die "ONIONPI_UPDATE_MAX_ARCHIVE_BYTES doit être un entier d’au moins 1048576"
 
 installed_version() {
   if [[ -r "$INSTALL_ROOT/VERSION" ]]; then
@@ -157,14 +161,15 @@ installed_version() {
 }
 
 # --------------------------------------------------------------- state io ----
-# One small JSON document, written atomically, world-readable so the web
-# interface can display it without ever being able to change it.
+# One small JSON document, written atomically in a root-owned namespace and
+# group-readable so the web interface can display it but never replace it.
 state_set() {
   # Never create or chmod the parent: /var/lib/onionpi is 0750 onionpi:onionpi
   # and widening it would expose the shared files and the onion key.
   [[ -d "$(dirname -- "$STATE_FILE")" ]] || return 0
   python3 - "$STATE_FILE" "$@" <<'PY'
 import json
+import grp
 import os
 import sys
 import tempfile
@@ -208,7 +213,8 @@ try:
     os.fsync(handle.fileno())
 finally:
     handle.close()
-os.chmod(handle.name, 0o644)
+os.chown(handle.name, 0, grp.getgrnam("onionpi").gr_gid)
+os.chmod(handle.name, 0o640)
 os.replace(handle.name, path)
 PY
 }
@@ -237,11 +243,14 @@ stamp() { date -u +%Y%m%dT%H%M%SZ; }
 # curl through the Tor SOCKS port. --socks5-hostname keeps the DNS lookup inside
 # Tor as well, so the resolver never sees api.github.com either.
 fetch() {
-  local url="$1" destination="$2"
+  local url="$1" destination="$2" max_bytes="${3:-4194304}"
+  [[ "$max_bytes" =~ ^[0-9]+$ ]] && (( max_bytes > 0 )) \
+    || die "Limite de téléchargement invalide"
   local -a command=(
     curl --silent --show-error --location --fail
     --proto '=https' --tlsv1.2
     --max-time "$ONIONPI_UPDATE_TIMEOUT"
+    --max-filesize "$max_bytes"
     --user-agent "onionpi-update/$(installed_version)"
     --header "Accept: application/vnd.github+json"
     --output "$destination" "$url"
@@ -249,7 +258,13 @@ fetch() {
   if (( ONIONPI_UPDATE_OVER_TOR )); then
     command=("${command[@]:0:1}" --socks5-hostname "$ONIONPI_UPDATE_SOCKS" "${command[@]:1}")
   fi
-  "${command[@]}"
+  "${command[@]}" || return 1
+  local downloaded
+  downloaded="$(wc -c <"$destination")"
+  (( downloaded <= max_bytes )) || {
+    rm -f -- "$destination"
+    return 1
+  }
 }
 
 # Returns "version<TAB>tarball_url<TAB>sums_url<TAB>signature_url".
@@ -412,8 +427,7 @@ download_release() {
   local archive="$work/onionpi-$version.tar.gz"
 
   log "Téléchargement de la version $version…"
-  fetch "$tarball_url" "$archive" || die "Téléchargement de l’archive impossible"
-
+  local expected=""
   if [[ -n "$sums_url" ]]; then
     fetch "$sums_url" "$work/SHA256SUMS" || die "Téléchargement de SHA256SUMS impossible"
     if [[ -n "$signature_url" && -s "$ONIONPI_UPDATE_GPG_KEYRING" ]]; then
@@ -424,19 +438,27 @@ download_release() {
     elif (( ONIONPI_UPDATE_REQUIRE_SIGNATURE )); then
       die "Signature exigée mais absente ou sans trousseau (${ONIONPI_UPDATE_GPG_KEYRING})"
     fi
-    local expected actual
     # Exact name comparison: a regex match would let onionpi-1X0.tar.gz answer
     # for onionpi-1.0.tar.gz.
     expected="$(awk -v name="onionpi-$version.tar.gz" \
       '{ sub(/^\*/, "", $2); if ($2 == name) { print $1; exit } }' "$work/SHA256SUMS")"
     [[ -n "$expected" ]] || die "onionpi-$version.tar.gz absent de SHA256SUMS"
-    actual="$(sha256sum "$archive" | awk '{print $1}')"
-    [[ "$expected" == "$actual" ]] || die "Empreinte SHA-256 incorrecte: $actual"
-    log "Empreinte SHA-256 vérifiée."
   elif (( ONIONPI_UPDATE_REQUIRE_SIGNATURE )); then
     die "Aucun fichier SHA256SUMS publié: mise à jour refusée"
   else
     warn "Aucun SHA256SUMS publié: l’archive n’a pas pu être vérifiée."
+  fi
+
+  # Authenticate the small checksum manifest before accepting the much larger
+  # archive. curl enforces the bound while streaming and wc checks it again for
+  # servers that omit or lie about Content-Length.
+  fetch "$tarball_url" "$archive" "$ONIONPI_UPDATE_MAX_ARCHIVE_BYTES" \
+    || die "Téléchargement de l’archive impossible ou archive trop volumineuse"
+  if [[ -n "$expected" ]]; then
+    local actual
+    actual="$(sha256sum "$archive" | awk '{print $1}')"
+    [[ "$expected" == "$actual" ]] || die "Empreinte SHA-256 incorrecte: $actual"
+    log "Empreinte SHA-256 vérifiée."
   fi
 
   install -d -m 0700 "$STAGING_ROOT"
@@ -483,6 +505,7 @@ backup_root_files() {
     /etc/profile.d/onionpi.sh \
     /etc/issue /etc/issue.net /etc/motd \
     /etc/systemd/system/onionpi.service \
+    /etc/systemd/system/onionpi-ap.service \
     /etc/systemd/system/onionpi-firewall.service \
     /etc/systemd/system/onionpi-relay.service \
     /etc/systemd/system/onionpi-relay.path \
@@ -519,7 +542,6 @@ restore_backup() {
   fi
   systemctl daemon-reload
   systemctl restart tor
-  systemctl restart nftables
   systemctl restart onionpi-firewall
   systemctl restart dnsmasq nginx onionpi
 }

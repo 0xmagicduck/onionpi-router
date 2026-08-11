@@ -134,7 +134,7 @@ function ServiceBadge({ active, upLabel, downLabel }: { active?: boolean; upLabe
 }
 
 export function NetworkPage({ status, devices }: { status?: StatusPayload; devices: Device[] }) {
-  const accessPoint = serviceActive(status, 'NetworkManager')
+  const accessPoint = serviceActive(status, 'onionpi-ap')
   const firewall = serviceActive(status, 'onionpi-firewall')
   return (
     <div className="page operational-page">
@@ -168,7 +168,16 @@ export function TorPage({ status, busy, onNewIdentity, onOpenBridges, notify }: 
         </Panel>
       )}
       <div className="two-column">
-        <Panel title="Protection appliquée"><ul className="check-list"><li><CheckCircle2 />TCP redirigé vers TransPort</li><li><CheckCircle2 />DNS résolu par Tor</li><li><CheckCircle2 />UDP et QUIC bloqués</li><li><CheckCircle2 />IPv6 désactivé sur le point d’accès</li>{bridges?.use_bridges && <li><CheckCircle2 />Ponts {bridges.transport ?? ''} actifs ({bridges.bridge_count})</li>}</ul></Panel>
+        <Panel title={status?.protection.label ?? 'Protection'}>
+          <ul className="check-list">
+            {status?.protection.checks.map((check) => (
+              <li className={check.ok ? '' : 'protection-check-failed'} key={check.id}>
+                <CheckCircle2 />{check.label}<small>{check.detail}</small>
+              </li>
+            ))}
+            {bridges?.use_bridges && <li><CheckCircle2 />Ponts {bridges.transport ?? ''} actifs ({bridges.bridge_count})</li>}
+          </ul>
+        </Panel>
         <Panel title="À savoir"><p className="prose">Tor protège le chemin réseau, mais ne remplace pas HTTPS. Les applications peuvent encore révéler des informations personnelles si vous vous y connectez avec vos comptes habituels.</p><a className="text-link" href="https://support.torproject.org/" target="_blank" rel="noreferrer">Guide de sécurité Tor <ExternalLink size={14} /></a></Panel>
       </div>
       <TorAdvanced notify={notify} />

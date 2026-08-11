@@ -9,6 +9,7 @@ WORK_DIR="$PROJECT_ROOT/build"
 BASE_URL="https://downloads.raspberrypi.com/raspios_lite_arm64_latest"
 
 SOURCE=""
+SOURCE_SHA256="${ONIONPI_BASE_SHA256:-}"
 OUTPUT=""
 HOSTNAME_VALUE="onionpi"
 LOGIN="onionpi"
@@ -29,6 +30,7 @@ Construit une image OnionPi prête à flasher.
 
 Usage: ./packaging/image/build-image.sh [options]
   --source CHEMIN|URL  image Raspberry Pi OS de base (.img, .img.xz ou URL)
+  --source-sha256 X    empreinte SHA-256 (ou fichier qui la contient)
   --out CHEMIN         fichier image produit (défaut: build/onionpi-<date>.img)
   --hostname NOM       nom réseau de la Pi (défaut: onionpi)
   --login NOM          compte système créé sur la Pi (défaut: onionpi)
@@ -57,6 +59,7 @@ EOF
 while (($#)); do
   case "$1" in
     --source) SOURCE="${2:?source manquante}"; shift 2 ;;
+    --source-sha256) SOURCE_SHA256="${2:?empreinte manquante}"; shift 2 ;;
     --out) OUTPUT="${2:?chemin manquant}"; shift 2 ;;
     --hostname) HOSTNAME_VALUE="${2:?nom manquant}"; shift 2 ;;
     --login) LOGIN="${2:?nom manquant}"; shift 2 ;;
@@ -143,6 +146,8 @@ if [[ -z "$LOGIN_PASSWORD" ]]; then LOGIN_PASSWORD="$(random_phrase 20)"; genera
   printf 'ONIONPI_WIFI_PASSWORD doit contenir entre 12 et 63 caractères.\n' >&2; exit 1; }
 (( ${#ADMIN_PASSWORD} >= 12 )) || {
   printf 'ONIONPI_ADMIN_PASSWORD doit contenir au moins 12 caractères.\n' >&2; exit 1; }
+(( ${#LOGIN_PASSWORD} >= 12 )) || {
+  printf 'ONIONPI_LOGIN_PASSWORD doit contenir au moins 12 caractères.\n' >&2; exit 1; }
 
 WIFI_PSK="$(SSID="$SSID" WIFI_PASSWORD="$WIFI_PASSWORD" python3 - <<'PY'
 import hashlib, os
@@ -186,7 +191,17 @@ fi
 resolve_source() {
   if [[ -z "$SOURCE" ]]; then
     local cached="$WORK_DIR/raspios-lite-arm64.img.xz"
-    if [[ ! -s "$cached" ]]; then
+    local checksum_file="$WORK_DIR/raspios-lite-arm64.img.xz.sha256"
+    curl --fail --location --silent --show-error \
+      --output "$checksum_file.part" "$BASE_URL.sha256"
+    mv "$checksum_file.part" "$checksum_file"
+    SOURCE_SHA256="$checksum_file"
+    local expected current=""
+    expected="$(grep -Eo '[0-9A-Fa-f]{64}' "$checksum_file" | head -n 1 | tr '[:upper:]' '[:lower:]')"
+    [[ -n "$expected" ]] || {
+      printf 'Empreinte officielle Raspberry Pi OS illisible.\n' >&2; exit 1; }
+    [[ ! -s "$cached" ]] || current="$(sha256 "$cached" | awk '{print tolower($1)}')"
+    if [[ "$current" != "$expected" ]]; then
       printf '==> Téléchargement de Raspberry Pi OS Lite arm64\n'
       curl --fail --location --progress-bar --output "$cached.part" "$BASE_URL"
       mv "$cached.part" "$cached"
@@ -201,6 +216,24 @@ resolve_source() {
     SOURCE="$cached"
   fi
   [[ -s "$SOURCE" ]] || { printf 'Image de base introuvable: %s\n' "$SOURCE" >&2; exit 1; }
+
+  local expected=""
+  if [[ -f "$SOURCE_SHA256" ]]; then
+    expected="$(grep -Eo '[0-9A-Fa-f]{64}' "$SOURCE_SHA256" | head -n 1 | tr '[:upper:]' '[:lower:]')"
+  elif [[ "$SOURCE_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+    expected="$(tr '[:upper:]' '[:lower:]' <<<"$SOURCE_SHA256")"
+  fi
+  [[ -n "$expected" ]] || {
+    printf 'Une empreinte SHA-256 est obligatoire (--source-sha256 ou ONIONPI_BASE_SHA256).\n' >&2
+    exit 1
+  }
+  local actual
+  actual="$(sha256 "$SOURCE" | awk '{print tolower($1)}')"
+  [[ "$actual" == "$expected" ]] || {
+    printf 'Empreinte SHA-256 de l’image de base incorrecte: %s\n' "$actual" >&2
+    exit 1
+  }
+  printf '==> Image de base vérifiée: %s\n' "$actual"
 }
 resolve_source
 

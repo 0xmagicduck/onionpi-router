@@ -73,7 +73,7 @@ The web service (`backend/onionpi`) runs unprivileged with
 3. `packaging/systemd/onionpi-agent.path` wakes a root oneshot that runs
    `packaging/onionpi-agent-apply.sh`, which **re-validates the verb against
    its own allow-list**, takes no argument from the file, and writes the answer
-   back to `agent.result`.
+   to root-owned `/var/lib/onionpi-privileged/agent.result`.
 
 The request file is untrusted input on the privileged side. `agent.py` is
 convenience, `onionpi-agent-apply.sh` is the security boundary. When a change
@@ -144,6 +144,12 @@ units, and the `--upgrade` path the updater re-runs in place. Templates in
 `packaging/templates/`, root helper scripts as `onionpi-*-apply.sh`,
 `packaging/image/build-image.sh` produces a flashable Raspberry Pi OS image
 that installs on first boot.
+
+The AP profile has `connection.autoconnect=no`; `onionpi-ap.service` is its
+only activation path and depends on `onionpi-firewall.service`. Root-written
+agent/update state belongs under `/var/lib/onionpi-privileged`, and update
+staging belongs under `/var/cache/onionpi-update`, never in an application-owned
+directory.
 
 ## Conventions CI enforces
 

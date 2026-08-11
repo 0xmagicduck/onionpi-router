@@ -9,8 +9,13 @@ BOOT=/boot/firmware
 STAGE="$BOOT/onionpi"
 SETUP=/var/lib/onionpi-setup
 
+# This log briefly handles account/bootstrap operations. Keep it root-only and
+# never enable shell xtrace here: a userconf password hash is still a reusable
+# offline password-cracking target.
+umask 077
+: >/var/log/onionpi-firstrun.log
+chmod 0600 /var/log/onionpi-firstrun.log
 exec >>/var/log/onionpi-firstrun.log 2>&1
-set -x
 date
 
 if [ -s "$STAGE/hostname" ]; then

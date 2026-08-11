@@ -17,10 +17,14 @@ partage de fichiers, chat et journaux système.
 - redirection transparente du TCP vers le `TransPort` de Tor ;
 - DNS local (`dnsmasq`) dont l’unique résolveur amont est le `DNSPort` Tor ;
 - coupe-circuit nftables : aucun paquet client n’est routé directement ;
+- point d’accès lié au coupe-circuit : un échec nftables garde le Wi-Fi client
+  hors ligne au lieu de le laisser démarrer sans protection ;
 - pare-feu en liste blanche côté Wi-Fi : seuls DHCP, DNS, mDNS, HTTP(S), le
   `TransPort` et, au choix, SSH atteignent la Pi ;
 - IPv6 désactivé sur le point d’accès pour éviter une sortie hors Tor ;
 - administration HTTPS locale, session HttpOnly, CSRF et limitation des essais ;
+- état de protection unique qui distingue démonstration, dégradation sûre,
+  confinement et protection complète ;
 - nouvelle identité Tor depuis l’interface ;
 - ponts et transports enfichables (Snowflake, obfs4, meek) avec bascule
   automatique quand Tor est bloqué ;
@@ -44,7 +48,8 @@ partage de fichiers, chat et journaux système.
 - console de la Pi habillée : bannière ASCII au démarrage et à la connexion,
   message du jour avec l’état réel, invite de commande et `onionpi-status` ;
 - mise à jour automatique aux heures choisies, téléchargée par Tor, vérifiée
-  par empreinte et annulée toute seule si le contrôle post-installation échoue.
+  par empreinte/signature, bornée en taille et annulée toute seule si le
+  contrôle post-installation échoue.
 
 ## Matériel et système
 
@@ -73,6 +78,10 @@ empreinte SHA-256 et un fichier `…-identifiants.txt` en `0600`. Ce fichier est
 le seul endroit où les mots de passe existent en clair : rangez-le dans un
 gestionnaire de mots de passe puis supprimez-le.
 
+Le téléchargement officiel est vérifié avec son document SHA-256. Avec
+`--source`, fournissez aussi `--source-sha256` (ou
+`ONIONPI_BASE_SHA256`) : une image de base non authentifiée est refusée.
+
 Options utiles :
 
 | Option | Effet |
@@ -84,6 +93,7 @@ Options utiles :
 | `--no-lan-ssh` | interdit SSH depuis le Wi-Fi OnionPi |
 | `--compress` | produit aussi une archive `.img.xz` |
 | `--source CHEMIN` | réutilise une image de base déjà téléchargée |
+| `--source-sha256 EMPREINTE` | authentifie une image de base personnalisée |
 
 Pour choisir vos propres mots de passe plutôt que ceux générés :
 
@@ -409,6 +419,9 @@ la fin de l’installation.
 - Le partage de fichiers et le chat sont réservés aux utilisateurs authentifiés
   de l’interface, mais ils ne fournissent pas un chiffrement de bout en bout
   entre participants.
+
+La direction produit et les travaux d’architecture restants sont détaillés
+dans [docs/product-roadmap.md](docs/product-roadmap.md).
 
 ## Récupération locale
 
