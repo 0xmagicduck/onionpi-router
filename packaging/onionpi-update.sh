@@ -283,14 +283,32 @@ if not tarball:
 # The archive name carries the version: a release tag can be a moving pointer
 # ("edge"), the file name never is.
 version = re.fullmatch(r"onionpi-(.+)\.tar\.gz", tarball).group(1)
-if not re.fullmatch(r"[0-9A-Za-z.+-]{1,40}", version):
+# Must start with an alphanumeric: the version becomes a path component under
+# /var/lib/onionpi/updates, and ".." matched the old pattern, which turned an
+# asset called onionpi-...tar.gz into an "rm -rf" of the parent directory.
+if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+-]{0,39}", version) or ".." in version:
     raise SystemExit("numéro de version inattendu")
+
+
+def checked(url: str, required: bool) -> str:
+    """Refuses a download location the publisher did not have to control."""
+    if not url:
+        if required:
+            raise SystemExit("adresse de téléchargement absente")
+        return ""
+    host = re.fullmatch(r"https://([A-Za-z0-9.-]+)(/.*)?", url)
+    if not host or host.group(1).rsplit(".", 2)[-2:] not in (
+        ["github", "com"], ["githubusercontent", "com"]
+    ):
+        raise SystemExit(f"adresse de téléchargement inattendue: {url[:80]}")
+    return url
+
 
 print("\t".join([
     version,
-    assets[tarball],
-    assets.get("SHA256SUMS", ""),
-    assets.get("SHA256SUMS.asc", ""),
+    checked(assets[tarball], True),
+    checked(assets.get("SHA256SUMS", ""), False),
+    checked(assets.get("SHA256SUMS.asc", ""), False),
 ]))
 PY
 )" || status=$?

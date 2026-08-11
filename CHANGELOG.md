@@ -5,7 +5,43 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
-Rien pour l’instant.
+### Corrigé
+
+- **Fuite DNS lors du contrôle de l’adresse de sortie.** `TorController`
+  interrogeait `check.torproject.org` par un proxy `socks5://`, ce qui fait
+  résoudre le nom par le résolveur du système — celui du fournisseur d’accès —
+  avant d’entrer dans Tor. Une requête en clair toutes les cinq minutes
+  annonçait un utilisateur de Tor à cette adresse. Le proxy est désormais
+  `socks5h://`, comme partout ailleurs dans le code.
+- **Limitation des tentatives de connexion contournable.** nginx ajoutait
+  l’adresse du client à l’en-tête `X-Forwarded-For` qu’il recevait au lieu de la
+  remplacer : un client Wi-Fi pouvait donc choisir l’adresse sur laquelle son
+  quota était compté, ou épuiser celui d’un autre appareil. nginx réécrit
+  maintenant l’en-tête depuis `$remote_addr`, et un plafond global s’ajoute au
+  quota par adresse pour les requêtes qui n’empruntent pas nginx (service
+  onion).
+- **Suppression de répertoire par un nom d’archive.** `onionpi-update` acceptait
+  `..` comme numéro de version, qui devient un composant de chemin sous
+  `/var/lib/onionpi/updates`. Le motif exige désormais un premier caractère
+  alphanumérique, et l’adresse de téléchargement doit être servie par
+  `github.com` ou `githubusercontent.com`.
+- **Énumération des comptes par le temps de réponse** de `/api/v1/auth/login` :
+  un nom inconnu coûte maintenant le même scrypt qu’un nom connu.
+
+### Renforcé
+
+- `ONIONPI_DEMO_MODE` sur une installation réelle est signalé en `ERROR` dans le
+  journal : ce mode rend chaque commande inopérante et chaque mesure fictive.
+- Les réglages numériques (`ONIONPI_SESSION_TTL`, `ONIONPI_MAX_UPLOAD_BYTES`,
+  `ONIONPI_STORAGE_RESERVE_BYTES`, ports) sont bornés, et une valeur booléenne
+  non reconnue est journalisée au lieu de valoir silencieusement « désactivé ».
+- Les origines du serveur de développement Vite (`:5173`) ne sont plus
+  acceptées hors mode démonstration.
+- `verify_password` refuse un condensat dont le coût scrypt est inférieur à
+  celui écrit par cette version.
+- `onionpi.service` : `ProtectProc`, `ProtectHostname`, `ProtectClock`,
+  `ProtectKernelLogs`, `RestrictNamespaces`, `SystemCallArchitectures`,
+  `CapabilityBoundingSet=` vide.
 
 ## [0.2.0] — 2026-08-11
 

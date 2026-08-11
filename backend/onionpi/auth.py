@@ -8,13 +8,29 @@ import time
 from collections import defaultdict, deque
 from threading import Lock
 
+#: Cost written by hash_password, and the floor verify_password accepts. The
+#: parameters travel inside each digest so they can be raised later without
+#: invalidating existing accounts; they are never allowed to go down.
+SCRYPT_N = 2**14
+SCRYPT_R = 8
+SCRYPT_P = 1
+SCRYPT_DKLEN = 32
+#: Above this, one verification would allocate more memory than the Pi has.
+SCRYPT_MAX_N = 2**20
+
 
 def hash_password(password: str) -> str:
     if len(password) < 12:
         raise ValueError("Le mot de passe doit contenir au moins 12 caractères")
     salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
-    return f"scrypt$16384$8$1${base64.urlsafe_b64encode(salt).decode()}${base64.urlsafe_b64encode(digest).decode()}"
+    digest = hashlib.scrypt(
+        password.encode(), salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P, dklen=SCRYPT_DKLEN
+    )
+    return (
+        f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}$"
+        f"{base64.urlsafe_b64encode(salt).decode()}$"
+        f"{base64.urlsafe_b64encode(digest).decode()}"
+    )
 
 
 def verify_password(password: str, encoded: str) -> bool:
@@ -22,14 +38,39 @@ def verify_password(password: str, encoded: str) -> bool:
         algorithm, n, r, p, salt_value, digest_value = encoded.split("$")
         if algorithm != "scrypt":
             return False
-        salt = base64.urlsafe_b64decode(salt_value)
+        cost, block, parallel = int(n), int(r), int(p)
         expected = base64.urlsafe_b64decode(digest_value)
+        # A digest weaker than what this version writes is refused rather than
+        # verified cheaply: whoever downgraded it already had write access to
+        # the database, and must not also get an inexpensive offline attack.
+        if not SCRYPT_N <= cost <= SCRYPT_MAX_N:
+            return False
+        if block < SCRYPT_R or parallel < SCRYPT_P or len(expected) < SCRYPT_DKLEN:
+            return False
+        salt = base64.urlsafe_b64decode(salt_value)
         candidate = hashlib.scrypt(
-            password.encode(), salt=salt, n=int(n), r=int(r), p=int(p), dklen=len(expected)
+            password.encode(), salt=salt, n=cost, r=block, p=parallel, dklen=len(expected)
         )
         return hmac.compare_digest(candidate, expected)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, MemoryError):
         return False
+
+
+def dummy_verify() -> None:
+    """Burns the same work as a real check, for a user that does not exist.
+
+    Without it, an unknown name answers in a millisecond and a known one in the
+    time scrypt takes, which is a free account enumeration oracle on a page that
+    is otherwise deliberately vague about why a login failed.
+    """
+    hashlib.scrypt(
+        b"onionpi-absent-account",
+        salt=b"onionpi-absent-salt",
+        n=SCRYPT_N,
+        r=SCRYPT_R,
+        p=SCRYPT_P,
+        dklen=SCRYPT_DKLEN,
+    )
 
 
 def token_hash(token: str, secret: str) -> str:
@@ -37,12 +78,25 @@ def token_hash(token: str, secret: str) -> str:
 
 
 class LoginLimiter:
-    """Small in-memory limiter; prevents cheap LAN password spraying."""
+    """Small in-memory limiter; prevents cheap LAN password spraying.
 
-    def __init__(self, attempts: int = 8, window_seconds: int = 300) -> None:
+    Two budgets, because the per-address one is only as trustworthy as the
+    address. nginx rewrites the forwarded address from the real peer, so a
+    Wi-Fi client cannot claim someone else's. A request that reaches the
+    application without passing through nginx — the onion service, when it is
+    published — carries headers its author chose, and could otherwise mint a
+    fresh budget per attempt. The global budget is the ceiling that holds
+    whatever the address says.
+    """
+
+    def __init__(
+        self, attempts: int = 8, window_seconds: int = 300, global_attempts: int = 120
+    ) -> None:
         self.attempts = attempts
         self.window_seconds = window_seconds
+        self.global_attempts = global_attempts
         self._events: dict[str, deque[float]] = defaultdict(deque)
+        self._global: deque[float] = deque()
         self._lock = Lock()
 
     def _prune(self, now: float) -> None:
@@ -60,11 +114,17 @@ class LoginLimiter:
         now = time.monotonic()
         with self._lock:
             self._prune(now)
+            while self._global and now - self._global[0] > self.window_seconds:
+                self._global.popleft()
+            if len(self._global) >= self.global_attempts:
+                return False
             return len(self._events.get(address, ())) < self.attempts
 
     def failure(self, address: str) -> None:
+        now = time.monotonic()
         with self._lock:
-            self._events[address].append(time.monotonic())
+            self._events[address].append(now)
+            self._global.append(now)
 
     def success(self, address: str) -> None:
         with self._lock:

@@ -60,3 +60,17 @@ Trois frontières, dans cet ordre :
    venues de l’interface sont revalidées champ par champ, l’archive n’est
    dépliée qu’après contrôle de son empreinte, et `/opt/onionpi` est copié
    avant toute écriture pour permettre un retour arrière automatique.
+
+## Limites connues
+
+- **L’adresse du client n’est sûre que derrière nginx.** nginx réécrit
+  `X-Forwarded-For` depuis `$remote_addr`, donc un client Wi-Fi ne peut pas
+  choisir l’adresse sur laquelle la limitation de connexion le compte. Le
+  service onion, lui, atteint l’application directement : ses en-têtes sont
+  écrits par le visiteur. C’est pourquoi la limitation comporte aussi un
+  plafond global, indépendant de l’adresse annoncée. Publier le service onion
+  reste un choix : son adresse vaut un mot de passe.
+- **L’application peut tout demander au port de contrôle de Tor.** Elle est
+  membre du groupe `debian-tor` pour lire le cookie d’authentification ; une
+  exécution de code arbitraire dans l’application donnerait donc le contrôle de
+  la configuration de Tor, sans pour autant donner root sur la machine.

@@ -76,6 +76,9 @@ class OnionService:
 
     def _write_key(self, value: str) -> None:
         try:
+            # 0600 from creation, not written and then narrowed: with the
+            # service umask the old order left the private key group-readable
+            # for as long as the write took.
             atomic_write_text(self.key_path, value + "\n", mode=0o600)
         except OSError as error:
             raise OnionError(f"Écriture impossible dans {self.key_path}: {error}") from error

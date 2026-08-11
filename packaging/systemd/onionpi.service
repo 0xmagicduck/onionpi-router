@@ -24,11 +24,23 @@ ProtectSystem=strict
 ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
+ProtectHostname=true
+ProtectClock=true
+# Other processes' /proc entries stay invisible. ProcSubset is deliberately not
+# set: /proc/meminfo, /proc/stat and /proc/net/dev are what the dashboard reads.
+ProtectProc=invisible
 RestrictSUIDSGID=true
+RestrictNamespaces=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
 RestrictRealtime=true
+RemoveIPC=true
+SystemCallArchitectures=native
+# The service already runs unprivileged with NoNewPrivileges; an empty bounding
+# set means even a setuid binary it manages to exec inherits nothing.
+CapabilityBoundingSet=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 ReadWritePaths=/var/lib/onionpi
 # Bridge and exit-policy fragments, plus the DNS blocklist: the only files

@@ -12,11 +12,48 @@ from . import __version__
 logger = logging.getLogger("onionpi.config")
 
 
+_TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off", ""}
+
+
 def _flag(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    cleaned = value.strip().lower()
+    if cleaned in _TRUE:
+        return True
+    if cleaned not in _FALSE:
+        # "ONIONPI_COOKIE_SECURE=ture" used to mean "off" without a word. A
+        # switch that silently turns itself off on a typo is worse than one
+        # that complains.
+        logger.warning(
+            "%s=%r n’est ni vrai ni faux: la valeur est ignorée (désactivé).", name, value
+        )
+    return False
+
+
+def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Reads an integer setting, refusing values outside a usable range.
+
+    An unparseable or out-of-range value falls back to the default and says so.
+    Silently accepting ONIONPI_SESSION_TTL=0 or a negative storage reserve turns
+    a typo into a security setting nobody chose.
+    """
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        logger.warning("%s=%r n’est pas un entier: %d retenu.", name, raw, default)
+        return default
+    if not minimum <= value <= maximum:
+        logger.warning(
+            "%s=%d hors des bornes [%d, %d]: %d retenu.", name, value, minimum, maximum, default
+        )
+        return default
+    return value
 
 
 @dataclass(frozen=True)
@@ -60,10 +97,12 @@ class Settings:
                 "https://onionpi.local",
                 f"http://localhost:{self.app_port}",
                 f"http://127.0.0.1:{self.app_port}",
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
             }
         )
+        if self.demo_mode:
+            # The Vite development server. It has no business being trusted by
+            # an appliance on someone's network.
+            configured.update({"http://localhost:5173", "http://127.0.0.1:5173"})
         return configured
 
     @property
@@ -183,7 +222,7 @@ def get_settings() -> Settings:
             os.getenv("ONIONPI_FRONTEND_DIR", project_root / "frontend" / "dist")
         ).resolve(),
         tor_control_host=os.getenv("ONIONPI_TOR_CONTROL_HOST", "127.0.0.1"),
-        tor_control_port=int(os.getenv("ONIONPI_TOR_CONTROL_PORT", "9051")),
+        tor_control_port=_bounded_int("ONIONPI_TOR_CONTROL_PORT", 9051, 1, 65535),
         tor_cookie_path=Path(
             os.getenv("ONIONPI_TOR_COOKIE", "/run/tor/control.authcookie")
         ),
@@ -200,17 +239,36 @@ def get_settings() -> Settings:
         gateway_ip=os.getenv("ONIONPI_GATEWAY_IP", "10.42.0.1"),
         wifi_interface=os.getenv("ONIONPI_WIFI_INTERFACE", "wlan0"),
         upstream_interface=os.getenv("ONIONPI_UPSTREAM_INTERFACE", "eth0"),
-        session_ttl_seconds=int(os.getenv("ONIONPI_SESSION_TTL", "43200")),
-        max_upload_bytes=int(os.getenv("ONIONPI_MAX_UPLOAD_BYTES", str(1024**3))),
+        # 5 minutes to 30 days. Zero would log everyone out at the moment they
+        # signed in, and an unbounded value never expires a stolen cookie.
+        session_ttl_seconds=_bounded_int("ONIONPI_SESSION_TTL", 43_200, 300, 2_592_000),
+        max_upload_bytes=_bounded_int(
+            "ONIONPI_MAX_UPLOAD_BYTES", 1024**3, 1024**2, 64 * 1024**3
+        ),
         cookie_secure=_flag("ONIONPI_COOKIE_SECURE"),
         demo_mode=_flag("ONIONPI_DEMO_MODE"),
-        app_port=int(os.getenv("ONIONPI_PORT", "8080")),
+        app_port=_bounded_int("ONIONPI_PORT", 8080, 1, 65535),
         device_name=os.getenv("ONIONPI_DEVICE_NAME", "OnionPi"),
         session_secret=session_secret,
-        storage_reserve_bytes=int(
-            os.getenv("ONIONPI_STORAGE_RESERVE_BYTES", str(512 * 1024**2))
+        # Never negative: the upload budget is free space minus this reserve,
+        # and a negative reserve would hand uploads the last blocks of the card.
+        storage_reserve_bytes=_bounded_int(
+            "ONIONPI_STORAGE_RESERVE_BYTES", 512 * 1024**2, 0, 64 * 1024**3
         ),
         version=_installed_version(project_root),
     )
     settings.ensure_directories()
+    if settings.demo_mode and Path("/etc/onionpi/onionpi.env").exists():
+        # Demonstration mode makes every control a no-op and every reading a
+        # plausible invention: Tor reports "connecté", blocked devices are never
+        # written to nftables, and the DNS blocklists are fetched without going
+        # through Tor. On a machine that is actually routing a household, an
+        # interface that says everything is fine while nothing is enforced is
+        # the worst possible failure. It cannot be corrected from here — the
+        # value is in a root-owned file — so say it as loudly as a log allows.
+        logger.error(
+            "ONIONPI_DEMO_MODE est actif sur une installation réelle: aucune "
+            "protection n’est appliquée et l’interface affiche des données "
+            "fictives. Retirez ce réglage de /etc/onionpi/onionpi.env."
+        )
     return settings

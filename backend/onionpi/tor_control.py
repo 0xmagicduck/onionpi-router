@@ -170,7 +170,11 @@ class TorController:
         if time.monotonic() - cached_at < 300:
             return cached_ip
         try:
-            with httpx.Client(proxy="socks5://127.0.0.1:9050", timeout=4) as client:
+            # socks5h, not socks5: the "h" keeps the name resolution inside Tor.
+            # With socks5 httpx resolves check.torproject.org through the system
+            # resolver first, which on this appliance is the upstream provider's
+            # — a clear-text query that announces a Tor user at this address.
+            with httpx.Client(proxy="socks5h://127.0.0.1:9050", timeout=4) as client:
                 payload = client.get("https://check.torproject.org/api/ip").json()
                 value = str(payload.get("IP", ""))
                 if not re.fullmatch(r"[0-9a-fA-F:.]+", value):
