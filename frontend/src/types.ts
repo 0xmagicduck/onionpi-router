@@ -44,6 +44,13 @@ export type StatusPayload = {
     gateway_ip: string
     channel: string
   }
+  protection: {
+    status: 'protected' | 'contained' | 'degraded' | 'demo'
+    safe: boolean
+    label: string
+    summary: string
+    checks: Array<{ id: string; label: string; ok: boolean; detail: string }>
+  }
   activities: Activity[]
 }
 

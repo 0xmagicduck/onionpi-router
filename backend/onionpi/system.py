@@ -109,6 +109,7 @@ def service_states(demo_mode: bool = False) -> list[dict[str, Any]]:
     services = [
         ("tor", "Tor"),
         ("NetworkManager", "Wi-Fi"),
+        ("onionpi-ap", "Point d’accès"),
         ("dnsmasq", "DNS"),
         ("onionpi-firewall", "Pare-feu"),
     ]

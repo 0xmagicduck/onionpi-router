@@ -40,6 +40,8 @@ def test_auth_status_and_security_headers() -> None:
         response = client.get("/api/v1/status")
         assert response.status_code == 200
         assert response.json()["tor"]["connected"] is True
+        assert response.json()["protection"]["status"] == "demo"
+        assert response.json()["protection"]["safe"] is False
         assert response.headers["x-frame-options"] == "DENY"
         assert csrf
 
@@ -123,6 +125,25 @@ def test_health_is_public_and_unknown_api_routes_return_json_404() -> None:
         unknown = client.get("/api/v1/does-not-exist")
         assert unknown.status_code == 404
         assert unknown.json()["detail"]
+
+
+def test_request_body_limits_apply_before_parsing() -> None:
+    with TestClient(app) as client:
+        oversized = client.post(
+            "/api/v1/auth/login",
+            content=b"x" * (1024**2 + 1),
+            headers={"Content-Type": "application/json"},
+        )
+        assert oversized.status_code == 413
+        assert oversized.json()["detail"] == "Requête trop volumineuse"
+
+        # A valid-size multipart body reaches the auth dependency before the
+        # multipart parser or upload destination is touched.
+        unauthenticated = client.post(
+            "/api/v1/files/upload",
+            files={"file": ("intrus.txt", b"contenu", "text/plain")},
+        )
+        assert unauthenticated.status_code == 401
 
 
 def test_diagnostics_are_authenticated_and_run_real_database_checks() -> None:

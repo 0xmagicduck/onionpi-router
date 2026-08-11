@@ -17,6 +17,7 @@ def test_real_system_snapshot_survives_restricted_host_metrics(tmp_path: Path) -
     assert {service["id"] for service in snapshot["services"]} == {
         "tor",
         "NetworkManager",
+        "onionpi-ap",
         "dnsmasq",
         "onionpi-firewall",
     }

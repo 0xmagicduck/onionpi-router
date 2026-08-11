@@ -10,25 +10,20 @@ set -Eeuo pipefail
 # back so the interface can tell success from silence.
 
 REQUEST_FILE="/var/lib/onionpi/agent.request"
-RESULT_FILE="/var/lib/onionpi/agent.result"
+RESULT_FILE="/var/lib/onionpi-privileged/agent.result"
 
-# /var/lib/onionpi belongs to the unprivileged application, which may therefore
-# replace any name inside it with a symlink between two of our own commands. A
-# plain `>` redirection would follow that symlink and let a compromised web
-# service overwrite an arbitrary file as root. `noclobber` turns the redirection
-# into an O_CREAT|O_EXCL open, which fails on anything that already exists —
-# symlink included — instead of writing through it, and the rename that follows
-# never follows a symlink either.
 reply() {
   local status="$1" message="$2"
-  local temporary="$RESULT_FILE.$$-$RANDOM"
-  if ! (set -o noclobber; umask 022
-        printf '%s %s %s\n' "$nonce" "$status" "$message" >"$temporary") 2>/dev/null; then
-    rm -f -- "$temporary"
-    printf 'Écriture impossible dans %s.\n' "$temporary" >&2
-    return 1
-  fi
-  mv -f -- "$temporary" "$RESULT_FILE"
+  local temporary
+  # Root-created files never live in the application-owned state directory.
+  # Otherwise onionpi could pre-position a symlink and redirect this write.
+  temporary="$(mktemp /var/lib/onionpi-privileged/.agent.result.XXXXXX)"
+  trap 'rm -f -- "$temporary"' RETURN
+  printf '%s %s %s\n' "$nonce" "$status" "$message" >"$temporary"
+  chown root:onionpi "$temporary"
+  chmod 0640 "$temporary"
+  mv -fT "$temporary" "$RESULT_FILE"
+  trap - RETURN
   printf '%s: %s\n' "$status" "$message"
 }
 

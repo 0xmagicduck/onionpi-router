@@ -31,12 +31,14 @@ def test_downgraded_scrypt_parameters_are_refused() -> None:
 def test_login_limiter_caps_attempts_per_address() -> None:
     limiter = LoginLimiter(attempts=3, window_seconds=300)
     for _ in range(3):
-        assert limiter.allow("10.42.0.5")
-        limiter.failure("10.42.0.5")
-    assert not limiter.allow("10.42.0.5")
-    assert limiter.allow("10.42.0.6")
-    limiter.success("10.42.0.5")
-    assert limiter.allow("10.42.0.5")
+        reservation = limiter.reserve("10.42.0.5")
+        assert reservation is not None
+        limiter.complete(reservation, success=False)
+    assert limiter.reserve("10.42.0.5") is None
+    successful = limiter.reserve("10.42.0.6")
+    assert successful is not None
+    limiter.complete(successful, success=True)
+    assert limiter.reserve("10.42.0.6") is not None
 
 
 def test_login_limiter_global_ceiling_survives_forged_addresses() -> None:
@@ -48,7 +50,17 @@ def test_login_limiter_global_ceiling_survives_forged_addresses() -> None:
     limiter = LoginLimiter(attempts=3, window_seconds=300, global_attempts=10)
     for index in range(10):
         address = f"10.42.0.{index}"
-        assert limiter.allow(address)
-        limiter.failure(address)
-    assert not limiter.allow("10.42.0.99")
+        reservation = limiter.reserve(address)
+        assert reservation is not None
+        limiter.complete(reservation, success=False)
+    assert limiter.reserve("10.42.0.99") is None
 
+
+def test_login_limiter_caps_expensive_checks_in_flight() -> None:
+    limiter = LoginLimiter(max_concurrent=2)
+    first = limiter.reserve("10.42.0.1")
+    second = limiter.reserve("10.42.0.2")
+    assert first is not None and second is not None
+    assert limiter.reserve("10.42.0.3") is None
+    limiter.complete(first, success=False)
+    assert limiter.reserve("10.42.0.3") is not None

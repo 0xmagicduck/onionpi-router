@@ -11,13 +11,18 @@ type Props = {
 }
 
 export function Topbar({ user, status, onLogout, onMenu }: Props) {
-  const secure = status?.tor.connected ?? false
+  const protection = status?.protection
+  const stateClass = protection?.status === 'protected'
+    ? 'status-good'
+    : protection?.status === 'degraded'
+      ? 'status-danger'
+      : 'status-warn'
   return (
     <header className="topbar">
       <MobileMenuButton onClick={onMenu} />
-      <div className={`top-status ${secure ? 'status-good' : 'status-warn'}`}>
+      <div className={`top-status ${stateClass}`} title={protection?.summary}>
         <ShieldCheck size={18} />
-        <span>{secure ? 'Sécurisé' : 'Tor démarre'}</span>
+        <span>{protection?.label ?? 'État inconnu'}</span>
       </div>
       <span className="top-divider" />
       <div className="top-meta"><Wifi size={18} /><span>{status?.network.ssid ?? 'OnionPi Wi-Fi'}</span></div>

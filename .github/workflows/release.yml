@@ -25,11 +25,6 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      # Shell steps cannot read the secrets context directly, so the mandatory
-      # signing key is lifted here and checked before packaging.
-      SIGNING_KEY: ${{ secrets.ONIONPI_GPG_PRIVATE_KEY }}
-      SIGNING_PASSPHRASE: ${{ secrets.ONIONPI_GPG_PASSPHRASE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -77,13 +72,6 @@ jobs:
             echo "channel=edge" >>"$GITHUB_OUTPUT"
           fi
 
-      - name: Require the release signing key
-        run: |
-          if [[ -z "$SIGNING_KEY" ]]; then
-            echo "::error::ONIONPI_GPG_PRIVATE_KEY est absent; le client exige une signature et refuserait cette publication."
-            exit 1
-          fi
-
       - name: Assemble the archive
         id: package
         run: ./scripts/build-release.sh "${{ steps.version.outputs.version }}"
@@ -91,7 +79,15 @@ jobs:
       # The private key is mandatory because every default appliance requires
       # a signed SHA256SUMS document. The passphrase remains optional.
       - name: Sign SHA256SUMS
+        env:
+          # Limit private-key exposure to the one step that needs it.
+          SIGNING_KEY: ${{ secrets.ONIONPI_GPG_PRIVATE_KEY }}
+          SIGNING_PASSPHRASE: ${{ secrets.ONIONPI_GPG_PASSPHRASE }}
         run: |
+          if [[ -z "$SIGNING_KEY" ]]; then
+            echo "::error::ONIONPI_GPG_PRIVATE_KEY est absent; le client exige une signature et refuserait cette publication."
+            exit 1
+          fi
           printf '%s' "$SIGNING_KEY" | gpg --batch --import
           gpg --batch --yes --pinentry-mode loopback \
             ${SIGNING_PASSPHRASE:+--passphrase "$SIGNING_PASSPHRASE"} \

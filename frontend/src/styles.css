@@ -138,6 +138,7 @@ a { color: inherit; }
 .top-status { font-weight: 600; }
 .status-good { color: var(--green); }
 .status-warn { color: var(--amber); }
+.status-danger { color: var(--red); }
 .top-divider { width: 1px; height: 24px; background: var(--border); }
 .top-spacer { flex: 1; }
 .user-menu { border: 0; background: none; display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 7px; border-radius: 8px; font-size: 13px; }
@@ -387,8 +388,11 @@ a { color: inherit; }
 .privacy-note strong { display: block; margin-bottom: 2px; color: var(--text); }
 .check-list { margin: 0; padding: 9px 20px 19px; list-style: none; }
 .check-list li { min-height: 38px; display: flex; align-items: center; gap: 9px; border-bottom: 1px solid var(--border-soft); color: #c7d1d8; font-size: 12px; }
+.check-list li small { margin-left: auto; max-width: 55%; color: var(--muted); text-align: right; }
 .check-list li:last-child { border-bottom: 0; }
 .check-list svg { width: 17px; color: var(--green); }
+.check-list .protection-check-failed { color: #ffd0d0; }
+.check-list .protection-check-failed svg { color: var(--red); }
 .prose { padding: 6px 19px 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .text-link { margin: 12px 19px; display: inline-flex; align-items: center; gap: 6px; color: var(--amber); font-size: 12px; text-decoration: none; }
 .text-link:hover { text-decoration: underline; }

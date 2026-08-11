@@ -23,7 +23,7 @@ export function DashboardPage({ user, status, devices, traffic, onNewIdentity, i
         <main className="dashboard-main">
           <div className="page-title">
             <h1>Bonjour, {user.display_name.split(' ')[0]}</h1>
-            <p>{status.tor.connected ? 'Votre réseau est protégé par Tor.' : 'Tor se connecte. Le pare-feu bloque toute sortie directe.'}</p>
+            <p>{status.protection.summary}</p>
           </div>
           <TorStatus status={status} onNewIdentity={onNewIdentity} busy={identityBusy} />
           <TrafficChart samples={traffic} />

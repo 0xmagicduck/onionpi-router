@@ -1,0 +1,18 @@
+[Unit]
+Description=OnionPi protected Wi-Fi access point
+Documentation=file:/opt/onionpi/README.md
+Requires=NetworkManager.service onionpi-firewall.service
+After=NetworkManager.service onionpi-firewall.service
+BindsTo=onionpi-firewall.service
+PartOf=onionpi-firewall.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/nmcli --wait 30 connection up onionpi-ap
+ExecStop=-/usr/bin/nmcli --wait 10 connection down onionpi-ap
+RemainAfterExit=yes
+TimeoutStartSec=45s
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=multi-user.target

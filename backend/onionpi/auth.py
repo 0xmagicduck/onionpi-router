@@ -8,6 +8,7 @@ import time
 from collections import defaultdict, deque
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from threading import BoundedSemaphore, Lock
 
 #: Cost written by hash_password, and the floor verify_password accepts. The
@@ -22,10 +23,9 @@ SCRYPT_MAX_N = 2**20
 
 #: Verifications allowed to run at the same time, process wide. One of them
 #: holds SCRYPT_N * SCRYPT_R * 128 bytes — 16 MiB with the parameters above —
-#: and FastAPI answers each login in its own worker thread. The login limiter
-#: cannot bound this on its own: it only counts attempts that already finished,
-#: so a burst of simultaneous requests from a single Wi-Fi client would all pass
-#: it and hash at once, which is enough to exhaust a 1 GiB Raspberry Pi.
+#: and FastAPI answers each login in its own worker thread. Login reservations
+#: close the admission race; this process-wide semaphore also covers password
+#: changes and future hashing call sites that do not pass through that limiter.
 HASHING_SLOTS = 4
 #: Waiting costs a parked thread and no memory, so a real operator queues
 #: behind a burst instead of being refused.
@@ -106,6 +106,12 @@ def token_hash(token: str, secret: str) -> str:
     return hmac.new(secret.encode(), token.encode(), hashlib.sha256).hexdigest()
 
 
+@dataclass(frozen=True, slots=True)
+class LoginReservation:
+    address: str
+    stamp: float
+
+
 class LoginLimiter:
     """Small in-memory limiter; prevents cheap LAN password spraying.
 
@@ -119,13 +125,19 @@ class LoginLimiter:
     """
 
     def __init__(
-        self, attempts: int = 8, window_seconds: int = 300, global_attempts: int = 120
+        self,
+        attempts: int = 8,
+        window_seconds: int = 300,
+        global_attempts: int = 120,
+        max_concurrent: int = 4,
     ) -> None:
         self.attempts = attempts
         self.window_seconds = window_seconds
         self.global_attempts = global_attempts
+        self.max_concurrent = max_concurrent
         self._events: dict[str, deque[float]] = defaultdict(deque)
         self._global: deque[float] = deque()
+        self._in_flight = 0
         self._lock = Lock()
 
     def _prune(self, now: float) -> None:
@@ -139,25 +151,47 @@ class LoginLimiter:
             if not events:
                 del self._events[address]
 
-    def allow(self, address: str) -> bool:
+    def reserve(self, address: str) -> LoginReservation | None:
+        """Atomically charges an attempt before the expensive scrypt work.
+
+        Charging only after a failed verification lets parallel requests all
+        pass the admission check together. A reservation closes that race and
+        the small in-flight ceiling protects a Raspberry Pi from CPU/RAM
+        exhaustion even when requests use many forged forwarded addresses.
+        """
         now = time.monotonic()
         with self._lock:
             self._prune(now)
             while self._global and now - self._global[0] > self.window_seconds:
                 self._global.popleft()
-            if len(self._global) >= self.global_attempts:
-                return False
-            return len(self._events.get(address, ())) < self.attempts
-
-    def failure(self, address: str) -> None:
-        now = time.monotonic()
-        with self._lock:
+            if (
+                len(self._global) >= self.global_attempts
+                or len(self._events.get(address, ())) >= self.attempts
+                or self._in_flight >= self.max_concurrent
+            ):
+                return None
             self._events[address].append(now)
             self._global.append(now)
+            self._in_flight += 1
+            return LoginReservation(address, now)
 
-    def success(self, address: str) -> None:
+    def complete(self, reservation: LoginReservation, *, success: bool) -> None:
         with self._lock:
-            self._events.pop(address, None)
+            self._in_flight = max(0, self._in_flight - 1)
+            if not success:
+                return
+            events = self._events.get(reservation.address)
+            if events:
+                try:
+                    events.remove(reservation.stamp)
+                except ValueError:
+                    pass
+                if not events:
+                    self._events.pop(reservation.address, None)
+            try:
+                self._global.remove(reservation.stamp)
+            except ValueError:
+                pass
 
 
 class RateLimiter:
@@ -181,4 +215,3 @@ class RateLimiter:
                 return False
             self._stamps.append(now)
             return True
-

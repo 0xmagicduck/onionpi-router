@@ -303,6 +303,10 @@ for group in debian-tor systemd-journal; do
 done
 
 install -d -m 0750 -o onionpi -g onionpi /var/lib/onionpi /var/lib/onionpi/shared
+# Root-written state must not share a namespace whose directory entries the web
+# account can rename. The application receives read-only group access instead.
+install -d -m 0750 -o root -g onionpi /var/lib/onionpi-privileged
+install -d -m 0700 -o root -g root /var/cache/onionpi-update
 # 0751: /etc/onionpi stays unlistable, but debian-tor can traverse it to reach
 # the one directory below that it must read.
 install -d -m 0751 -o root -g onionpi /etc/onionpi
@@ -319,6 +323,30 @@ install -d -m 0755 -o onionpi -g onionpi /etc/onionpi/dns
 install -d -m 0755 /etc/tor/torrc.d
 install -d -m 0755 /opt/onionpi
 install -d -m 0755 /usr/local/lib/onionpi
+
+require_regular_state_file() {
+  local path="$1"
+  if [[ -L "$path" || ! -f "$path" ]]; then
+    printf 'Mise à niveau refusée: %s doit être un fichier régulier existant.\n' "$path" >&2
+    exit 1
+  fi
+}
+
+# During an upgrade the web process may still be running. Validate its mutable
+# entries, then never chown, chmod or truncate them as root: a directory owner
+# could swap a checked entry for a symlink between those operations.
+if (( UPGRADE )); then
+  for path in \
+    /etc/onionpi/tor/bridges.conf \
+    /etc/onionpi/tor/policy.conf \
+    /etc/onionpi/dns/block.hosts \
+    /var/lib/onionpi/relay.state \
+    /var/lib/onionpi/blocked-macs.txt \
+    /var/lib/onionpi/agent.request \
+    /var/lib/onionpi/update.settings.json; do
+    require_regular_state_file "$path"
+  done
+fi
 
 rsync -a --delete --exclude '__pycache__' --exclude '.pytest_cache' \
   "$PROJECT_ROOT/backend/" /opt/onionpi/backend/
@@ -363,6 +391,8 @@ ONIONPI_ONION_TARGET_PORT=8081
 ONIONPI_TOR_CONFIG_DIR=/etc/onionpi/tor
 ONIONPI_RELAY_STATE=/var/lib/onionpi/relay.state
 ONIONPI_DNS_FILTER_DIR=/etc/onionpi/dns
+ONIONPI_AGENT_RESULT=/var/lib/onionpi-privileged/agent.result
+ONIONPI_UPDATE_STATE=/var/lib/onionpi-privileged/update.state
 ONIONPI_COUNTRY=$COUNTRY
 EOF
 chown root:onionpi /etc/onionpi/onionpi.env
@@ -403,55 +433,63 @@ chmod 0644 /etc/tor/torrc.d/onionpi.conf
 
 # torrc includes this file unconditionally, so it must exist before Tor starts.
 # An upgrade keeps the bridges already configured from the web interface.
-if [[ ! -s /etc/onionpi/tor/bridges.conf ]]; then
+if (( ! UPGRADE )) && [[ ! -s /etc/onionpi/tor/bridges.conf ]]; then
   cat >/etc/onionpi/tor/bridges.conf <<'EOF'
 # Généré par OnionPi. Ne pas modifier à la main:
 # le fichier est réécrit à chaque changement depuis l’interface web.
 UseBridges 0
 EOF
+  chown onionpi:"$BRIDGE_GROUP" /etc/onionpi/tor/bridges.conf
+  chmod 0640 /etc/onionpi/tor/bridges.conf
 fi
-chown onionpi:"$BRIDGE_GROUP" /etc/onionpi/tor/bridges.conf
-chmod 0640 /etc/onionpi/tor/bridges.conf
 
 # Exit-node policy fragment. Like the bridge file it is included
 # unconditionally, so Tor refuses to start when it is missing.
-if [[ ! -s /etc/onionpi/tor/policy.conf ]]; then
+if (( ! UPGRADE )) && [[ ! -s /etc/onionpi/tor/policy.conf ]]; then
   cat >/etc/onionpi/tor/policy.conf <<'EOF'
 # Généré par OnionPi. Ne pas modifier à la main:
 # le fichier est réécrit à chaque changement depuis l’interface web.
 # Aucun pays de sortie imposé.
 EOF
+  chown onionpi:"$BRIDGE_GROUP" /etc/onionpi/tor/policy.conf
+  chmod 0640 /etc/onionpi/tor/policy.conf
 fi
-chown onionpi:"$BRIDGE_GROUP" /etc/onionpi/tor/policy.conf
-chmod 0640 /etc/onionpi/tor/policy.conf
 
 # dnsmasq refuses to start when an addn-hosts file is missing: create an empty
 # blocklist so a fresh install and a disabled filter behave the same way.
-if [[ ! -e /etc/onionpi/dns/block.hosts ]]; then
+if (( ! UPGRADE )) && [[ ! -e /etc/onionpi/dns/block.hosts ]]; then
   printf '# Généré par OnionPi. Filtrage DNS désactivé.\n' >/etc/onionpi/dns/block.hosts
+  chown onionpi:onionpi /etc/onionpi/dns/block.hosts
+  chmod 0644 /etc/onionpi/dns/block.hosts
 fi
-chown onionpi:onionpi /etc/onionpi/dns/block.hosts
-chmod 0644 /etc/onionpi/dns/block.hosts
 
-if [[ ! -s /var/lib/onionpi/relay.state ]]; then
+if (( ! UPGRADE )) && [[ ! -s /var/lib/onionpi/relay.state ]]; then
   printf 'disabled\n' >/var/lib/onionpi/relay.state
+  chown onionpi:onionpi /var/lib/onionpi/relay.state
+  chmod 0640 /var/lib/onionpi/relay.state
 fi
-chown onionpi:onionpi /var/lib/onionpi/relay.state
-chmod 0640 /var/lib/onionpi/relay.state
 
 # Queue for the privileged agent: the application writes the request, root
 # writes the answer next to it.
-if [[ ! -e /var/lib/onionpi/blocked-macs.txt ]]; then
+if (( ! UPGRADE )) && [[ ! -e /var/lib/onionpi/blocked-macs.txt ]]; then
   printf '# Généré par OnionPi. Une adresse MAC par ligne.\n' >/var/lib/onionpi/blocked-macs.txt
+  chown onionpi:onionpi /var/lib/onionpi/blocked-macs.txt
+  chmod 0640 /var/lib/onionpi/blocked-macs.txt
 fi
-chown onionpi:onionpi /var/lib/onionpi/blocked-macs.txt
-chmod 0640 /var/lib/onionpi/blocked-macs.txt
-: >>/var/lib/onionpi/agent.request
-chown onionpi:onionpi /var/lib/onionpi/agent.request
-chmod 0640 /var/lib/onionpi/agent.request
-: >>/var/lib/onionpi/agent.result
-chown root:onionpi /var/lib/onionpi/agent.result
-chmod 0644 /var/lib/onionpi/agent.result
+if (( ! UPGRADE )); then
+  : >>/var/lib/onionpi/agent.request
+  chown onionpi:onionpi /var/lib/onionpi/agent.request
+  chmod 0640 /var/lib/onionpi/agent.request
+fi
+if [[ ! -e /var/lib/onionpi-privileged/agent.result ]]; then
+  install -m 0640 -o root -g onionpi /dev/null /var/lib/onionpi-privileged/agent.result
+elif [[ -L /var/lib/onionpi-privileged/agent.result || ! -f /var/lib/onionpi-privileged/agent.result ]]; then
+  printf 'État privilégié invalide: /var/lib/onionpi-privileged/agent.result\n' >&2
+  exit 1
+else
+  chown root:onionpi /var/lib/onionpi-privileged/agent.result
+  chmod 0640 /var/lib/onionpi-privileged/agent.result
+fi
 if ! grep -Fqx '%include /etc/tor/torrc.d/onionpi.conf' /etc/tor/torrc; then
   printf '\n%%include /etc/tor/torrc.d/onionpi.conf\n' >>/etc/tor/torrc
 fi
@@ -502,6 +540,7 @@ printf '%s onionpi.local\n' "$GATEWAY_IP" >>/run/onionpi-avahi-hosts
 install -m 0644 /run/onionpi-avahi-hosts /etc/avahi/hosts
 
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi.service" /etc/systemd/system/onionpi.service
+install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-ap.service" /etc/systemd/system/onionpi-ap.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-firewall.service" /etc/systemd/system/onionpi-firewall.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-relay.service" /etc/systemd/system/onionpi-relay.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-relay.path" /etc/systemd/system/onionpi-relay.path
@@ -548,18 +587,24 @@ if [[ ! -s /etc/onionpi/update.conf ]]; then
 fi
 # Preferences chosen from the web interface. Owned by the application, and
 # revalidated field by field by onionpi-update before anything is read from it.
-if [[ ! -e /var/lib/onionpi/update.settings.json ]]; then
+if (( ! UPGRADE )) && [[ ! -e /var/lib/onionpi/update.settings.json ]]; then
   printf '{"channel": "%s", "schedule": "%s", "enabled": %s, "apply": %s}\n' \
     "$UPDATE_CHANNEL" "$UPDATE_SCHEDULE" \
     "$( ((UPDATE_ENABLED)) && printf true || printf false )" \
     "$( ((UPDATE_APPLY)) && printf true || printf false )" \
     >/var/lib/onionpi/update.settings.json
+  chown onionpi:onionpi /var/lib/onionpi/update.settings.json
+  chmod 0640 /var/lib/onionpi/update.settings.json
 fi
-chown onionpi:onionpi /var/lib/onionpi/update.settings.json
-chmod 0640 /var/lib/onionpi/update.settings.json
-: >>/var/lib/onionpi/update.state
-chown root:onionpi /var/lib/onionpi/update.state
-chmod 0644 /var/lib/onionpi/update.state
+if [[ ! -e /var/lib/onionpi-privileged/update.state ]]; then
+  install -m 0640 -o root -g onionpi /dev/null /var/lib/onionpi-privileged/update.state
+elif [[ -L /var/lib/onionpi-privileged/update.state || ! -f /var/lib/onionpi-privileged/update.state ]]; then
+  printf 'État privilégié invalide: /var/lib/onionpi-privileged/update.state\n' >&2
+  exit 1
+else
+  chown root:onionpi /var/lib/onionpi-privileged/update.state
+  chmod 0640 /var/lib/onionpi-privileged/update.state
+fi
 
 # ------------------------------------------------------ console identity ----
 # Boot console, login prompt, MOTD and shell all draw the same ASCII banner.
@@ -599,7 +644,7 @@ if (( ! UPGRADE )); then
     nmcli connection add type wifi ifname "$WIFI_INTERFACE" con-name onionpi-ap ssid "$SSID"
   fi
   nmcli connection modify onionpi-ap \
-    connection.autoconnect yes connection.autoconnect-priority 100 \
+    connection.autoconnect no connection.autoconnect-priority 100 \
     802-11-wireless.mode ap 802-11-wireless.band "$WIFI_BAND" 802-11-wireless.channel "$WIFI_CHANNEL" \
     802-11-wireless.powersave 2 802-11-wireless.hidden no 802-11-wireless.ap-isolation yes \
     802-11-wireless-security.key-mgmt wpa-psk \
@@ -609,6 +654,10 @@ if (( ! UPGRADE )); then
     ipv4.method manual ipv4.addresses "$GATEWAY_CIDR" ipv4.never-default yes \
     ipv4.gateway '' ipv4.dns '' ipv6.method disabled
 fi
+# Older releases let NetworkManager autoconnect the AP independently. The
+# dedicated systemd unit below is now the only activation path, so firewall
+# failure cannot leave an unprotected AP online.
+nmcli connection modify onionpi-ap connection.autoconnect no
 unset WIFI_PASSWORD WIFI_PSK ONIONPI_WIFI_PASSWORD ONIONPI_WIFI_PSK
 
 tor --verify-config -f /etc/tor/torrc
@@ -618,7 +667,7 @@ sysctl --system >/dev/null
 systemctl daemon-reload
 # Without an RTC the Pi boots in 1970 and Tor rejects every relay certificate.
 systemctl enable --now systemd-timesyncd || true
-systemctl enable tor dnsmasq nftables onionpi-firewall nginx avahi-daemon NetworkManager onionpi
+systemctl enable tor dnsmasq nftables onionpi-firewall onionpi-ap nginx avahi-daemon NetworkManager onionpi
 systemctl enable onionpi-boot-banner.service
 systemctl enable --now onionpi-relay.path
 systemctl enable --now onionpi-agent.path
@@ -627,12 +676,13 @@ systemctl enable --now onionpi-agent.path
 /usr/local/sbin/onionpi-update --write-timer --quiet || \
   printf 'Minuterie de mise à jour non appliquée: lancez « sudo onionpi-update --write-timer ».\n' >&2
 systemctl restart tor
-systemctl restart nftables
+# Do not restart the generic nftables service here: it can flush the live table
+# while clients are still associated. The dedicated helper replaces our table
+# atomically and onionpi-ap follows its success state.
 systemctl restart onionpi-firewall
-# An upgrade keeps the access point up: it was never reconfigured.
-if (( ! UPGRADE )) || ! nmcli -t -f NAME,STATE connection show --active | grep -q '^onionpi-ap:activated$'; then
-  nmcli connection up onionpi-ap
-fi
+# The AP is a dependent unit of the kill switch. It may briefly disconnect on
+# upgrade, but can never remain active after a failed firewall replacement.
+systemctl restart onionpi-ap
 # nginx -t opens the configured listen sockets. The AP address must therefore
 # exist first; otherwise first boot races NetworkManager and fails with EADDRNOTAVAIL.
 nginx -t

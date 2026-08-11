@@ -73,6 +73,7 @@ class Settings:
     wifi_interface: str
     upstream_interface: str
     session_ttl_seconds: int
+    max_request_bytes: int
     max_upload_bytes: int
     cookie_secure: bool
     demo_mode: bool
@@ -137,12 +138,12 @@ class Settings:
 
     @property
     def agent_result_path(self) -> Path:
-        return self.data_dir / "agent.result"
+        return Path(os.getenv("ONIONPI_AGENT_RESULT", self.data_dir / "agent.result")).resolve()
 
     @property
     def update_state_path(self) -> Path:
         """Written by onionpi-update as root, only ever read from here."""
-        return self.data_dir / "update.state"
+        return Path(os.getenv("ONIONPI_UPDATE_STATE", self.data_dir / "update.state")).resolve()
 
     @property
     def update_settings_path(self) -> Path:
@@ -244,6 +245,9 @@ def get_settings() -> Settings:
         # 5 minutes to 30 days. Zero would log everyone out at the moment they
         # signed in, and an unbounded value never expires a stolen cookie.
         session_ttl_seconds=_bounded_int("ONIONPI_SESSION_TTL", 43_200, 300, 2_592_000),
+        max_request_bytes=_bounded_int(
+            "ONIONPI_MAX_REQUEST_BYTES", 1024**2, 64 * 1024, 16 * 1024**2
+        ),
         max_upload_bytes=_bounded_int(
             "ONIONPI_MAX_UPLOAD_BYTES", 1024**3, 1024**2, 64 * 1024**3
         ),

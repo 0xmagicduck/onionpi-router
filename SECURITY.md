@@ -50,18 +50,27 @@ qui reçoit les correctifs.
 Trois frontières, dans cet ordre :
 
 1. **Le client Wi-Fi ne peut pas atteindre Internet directement.** nftables
-   coupe tout ce qui n’est pas redirigé vers le `TransPort`.
+   coupe tout ce qui n’est pas redirigé vers le `TransPort`, et l’unité du point
+   d’accès dépend de l’unité du coupe-circuit.
 2. **L’application web ne peut pas devenir root.** `NoNewPrivileges=true`,
    `ProtectSystem=strict`, et trois chemins seulement en écriture. Toute action
    privilégiée passe par un fichier de requête relu et revalidé par
    `onionpi-agent-apply`, qui n’accepte que des verbes de sa propre liste et ne
-   lit jamais d’argument dans le fichier.
+   lit jamais d’argument dans le fichier. Les réponses root vivent sous
+   `/var/lib/onionpi-privileged`, dont l’application ne peut pas renommer les
+   entrées.
 3. **Le client de mise à jour ne fait confiance à rien.** Les préférences
    venues de l’interface sont revalidées champ par champ, l’archive n’est
-   dépliée qu’après contrôle de son empreinte, et `/opt/onionpi` est copié
-   avant toute écriture pour permettre un retour arrière automatique.
+   téléchargée qu’après validation du manifeste signé, sa taille est bornée,
+   elle n’est dépliée qu’après contrôle de son empreinte, et `/opt/onionpi` est
+   copié avant toute écriture pour permettre un retour arrière automatique.
 
 ## Limites connues
+
+- **L’installation de dépendances n’est pas encore hermétique.** Une mise à
+  niveau réexécute l’installateur et peut consulter APT/PyPI après que l’archive
+  OnionPi a été signée. Le wheelhouse signé et le déploiement immuable prévus
+  dans `docs/product-roadmap.md` doivent fermer cette frontière.
 
 - **L’adresse du client n’est sûre que derrière nginx.** nginx réécrit
   `X-Forwarded-For` depuis `$remote_addr`, donc un client Wi-Fi ne peut pas
