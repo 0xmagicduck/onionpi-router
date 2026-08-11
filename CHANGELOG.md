@@ -5,6 +5,14 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [0.2.1] — 2026-08-11
+
+Version de sécurité. Deux chemins permettaient à l’application web, si elle
+était compromise, d’obtenir une écriture root arbitraire, et un client Wi-Fi
+sans compte pouvait saturer la mémoire de la Raspberry Pi. Rien à faire côté
+utilisateur : les correctifs sont dans le service et dans les scripts
+privilégiés, appliqués par la mise à jour elle-même.
+
 ### Corrigé
 
 - **Écriture root à travers un lien symbolique choisi par l’application.**
@@ -167,3 +175,4 @@ partage de fichiers, chat local et service onion optionnel.
 
 [0.1.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.1.0
 [0.2.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.2.0
+[0.2.1]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.2.1
