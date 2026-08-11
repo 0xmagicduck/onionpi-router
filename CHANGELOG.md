@@ -5,6 +5,15 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+Rien pour l’instant. Les constructions du canal `edge` portent
+`0.2.0-edge.<n>`.
+
+## [0.1.0] — 2026-08-11
+
+Point d’accès Wi-Fi routé par Tor, interface web d’administration,
+contournement (Snowflake, obfs4, meek), filtrage DNS, blocage d’appareils,
+partage de fichiers, chat local et service onion optionnel.
+
 ### Ajouté
 
 - Mise à jour automatique : `onionpi-update` récupère les publications GitHub
@@ -30,9 +39,4 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 - Intégration continue GitHub : ruff, pytest, tsc, build, shellcheck,
   cohérence des versions, contrôle anti-secrets ; workflow de publication.
 
-## [0.1.0]
-
-Première version : point d’accès Wi-Fi routé par Tor, interface web
-d’administration, contournement (Snowflake, obfs4, meek), filtrage DNS,
-blocage d’appareils, partage de fichiers, chat local et service onion
-optionnel.
+[0.1.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.1.0
