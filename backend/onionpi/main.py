@@ -35,6 +35,7 @@ from .auth import LoginLimiter, RateLimiter, hash_password, token_hash, verify_p
 from .circumvention import CircumventionError, CircumventionManager
 from .config import Settings, get_settings
 from .database import Database
+from .diagnostics import build_diagnostics
 from .netcontrol import DeviceGuard, DnsFilter, NetControlError
 from .onion import OnionError, OnionService
 from .policy import PolicyError, TorPolicy
@@ -614,6 +615,14 @@ def system_actions(_: dict[str, Any] = Depends(current_session)) -> dict[str, An
         "available": agent.available,
         "actions": [{"id": key, "label": label} for key, (label, _wait) in ACTIONS.items()],
     }
+
+
+@app.get("/api/v1/system/diagnostics")
+async def system_diagnostics(
+    _: dict[str, Any] = Depends(current_session),
+) -> dict[str, Any]:
+    """Authenticated readiness report with no secrets or client identifiers."""
+    return await asyncio.to_thread(build_diagnostics, settings, database, tor, agent)
 
 
 @app.post("/api/v1/system/action")

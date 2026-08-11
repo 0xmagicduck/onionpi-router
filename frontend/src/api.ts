@@ -3,6 +3,7 @@ import type {
   CircumventionPayload,
   ConnectionMode,
   DevicesPayload,
+  DiagnosticsPayload,
   DnsFilterState,
   FilesPayload,
   OnionState,
@@ -86,6 +87,7 @@ export const api = {
     request<OnionState>('/api/v1/onion', { method: 'POST', body: JSON.stringify({ enabled }) }),
   rotateOnion: () => request<OnionState>('/api/v1/onion/rotate', { method: 'POST' }),
   systemActions: () => request<SystemActionsPayload>('/api/v1/system/actions'),
+  diagnostics: () => request<DiagnosticsPayload>('/api/v1/system/diagnostics'),
   runSystemAction: (action: string) =>
     request<{ action: string; status: string; message: string }>('/api/v1/system/action', {
       method: 'POST',

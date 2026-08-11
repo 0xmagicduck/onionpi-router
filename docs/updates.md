@@ -134,15 +134,19 @@ sudo onionpi-update --apply --force
 
 ## Ce qui se passe pendant l’installation
 
-`/opt/onionpi` est copié dans `/var/backups/onionpi-update-<horodatage>/`, les
-unités systemd avec. Puis `packaging/install.sh --upgrade` réinstalle par‑dessus :
-il relit `/etc/onionpi/install.conf` au lieu de poser des questions, ne touche
-ni au profil NetworkManager (qui contient le PSK), ni au compte administrateur,
-ni à la base, ni au proxy Snowflake s’il tourne.
+`/opt/onionpi` est copié dans `/var/backups/onionpi-update-<horodatage>/`, avec
+les unités systemd, les helpers privilégiés, nginx, dnsmasq, sysctl, les
+fragments Tor et les autres fichiers installés sous `/etc/onionpi`. Puis
+`packaging/install.sh --upgrade` réinstalle par‑dessus : il relit
+`/etc/onionpi/install.conf` au lieu de poser des questions, ne touche ni au
+profil NetworkManager (qui contient le PSK), ni au compte administrateur, ni à
+la base, ni au proxy Snowflake s’il tourne.
 
-`onionpi-verify` juge le résultat. En cas d’échec, la copie est restaurée et le
-service redémarré : la version précédente revient sans intervention. Les trois
-dernières sauvegardes sont conservées.
+`onionpi-verify` juge le résultat. En cas d’échec, toute cette copie est
+restaurée, puis Tor, nftables, le pare-feu OnionPi, dnsmasq, nginx et
+l’application sont redémarrés dans cet ordre : la version précédente revient
+sans mélange avec les helpers de la nouvelle. Les trois dernières sauvegardes
+sont conservées.
 
 ## Diagnostiquer
 

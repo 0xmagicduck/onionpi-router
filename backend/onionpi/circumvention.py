@@ -7,9 +7,9 @@ through the control port. Nothing here needs root: install.sh gives the
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx
 
+from .atomic_io import atomic_write_text
 from .tor_control import TorControlError, TorController
 
 logger = logging.getLogger("onionpi.circumvention")
@@ -125,6 +126,10 @@ def validate_bridge_line(line: str) -> str:
         raise CircumventionError(f"Ligne de pont illisible: {cleaned[:60]}")
     if not 1 <= int(match.group("port")) <= 65535:
         raise CircumventionError("Port de pont invalide")
+    try:
+        ipaddress.ip_address(match.group("address").strip("[]"))
+    except ValueError as error:
+        raise CircumventionError("Adresse IP de pont invalide") from error
     transport = match.group("transport")
     if transport and transport not in TOR_NAMES:
         supported = ", ".join(sorted(TOR_NAMES))
@@ -162,22 +167,41 @@ def fetch_catalog(cache_path: Path) -> dict[str, Any]:
     builtin: dict[str, list[str]] = {"obfs4": [], "snowflake": [], "meek": []}
     countries: dict[str, list[str]] = {}
     headers = {"Content-Type": "application/vnd.api+json"}
-    with httpx.Client(timeout=15, follow_redirects=False) as client:
-        payload = client.post(f"{MOAT_URL}/builtin", headers=headers).json()
-        for name, lines in payload.items():
-            key = aliases.get(name, name)
-            if key in builtin and isinstance(lines, list) and not builtin[key]:
-                builtin[key] = [str(line) for line in lines]
-        mapping = client.post(f"{MOAT_URL}/map", headers=headers).json()
+    try:
+        with httpx.Client(timeout=15, follow_redirects=False) as client:
+            response = client.post(f"{MOAT_URL}/builtin", headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+            mapping_response = client.post(f"{MOAT_URL}/map", headers=headers)
+            mapping_response.raise_for_status()
+            mapping = mapping_response.json()
+    except (httpx.HTTPError, ValueError) as error:
+        raise CircumventionError(f"Service de ponts indisponible: {error}") from error
+    if not isinstance(payload, dict) or not isinstance(mapping, dict):
+        raise CircumventionError("Réponse inattendue du service de ponts")
+    for name, lines in payload.items():
+        key = aliases.get(name, name)
+        if key in builtin and isinstance(lines, list) and not builtin[key]:
+            builtin[key] = [str(line) for line in lines]
     for country, value in mapping.items():
+        if not isinstance(value, dict):
+            continue
         order: list[str] = []
-        for setting in value.get("settings", []):
-            kind = aliases.get(setting.get("bridges", {}).get("type", ""), "")
-            kind = kind or setting.get("bridges", {}).get("type", "")
+        settings = value.get("settings", [])
+        if not isinstance(settings, list):
+            continue
+        for setting in settings:
+            if not isinstance(setting, dict):
+                continue
+            bridges = setting.get("bridges", {})
+            if not isinstance(bridges, dict):
+                continue
+            kind = aliases.get(str(bridges.get("type", "")), "")
+            kind = kind or str(bridges.get("type", ""))
             if kind in TRANSPORTS_BY_ID and kind not in order:
                 order.append(kind)
-        if order and re.fullmatch(r"[a-z]{2}", country):
-            countries[country] = order
+        if order and re.fullmatch(r"[a-z]{2}", str(country)):
+            countries[str(country)] = order
     if not any(builtin.values()):
         raise CircumventionError("Réponse inattendue du service de ponts")
     bundled = load_catalog()
@@ -195,12 +219,7 @@ def fetch_catalog(cache_path: Path) -> dict[str, Any]:
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    temporary = path.with_name(f".{path.name}.{os.getpid()}")
-    try:
-        temporary.write_text(content)
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    atomic_write_text(path, content, mode=0o640)
 
 
 @dataclass
@@ -339,11 +358,19 @@ class CircumventionManager:
         content = self.render(transport)
         if self.demo_mode:
             return
+        existed = True
         try:
             previous = self.config_path.read_text()
-        except OSError:
-            previous = ""
-        if previous == content:
+        except FileNotFoundError:
+            existed = False
+            # Keep the mandatory include valid even when an incomplete install
+            # omitted the file before this first attempted change.
+            previous = self.render(None)
+        except OSError as error:
+            raise CircumventionError(
+                f"Lecture impossible dans {self.config_path}: {error}"
+            ) from error
+        if existed and previous == content:
             return
         try:
             _atomic_write(self.config_path, content)
@@ -356,13 +383,16 @@ class CircumventionManager:
         except TorControlError as error:
             # A refused reload leaves Tor running on the old configuration;
             # putting the file back keeps the two in sync.
-            if previous:
-                try:
-                    _atomic_write(self.config_path, previous)
-                    self.controller.reload_config()
-                except (OSError, TorControlError):
-                    logger.exception("Restauration de la configuration de ponts impossible")
-            raise CircumventionError(f"Tor a refusé la configuration: {error}") from error
+            rollback_error = ""
+            try:
+                _atomic_write(self.config_path, previous)
+                self.controller.reload_config()
+            except (OSError, TorControlError) as restore_error:
+                rollback_error = f"; restauration non confirmée: {restore_error}"
+                logger.exception("Restauration de la configuration de ponts non confirmée")
+            raise CircumventionError(
+                f"Tor a refusé la configuration: {error}{rollback_error}"
+            ) from error
 
     def active_transport(self) -> str | None:
         """Transport that should currently be configured, given the mode."""

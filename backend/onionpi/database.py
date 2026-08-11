@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS messages (
     body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 2000),
     created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
 
 CREATE TABLE IF NOT EXISTS activity (
     id INTEGER PRIMARY KEY,
@@ -43,6 +45,7 @@ CREATE TABLE IF NOT EXISTS activity (
     message TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_activity_created ON activity(created_at);
 
 -- Preferences the web interface owns: exit country, identity rotation, DNS
 -- filtering profile, onion service switch. Values are JSON documents.
@@ -53,26 +56,95 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+MAX_MESSAGES = 2_000
+MAX_ACTIVITIES = 4_000
+TRIM_QUERIES = {
+    "messages": (
+        "DELETE FROM messages WHERE id NOT IN "
+        "(SELECT id FROM messages ORDER BY id DESC LIMIT ?)"
+    ),
+    "activity": (
+        "DELETE FROM activity WHERE id NOT IN "
+        "(SELECT id FROM activity ORDER BY id DESC LIMIT ?)"
+    ),
+}
+COUNT_QUERIES = {
+    "users": "SELECT count(*) FROM users",
+    "sessions": "SELECT count(*) FROM sessions",
+    "messages": "SELECT count(*) FROM messages",
+    "activity": "SELECT count(*) FROM activity",
+    "settings": "SELECT count(*) FROM settings",
+}
+
 
 class Database:
     def __init__(self, path: Path) -> None:
         self.path = path
+        # SQLite already serializes writers, but keeping every short-lived
+        # connection from this process behind one lock also avoids overlapping
+        # WAL checkpoints on distribution builds with older SQLite libraries.
+        self._lock = threading.RLock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path, timeout=10)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys=ON")
-        try:
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()
+        with self._lock:
+            connection = sqlite3.connect(self.path, timeout=10)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("PRAGMA busy_timeout=10000")
+            try:
+                yield connection
+                connection.commit()
+            finally:
+                connection.close()
 
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._maintain(connection)
+
+    @staticmethod
+    def _trim(connection: sqlite3.Connection, table: str, limit: int) -> None:
+        # LIMIT on DELETE is an optional SQLite compile-time feature.  The
+        # nested SELECT form works on every Raspberry Pi OS build.
+        connection.execute(TRIM_QUERIES[table], (limit,))
+
+    def _maintain(self, connection: sqlite3.Connection) -> None:
+        connection.execute("DELETE FROM sessions WHERE expires_at < ?", (int(time.time()),))
+        self._trim(connection, "messages", MAX_MESSAGES)
+        self._trim(connection, "activity", MAX_ACTIVITIES)
+        connection.execute("PRAGMA optimize")
+
+    def maintain(self) -> dict[str, int]:
+        """Bound persistent history and return the remaining row counts."""
+        with self.connect() as connection:
+            self._maintain(connection)
+            return self._stats(connection)
+
+    @staticmethod
+    def _stats(connection: sqlite3.Connection) -> dict[str, int]:
+        return {
+            table: int(connection.execute(query).fetchone()[0])
+            for table, query in COUNT_QUERIES.items()
+        }
+
+    def stats(self) -> dict[str, int]:
+        with self.connect() as connection:
+            counts = self._stats(connection)
+        try:
+            counts["bytes"] = self.path.stat().st_size
+        except OSError:
+            counts["bytes"] = 0
+        return counts
+
+    def quick_check(self) -> str:
+        try:
+            with self.connect() as connection:
+                rows = connection.execute("PRAGMA quick_check").fetchall()
+        except sqlite3.DatabaseError as error:
+            return str(error)
+        return "\n".join(str(row[0]) for row in rows) or "résultat vide"
 
     def create_user(self, username: str, display_name: str, password_hash: str) -> int:
         now = int(time.time())
@@ -132,6 +204,7 @@ class Database:
                 "INSERT INTO messages(user_id,author,body,created_at) VALUES(?,?,?,?)",
                 (user_id, author, body, now),
             )
+            self._trim(connection, "messages", MAX_MESSAGES)
             return {
                 "id": cursor.lastrowid,
                 "author": author,
@@ -153,6 +226,7 @@ class Database:
                 "INSERT INTO activity(kind,message,created_at) VALUES(?,?,?)",
                 (kind[:32], message[:300], int(time.time())),
             )
+            self._trim(connection, "activity", MAX_ACTIVITIES)
 
     def setting(self, key: str, default: Any = None) -> Any:
         with self.connect() as connection:

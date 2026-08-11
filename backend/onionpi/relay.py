@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any
 
+from .atomic_io import atomic_write_text
 from .system import _run
 
 logger = logging.getLogger("onionpi.relay")
@@ -44,6 +46,8 @@ class SnowflakeRelay:
     def __init__(self, state_path: Path, demo_mode: bool = False) -> None:
         self.state_path = state_path
         self.demo_mode = demo_mode
+        self._demo_enabled = True
+        self._lock = threading.Lock()
 
     @property
     def installed(self) -> bool:
@@ -65,19 +69,25 @@ class SnowflakeRelay:
                 "snowflake-proxy puis relancez l’installateur OnionPi."
             )
         if self.demo_mode:
+            self._demo_enabled = enabled
             return self.status()
-        try:
-            self.state_path.write_text("enabled\n" if enabled else "disabled\n")
-        except OSError as error:
-            raise RelayError(f"Écriture impossible dans {self.state_path}: {error}") from error
-        # The path unit reacts within a moment; poll so the interface reports
-        # the real systemd state instead of an optimistic guess.
-        for _ in range(12):
-            if self._active() == enabled:
-                break
-            time.sleep(0.5)
-        else:
-            logger.warning("snowflake-proxy n’a pas atteint l’état demandé (%s)", enabled)
+        with self._lock:
+            try:
+                atomic_write_text(
+                    self.state_path,
+                    "enabled\n" if enabled else "disabled\n",
+                    mode=0o640,
+                )
+            except OSError as error:
+                raise RelayError(f"Écriture impossible dans {self.state_path}: {error}") from error
+            # The path unit reacts within a moment; poll so the interface reports
+            # the real systemd state instead of an optimistic guess.
+            for _ in range(12):
+                if self._active() == enabled:
+                    break
+                time.sleep(0.5)
+            else:
+                logger.warning("snowflake-proxy n’a pas atteint l’état demandé (%s)", enabled)
         return self.status()
 
     def statistics(self, hours: int = 24) -> dict[str, Any]:
@@ -120,8 +130,8 @@ class SnowflakeRelay:
         if self.demo_mode:
             return {
                 "installed": True,
-                "enabled": True,
-                "active": True,
+                "enabled": self._demo_enabled,
+                "active": self._demo_enabled,
                 "controllable": True,
                 "statistics": self.statistics(),
             }
