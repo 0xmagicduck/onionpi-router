@@ -18,6 +18,59 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 - L’image Raspberry Pi OS exige une empreinte SHA-256 et la trace de premier
   démarrage ne journalise plus le condensat du mot de passe système.
 
+### Renforcé
+
+- L’interface expose un état de protection agrégé et ne confond plus « Tor
+  connecté » avec « routeur protégé ».
+- Le manifeste OpenPGP est contrôlé avant l’archive de mise à jour, limitée à
+  256 Mio ; les secrets de signature CI ne sont visibles que par l’étape GPG.
+
+## [0.2.1] — 2026-08-11
+
+Version de sécurité. Deux chemins permettaient à l’application web, si elle
+était compromise, d’obtenir une écriture root arbitraire, et un client Wi-Fi
+sans compte pouvait saturer la mémoire de la Raspberry Pi. Rien à faire côté
+utilisateur : les correctifs sont dans le service et dans les scripts
+privilégiés, appliqués par la mise à jour elle-même.
+
+### Corrigé
+
+- **Écriture root à travers un lien symbolique choisi par l’application.**
+  `onionpi-agent-apply` écrivait sa réponse dans `agent.result.tmp` par une
+  redirection ordinaire, dans un répertoire qui appartient à l’utilisateur
+  `onionpi` : ce dernier pouvait y placer un lien symbolique entre deux
+  commandes et faire écraser par root le fichier de son choix. La redirection
+  se fait maintenant sous `noclobber`, c’est-à-dire en `O_CREAT|O_EXCL`, qui
+  échoue sur tout nom existant au lieu de le suivre. Même correction pour le
+  `chmod` de `update.state`, désormais appliqué au descripteur et non au nom.
+- **Extraction root dans un répertoire redirigeable.** `onionpi-update`
+  décompressait la publication sous `/var/lib/onionpi/updates` sans vérifier ce
+  que ce nom désignait ; un lien symbolique planté là détournait le `rm -rf` et
+  l’extraction. Le lien est supprimé et le répertoire doit appartenir
+  exclusivement à root, sinon l’installation est refusée.
+- **Épuisement mémoire par connexions simultanées.** Chaque vérification de mot
+  de passe réserve 16 Mio, le compteur de tentatives ne voit que les essais
+  terminés, et FastAPI traite chaque requête dans son propre fil : quelques
+  dizaines de requêtes lancées ensemble suffisaient à saturer une Raspberry Pi
+  de 1 Gio sans aucun compte. Quatre vérifications au plus s’exécutent
+  désormais en parallèle, les autres attendent puis reçoivent un 429.
+- **Le service onion court-circuitait nginx.** Il pointait sur uvicorn, démarré
+  avec `--forwarded-allow-ips=127.0.0.1` : un visiteur venu de Tor choisissait
+  donc l’adresse sur laquelle son quota de connexion était compté, et
+  échappait aux limites de taille de corps. nginx écoute maintenant sur
+  `127.0.0.1:8081` pour ce trafic, qui traverse le même proxy que les clients
+  Wi-Fi.
+- **La configuration importée échappait aux limites des points d’entrée.**
+  `/api/v1/system/config` lisait le document à la main ; il passe désormais par
+  les mêmes schémas que `POST /circumvention`, `/dns-filter`, `/tor/policy` et
+  `/devices/block`, et les appareils bloqués sont appliqués en un seul envoi à
+  l’agent privilégié au lieu d’un par appareil.
+- **Condensat du compte système dans un journal lisible par tous.**
+  `firstrun.sh` traçait ses commandes avec `set -x` dans un fichier créé au
+  umask par défaut. Le journal est créé en 0600 et la trace est coupée sur le
+  bloc qui manipule les identifiants.
+- **Chemin contenant un octet nul** : `/api/v1/files` répondait 500 au lieu de
+  400.
 - **Fuite DNS lors du contrôle de l’adresse de sortie.** `TorController`
   interrogeait `check.torproject.org` par un proxy `socks5://`, ce qui fait
   résoudre le nom par le résolveur du système — celui du fournisseur d’accès —
@@ -41,11 +94,6 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ### Renforcé
 
-- L’interface expose un état de protection agrégé et ne confond plus « Tor
-  connecté » avec « routeur protégé ».
-- Le manifeste OpenPGP est contrôlé avant l’archive de mise à jour, limitée à
-  256 Mio ; les secrets de signature CI ne sont visibles que par l’étape GPG.
-
 - `ONIONPI_DEMO_MODE` sur une installation réelle est signalé en `ERROR` dans le
   journal : ce mode rend chaque commande inopérante et chaque mesure fictive.
 - Les réglages numériques (`ONIONPI_SESSION_TTL`, `ONIONPI_MAX_UPLOAD_BYTES`,
@@ -58,6 +106,12 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 - `onionpi.service` : `ProtectProc`, `ProtectHostname`, `ProtectClock`,
   `ProtectKernelLogs`, `RestrictNamespaces`, `SystemCallArchitectures`,
   `CapabilityBoundingSet=` vide.
+- nginx : `client_max_body_size` ramené à 4 Mio partout sauf sur
+  `/api/v1/files/upload`, et `server_tokens off`.
+- `/api/v1/health`, le seul point d’entrée accessible sans compte, ne publie
+  plus la version installée.
+- `RateLimiter` prend un verrou : le compteur du test de débit est partagé par
+  tous les fils de travail.
 
 ## [0.2.0] — 2026-08-11
 
@@ -141,3 +195,4 @@ partage de fichiers, chat local et service onion optionnel.
 
 [0.1.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.1.0
 [0.2.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.2.0
+[0.2.1]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.2.1

@@ -211,10 +211,13 @@ try:
     handle.write("\n")
     handle.flush()
     os.fsync(handle.fileno())
+    # Set ownership and mode on the already-open object. The parent is
+    # root-owned as well, so neither the descriptor nor its directory entry can
+    # be exchanged by the application.
+    os.fchown(handle.fileno(), 0, grp.getgrnam("onionpi").gr_gid)
+    os.fchmod(handle.fileno(), 0o640)
 finally:
     handle.close()
-os.chown(handle.name, 0, grp.getgrnam("onionpi").gr_gid)
-os.chmod(handle.name, 0o640)
 os.replace(handle.name, path)
 PY
 }
@@ -299,7 +302,7 @@ if not tarball:
 # ("edge"), the file name never is.
 version = re.fullmatch(r"onionpi-(.+)\.tar\.gz", tarball).group(1)
 # Must start with an alphanumeric: the version becomes a path component under
-# /var/lib/onionpi/updates, and ".." matched the old pattern, which turned an
+# /var/cache/onionpi-update, and ".." matched the old pattern, which turned an
 # asset called onionpi-...tar.gz into an "rm -rf" of the parent directory.
 if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+-]{0,39}", version) or ".." in version:
     raise SystemExit("numéro de version inattendu")
@@ -461,7 +464,14 @@ download_release() {
     log "Empreinte SHA-256 vérifiée."
   fi
 
-  install -d -m 0700 "$STAGING_ROOT"
+  # Refuse any unexpected object before a root extraction. install.sh creates
+  # this cache root-owned, and the updater reasserts that invariant here.
+  if [[ -L "$STAGING_ROOT" ]]; then
+    die "Lien symbolique inattendu en $STAGING_ROOT: extraction refusée"
+  fi
+  install -d -m 0700 -o root -g root "$STAGING_ROOT"
+  [[ "$(stat -c '%u:%a' "$STAGING_ROOT")" == "0:700" ]] \
+    || die "$STAGING_ROOT n’appartient pas exclusivement à root: extraction refusée"
   rm -rf "${STAGING_ROOT:?}/$version"
   install -d -m 0700 "$STAGING_ROOT/$version"
   # --no-same-owner: the archive is verified, but nothing it contains should be

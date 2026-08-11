@@ -5,6 +5,10 @@ set -Eeuo pipefail
 
 SETUP=/var/lib/onionpi-setup
 LOG=/var/log/onionpi-firstboot.log
+# Root-only: this log follows an installer that handles the Wi-Fi PSK and the
+# administrator digest, and nothing it records is anyone else's business.
+: >>"$LOG"
+chmod 0600 "$LOG"
 exec > >(tee -a "$LOG") 2>&1
 
 scrub() {

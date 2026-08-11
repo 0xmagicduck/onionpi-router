@@ -78,6 +78,7 @@ class Settings:
     cookie_secure: bool
     demo_mode: bool
     app_port: int
+    onion_target_port: int
     device_name: str
     session_secret: str
     storage_reserve_bytes: int
@@ -203,6 +204,7 @@ def _installed_version(project_root: Path) -> str:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
+    app_port = _bounded_int("ONIONPI_PORT", 8080, 1, 65535)
     data_dir = Path(os.getenv("ONIONPI_DATA_DIR", project_root / ".data")).resolve()
     shared_dir = Path(os.getenv("ONIONPI_SHARED_DIR", data_dir / "shared")).resolve()
     session_secret = os.getenv("ONIONPI_SESSION_SECRET", "")
@@ -251,7 +253,17 @@ def get_settings() -> Settings:
         ),
         cookie_secure=_flag("ONIONPI_COOKIE_SECURE"),
         demo_mode=_flag("ONIONPI_DEMO_MODE"),
-        app_port=_bounded_int("ONIONPI_PORT", 8080, 1, 65535),
+        app_port=app_port,
+        # Where the onion service sends its visitors. On a real install this is
+        # a loopback-only nginx listener, not uvicorn: a request arriving
+        # straight at the application would carry whatever X-Forwarded-For its
+        # author chose, and uvicorn trusts that header on a connection from
+        # 127.0.0.1 — which is exactly what a request coming out of Tor looks
+        # like. Routing it through the same reverse proxy as the Wi-Fi clients
+        # means the address the login throttle keys on is always rewritten from
+        # the real peer. Defaults to the application itself, so a laptop and the
+        # demonstration mode need no extra process.
+        onion_target_port=_bounded_int("ONIONPI_ONION_TARGET_PORT", app_port, 1, 65535),
         device_name=os.getenv("ONIONPI_DEVICE_NAME", "OnionPi"),
         session_secret=session_secret,
         # Never negative: the upload budget is free space minus this reserve,

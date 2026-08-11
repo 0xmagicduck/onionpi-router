@@ -6,8 +6,10 @@ import hmac
 import secrets
 import time
 from collections import defaultdict, deque
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from threading import Lock
+from threading import BoundedSemaphore, Lock
 
 #: Cost written by hash_password, and the floor verify_password accepts. The
 #: parameters travel inside each digest so they can be raised later without
@@ -18,6 +20,32 @@ SCRYPT_P = 1
 SCRYPT_DKLEN = 32
 #: Above this, one verification would allocate more memory than the Pi has.
 SCRYPT_MAX_N = 2**20
+
+#: Verifications allowed to run at the same time, process wide. One of them
+#: holds SCRYPT_N * SCRYPT_R * 128 bytes — 16 MiB with the parameters above —
+#: and FastAPI answers each login in its own worker thread. Login reservations
+#: close the admission race; this process-wide semaphore also covers password
+#: changes and future hashing call sites that do not pass through that limiter.
+HASHING_SLOTS = 4
+#: Waiting costs a parked thread and no memory, so a real operator queues
+#: behind a burst instead of being refused.
+HASHING_WAIT_SECONDS = 10.0
+_hashing_slots = BoundedSemaphore(HASHING_SLOTS)
+
+
+class PasswordHashingBusy(RuntimeError):
+    """Too many password verifications already in flight."""
+
+
+@contextmanager
+def hashing_slot(timeout: float = HASHING_WAIT_SECONDS) -> Iterator[None]:
+    """Caps how much scrypt memory the whole process can hold at once."""
+    if not _hashing_slots.acquire(timeout=timeout):
+        raise PasswordHashingBusy("Trop de vérifications simultanées")
+    try:
+        yield
+    finally:
+        _hashing_slots.release()
 
 
 def hash_password(password: str) -> str:
@@ -167,18 +195,23 @@ class LoginLimiter:
 
 
 class RateLimiter:
-    """Sliding window used for chat messages on a single connection."""
+    """Sliding window, shared by chat connections and the speed test."""
 
     def __init__(self, events: int, window_seconds: float) -> None:
         self.events = events
         self.window_seconds = window_seconds
         self._stamps: deque[float] = deque()
+        # The speed-test limiter is a module-level singleton reached from every
+        # worker thread: without the lock, two requests can both read a
+        # not-yet-full window and both be allowed.
+        self._lock = Lock()
 
     def allow(self) -> bool:
         now = time.monotonic()
-        while self._stamps and now - self._stamps[0] > self.window_seconds:
-            self._stamps.popleft()
-        if len(self._stamps) >= self.events:
-            return False
-        self._stamps.append(now)
-        return True
+        with self._lock:
+            while self._stamps and now - self._stamps[0] > self.window_seconds:
+                self._stamps.popleft()
+            if len(self._stamps) >= self.events:
+                return False
+            self._stamps.append(now)
+            return True

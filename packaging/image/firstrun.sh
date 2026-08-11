@@ -13,9 +13,10 @@ SETUP=/var/lib/onionpi-setup
 # never enable shell xtrace here: a userconf password hash is still a reusable
 # offline password-cracking target.
 umask 077
-: >/var/log/onionpi-firstrun.log
-chmod 0600 /var/log/onionpi-firstrun.log
-exec >>/var/log/onionpi-firstrun.log 2>&1
+LOGFILE=/var/log/onionpi-firstrun.log
+: >>"$LOGFILE"
+chmod 0600 "$LOGFILE"
+exec >>"$LOGFILE" 2>&1
 date
 
 if [ -s "$STAGE/hostname" ]; then
@@ -26,7 +27,8 @@ if [ -s "$STAGE/hostname" ]; then
   [ "$CURRENT" = "$NEW_HOSTNAME" ] || hostname "$NEW_HOSTNAME" || true
 fi
 
-# Create the login account the same way Raspberry Pi Imager does.
+# Create the login account the same way Raspberry Pi Imager does. Shell xtrace
+# stays disabled for the whole script so expanded hashes never reach the log.
 if [ -s "$STAGE/userconf.txt" ]; then
   LOGIN="$(cut -d: -f1 <"$STAGE/userconf.txt")"
   LOGIN_HASH="$(cut -d: -f2- <"$STAGE/userconf.txt")"
@@ -39,6 +41,7 @@ if [ -s "$STAGE/userconf.txt" ]; then
       printf '%s:%s\n' "$LOGIN" "$LOGIN_HASH" | chpasswd -e
     fi
   fi
+  LOGIN_HASH=""
 fi
 
 if [ -s "$STAGE/authorized_keys" ]; then
