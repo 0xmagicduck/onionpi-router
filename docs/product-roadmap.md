@@ -41,57 +41,61 @@ Trois critères guident chaque évolution :
 - L’image Raspberry Pi OS téléchargée est contrôlée par l’empreinte publiée ;
   une image personnalisée exige une empreinte explicite.
 
-## Priorités suivantes
+## Version 0.3.0 — feuille de route réalisée
 
-### P0 — rendre la mise à jour entièrement reproductible
+La version 0.3.0 livre les trois priorités le 11 août 2026. Les validations
+automatiques qui matérialisent les critères de sortie font partie du dépôt et
+du workflow de publication.
 
-- Construire en CI un **wheelhouse Python signé** et l’inclure dans l’archive.
-  `install.sh --upgrade` devra installer avec `pip --no-index --find-links`,
-  sans télécharger du code après la vérification OpenPGP.
-- Remplacer la mise à niveau en place par des versions immuables sous
-  `/opt/onionpi/releases/<version>`, un lien `current` basculé atomiquement et
-  un journal des mutations système. Le rollback devra également retirer les
-  fichiers introduits par une version interrompue.
-- Séparer la signature stable du dépôt : clé hors ligne ou environnement de
-  publication protégé avec approbation et règles empêchant un workflow modifié
-  d’accéder directement à la clé.
+### P0 — mise à jour reproductible
 
-Critère de sortie : couper le courant à chaque étape d’une mise à jour laisse
-soit l’ancienne version démarrable, soit la nouvelle version complètement
-validée, jamais un mélange des deux.
+- Les wheelhouses CPython 3.11 et 3.13 pour arm64 sont construits en CI,
+  inventoriés dans `wheelhouse/SHA256SUMS` et inclus dans l’archive signée.
+  Une mise à niveau installe exclusivement avec `pip --no-index --find-links`.
+- Chaque version est installée sous `/opt/onionpi/releases/<version>` puis le
+  lien `current` est basculé atomiquement. Un journal root des mutations
+  système permet au service de reprise de retirer les nouveaux fichiers et de
+  restaurer l’ancienne version après une coupure.
+- La construction non privilégiée ne reçoit aucune clé. Seul le job de
+  publication, rattaché à l’environnement GitHub protégé
+  `stable-release-signing`, peut signer les artefacts déjà testés.
 
-### P1 — rendre l’appareil évident à exploiter
+Critère validé par `packaging/tests/update-interruption-matrix.sh`, qui coupe
+l’installation et le rollback manuel à douze points durables et exige un lien
+`current` cohérent vers l’ancienne ou la nouvelle version.
 
-- Assistant de première ouverture : mot de passe administrateur, confirmation
-  des interfaces WAN/AP, test du coupe-circuit, vérification de l’heure et
-  sauvegarde d’un code de récupération.
-- Page « Protection » centrée sur quatre états et une action immédiate :
-  réparer Tor, corriger le DNS, relancer le pare-feu ou télécharger le rapport.
-- Mode maintenance physique, activé par console ou bouton pendant une fenêtre
-  courte, pour récupérer l’appareil sans laisser SSH ou une porte de secours
-  ouverte en permanence.
-- Sauvegarde chiffrée de la configuration et restauration avec aperçu des
-  changements avant application.
+### P1 — exploitation guidée
 
-Critère de sortie : une personne non spécialiste doit identifier la cause
-d’un état non protégé et l’action sûre à prendre en moins de deux minutes.
+- L’assistant de première ouverture impose successivement le changement du mot
+  de passe, la confirmation WAN/AP, le test réel du coupe-circuit, le contrôle
+  de l’heure et la sauvegarde d’un code de récupération.
+- La page « Protection » présente les quatre états et associe chaque contrôle
+  défaillant à une action sûre ou au téléchargement du diagnostic.
+- `onionpi-maintenance --open` active depuis la console une fenêtre locale de
+  1 à 30 minutes. Elle autorise la récupération du compte sans ouvrir SSH ni
+  ajouter de secret permanent.
+- Les sauvegardes utilisent AES-256-GCM avec une clé dérivée par scrypt. Leur
+  restauration affiche d’abord les changements et refuse toute enveloppe ou
+  phrase secrète invalide.
 
-### P2 — modulariser sans créer un système de plugins privilégiés
+Les métriques suivent désormais le temps et la proportion passés en
+`protected`, les entrées en `contained` et le taux de récupération réussie.
 
-- Extraire progressivement les routes de `main.py` en modules `auth`,
-  `protection`, `network`, `files`, `chat` et `updates`, injectés via une
-  structure `AppServices` testable plutôt que des singletons globaux.
-- Définir des interfaces internes pour `TorBackend`, `FirewallBackend`,
-  `AccessPointBackend` et `UpdateBackend`. Une plateforme de démonstration et
-  une plateforme Raspberry Pi implémentent les mêmes contrats.
-- Rendre enfichables uniquement les composants non privilégiés (catalogues de
-  ponts, fournisseurs de listes DNS, vues de diagnostic). Toute nouvelle
-  capacité root reste un verbe fermé, validé dans un helper installé et signé.
-- Versionner les schémas API de statut/configuration et générer les types
-  TypeScript depuis OpenAPI afin d’éviter la dérive frontend/backend.
+### P2 — architecture modulaire
 
-Critère de sortie : remplacer NetworkManager ou ajouter un transport Tor ne
-change ni les routes HTTP ni le modèle de protection.
+- `AppServices` compose les dépendances applicatives. Les routeurs FastAPI et
+  leurs contrats vivent dans les modules `auth`, `protection`, `network`,
+  `files`, `chat` et `updates` ; `main.py` ne conserve que la composition, le
+  cycle de vie et les middlewares.
+- `TorBackend`, `FirewallBackend`, `AccessPointBackend` et `UpdateBackend`
+  isolent les implémentations Raspberry Pi et démonstration sans élargir les
+  verbes privilégiés acceptés par le helper root.
+- Les réponses statut/configuration ont des schémas Pydantic versionnés. Le
+  document `docs/openapi-v1.json` et les types TypeScript sont régénérés en CI ;
+  toute dérive fait échouer la livraison.
+
+Cette frontière permet de remplacer un backend ou d’ajouter un transport Tor
+sans changer le modèle de protection ni les contrats HTTP publics.
 
 ## Garde-fous de livraison
 

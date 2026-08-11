@@ -1,0 +1,15 @@
+[Unit]
+Description=Recover an interrupted OnionPi update
+DefaultDependencies=no
+After=local-fs.target
+Before=tor.service dnsmasq.service nftables.service onionpi-firewall.service onionpi-ap.service onionpi.service
+ConditionPathExists=/usr/local/sbin/onionpi-update
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/onionpi-update --boot-recover --quiet
+RemainAfterExit=yes
+TimeoutStartSec=5min
+
+[Install]
+WantedBy=multi-user.target

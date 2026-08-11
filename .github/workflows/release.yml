@@ -16,15 +16,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      channel: ${{ steps.version.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +48,22 @@ jobs:
           pip install -r backend/requirements-dev.txt
           ruff check backend
           cd backend && python -m pytest -q
+
+      - name: Versioned OpenAPI contract
+        run: |
+          scripts/generate-api-types.py
+          git diff --exit-code -- docs/openapi-v1.json frontend/src/generated/api-v1.ts
+
+      - name: Appliance interruption matrix
+        run: |
+          scripts/check-resource-budget.sh
+          packaging/tests/update-interruption-matrix.sh
+
+      - name: Fail-closed network VM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nftables iproute2
+          sudo packaging/tests/fail-closed-vm.sh
 
       - name: Build the interface
         run: |
@@ -76,6 +95,30 @@ jobs:
         id: package
         run: ./scripts/build-release.sh "${{ steps.version.outputs.version }}"
 
+      - name: Upload the unsigned, tested publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: onionpi-unsigned-${{ steps.version.outputs.version }}
+          path: dist/
+          retention-days: 3
+
+  # Configure this GitHub environment with required reviewers, protected
+  # deployment branches and the GPG secret. The tested build job never receives
+  # the private key; a workflow change cannot sign until a reviewer approves
+  # this isolated publication job.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: stable-release-signing
+    permissions:
+      contents: write
+    steps:
+      - name: Download the tested publication
+        uses: actions/download-artifact@v4
+        with:
+          name: onionpi-unsigned-${{ needs.build.outputs.version }}
+          path: dist
+
       # The private key is mandatory because every default appliance requires
       # a signed SHA256SUMS document. The passphrase remains optional.
       - name: Sign SHA256SUMS
@@ -94,16 +137,16 @@ jobs:
             --detach-sign --armor --output dist/SHA256SUMS.asc dist/SHA256SUMS
 
       - name: Publish the stable release
-        if: steps.version.outputs.channel == 'stable'
+        if: needs.build.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${{ steps.version.outputs.version }}" dist/* \
-            --title "OnionPi ${{ steps.version.outputs.version }}" \
+          gh release create "v${{ needs.build.outputs.version }}" dist/* \
+            --title "OnionPi ${{ needs.build.outputs.version }}" \
             --generate-notes
 
       - name: Refresh the edge pre-release
-        if: steps.version.outputs.channel == 'edge'
+        if: needs.build.outputs.channel == 'edge'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -119,13 +162,13 @@ jobs:
           EOF
           sed -i 's/^          //' /tmp/edge-notes.md
           gh release create edge dist/* \
-            --title "OnionPi edge (${{ steps.version.outputs.version }})" \
+            --title "OnionPi edge (${{ needs.build.outputs.version }})" \
             --prerelease \
             --target "$GITHUB_SHA" \
             --notes-file /tmp/edge-notes.md
 
       - uses: actions/upload-artifact@v4
         with:
-          name: onionpi-${{ steps.version.outputs.version }}
+          name: onionpi-${{ needs.build.outputs.version }}
           path: dist/
           retention-days: 14

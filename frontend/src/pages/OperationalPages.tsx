@@ -21,6 +21,8 @@ import { Panel } from '../components/Panel'
 import { TorStatus } from '../components/TorStatus'
 import { TorAdvanced } from './TorAdvanced'
 import type {
+  BackupEnvelope,
+  BackupPreview,
   ChatMessage,
   Device,
   DiagnosticsPayload,
@@ -477,8 +479,8 @@ function UpdatePanel({ notify }: { notify: (message: string, error?: boolean) =>
       <p className="prose">
         La vérification et le téléchargement passent par le port SOCKS de Tor : le réseau local ne
         voit pas que cette adresse est une OnionPi. L’archive n’est installée qu’après contrôle de
-        son empreinte SHA-256, et /opt/onionpi est copié avant toute écriture — un contrôle
-        post-installation en échec restaure automatiquement la version précédente.
+        son empreinte SHA-256. La nouvelle version immuable est préparée hors ligne puis activée
+        atomiquement ; un échec ou une coupure restaure automatiquement la version précédente.
       </p>
       {state.history.length > 0 && (
         <ul className="check-list">
@@ -492,20 +494,29 @@ function UpdatePanel({ notify }: { notify: (message: string, error?: boolean) =>
 function ConfigPanel({ notify }: { notify: (message: string, error?: boolean) => void }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
+  const [passphrase, setPassphrase] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [pending, setPending] = useState<BackupEnvelope>()
+  const [preview, setPreview] = useState<BackupPreview>()
 
   const download = async () => {
+    if (passphrase !== confirmation) {
+      notify('Les deux phrases de sauvegarde diffèrent.', true)
+      return
+    }
     setBusy(true)
     try {
-      const document_ = await api.exportConfig()
-      const blob = new Blob([JSON.stringify(document_, null, 2)], { type: 'application/json' })
+      const envelope = await api.createBackup(passphrase)
+      const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = 'onionpi-config.json'
+      link.download = 'onionpi-backup.json'
       link.click()
       URL.revokeObjectURL(url)
+      notify('Sauvegarde chiffrée téléchargée')
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : 'Export impossible', true)
+      notify(reason instanceof Error ? reason.message : 'Sauvegarde impossible', true)
     } finally {
       setBusy(false)
     }
@@ -517,14 +528,11 @@ function ConfigPanel({ notify }: { notify: (message: string, error?: boolean) =>
     if (!file) return
     setBusy(true)
     try {
-      const parsed = JSON.parse(await file.text())
-      const result = await api.importConfig(parsed)
-      notify(
-        result.failures.length
-          ? `Import partiel: ${result.failures.join(' · ')}`
-          : `Import terminé: ${result.applied.join(', ') || 'rien à restaurer'}`,
-        result.failures.length > 0,
-      )
+      const parsed = JSON.parse(await file.text()) as BackupEnvelope
+      if (parsed.schema !== 'onionpi-config-backup-v1') throw new Error('Ce fichier n’est pas une sauvegarde OnionPi chiffrée')
+      setPending(parsed)
+      setPreview(undefined)
+      notify('Sauvegarde chargée. Saisissez sa phrase, puis prévisualisez.')
     } catch (reason) {
       notify(reason instanceof Error ? reason.message : 'Fichier illisible', true)
     } finally {
@@ -532,21 +540,70 @@ function ConfigPanel({ notify }: { notify: (message: string, error?: boolean) =>
     }
   }
 
+  const inspect = async () => {
+    if (!pending) return
+    setBusy(true)
+    try {
+      setPreview(await api.previewBackup(pending, passphrase))
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Sauvegarde illisible', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const restore = async () => {
+    if (!pending || !preview) return
+    setBusy(true)
+    try {
+      const result = await api.restoreBackup(pending, passphrase)
+      notify(
+        result.failures.length
+          ? `Restauration partielle : ${result.failures.join(' · ')}`
+          : `Restauration terminée : ${result.applied.join(', ') || 'aucun changement'}`,
+        result.failures.length > 0,
+      )
+      setPending(undefined)
+      setPreview(undefined)
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Restauration impossible', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
-    <Panel title="Sauvegarde de la configuration">
+    <Panel title="Sauvegarde chiffrée">
       <p className="prose">
-        Le fichier contient les ponts, la politique de sortie, le filtrage DNS et les appareils
-        bloqués. Il ne contient aucun mot de passe, ni la clé du service onion.
+        La configuration est chiffrée en AES-256-GCM avant de quitter l’OnionPi. La restauration
+        affiche toujours les changements avant de les appliquer.
       </p>
+      <form className="settings-form" onSubmit={(event) => event.preventDefault()}>
+        <label>Phrase de sauvegarde<input type="password" minLength={12} value={passphrase} onChange={(event) => { setPassphrase(event.target.value); setPreview(undefined) }} /></label>
+        {!pending && <label>Confirmation<input type="password" minLength={12} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>}
+      </form>
       <div className="action-grid">
-        <button className="button button-secondary" disabled={busy} onClick={() => void download()}>
-          <Download size={15} /> Exporter
-        </button>
-        <button className="button button-secondary" disabled={busy} onClick={() => fileInput.current?.click()}>
-          <Upload size={15} /> Importer
-        </button>
+        {!pending && <button className="button button-secondary" disabled={busy || passphrase.length < 12} onClick={() => void download()}>
+          <Download size={15} /> Télécharger la sauvegarde
+        </button>}
+        {!pending && <button className="button button-secondary" disabled={busy} onClick={() => fileInput.current?.click()}>
+          <Upload size={15} /> Choisir une sauvegarde
+        </button>}
+        {pending && !preview && <button className="button button-primary" disabled={busy || passphrase.length < 12} onClick={() => void inspect()}>
+          <ShieldCheck size={15} /> Prévisualiser
+        </button>}
+        {pending && <button className="button button-secondary" disabled={busy} onClick={() => { setPending(undefined); setPreview(undefined) }}>
+          Annuler
+        </button>}
         <input ref={fileInput} type="file" accept="application/json" hidden onChange={(event) => void upload(event)} />
       </div>
+      {preview && (
+        <div className="backup-preview">
+          <strong>{preview.changes.length} section(s) seront modifiées</strong>
+          {preview.changes.length ? <ul>{preview.changes.map((change) => <li key={change.section}>{change.section}</li>)}</ul> : <p>Aucune différence.</p>}
+          <button className="button button-primary" disabled={busy || preview.changes.length === 0} onClick={() => void restore()}>Appliquer la restauration</button>
+        </div>
+      )}
     </Panel>
   )
 }

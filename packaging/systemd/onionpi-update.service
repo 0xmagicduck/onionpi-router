@@ -1,8 +1,8 @@
 [Unit]
 Description=Applies the OnionPi update policy
-Documentation=file:/opt/onionpi/README.md
-After=network-online.target tor.service
-Wants=network-online.target
+Documentation=file:/opt/onionpi/current/README.md
+After=network-online.target tor.service onionpi-update-recover.service
+Wants=network-online.target onionpi-update-recover.service
 # Downloads go through the Tor SOCKS port, so a stopped Tor means no update
 # rather than a clear-text request to GitHub.
 ConditionPathExists=/usr/local/sbin/onionpi-update

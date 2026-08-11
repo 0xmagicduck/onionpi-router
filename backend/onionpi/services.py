@@ -1,0 +1,145 @@
+"""Composition root for the application and its replaceable platform adapters."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .agent import PrivilegedAgent
+from .auth import LoginLimiter, RateLimiter
+from .backends import (
+    AccessPointBackend,
+    DemoAccessPointBackend,
+    DemoFirewallBackend,
+    FirewallBackend,
+    RaspberryPiAccessPointBackend,
+    RaspberryPiFirewallBackend,
+)
+from .circumvention import CircumventionManager
+from .config import Settings
+from .database import Database
+from .maintenance import MaintenanceWindow
+from .netcontrol import DeviceGuard, DnsFilter
+from .onboarding import OnboardingManager
+from .onion import OnionService
+from .policy import TorPolicy
+from .relay import SnowflakeRelay
+from .system import MetricsSampler
+from .tor_control import TorController
+from .updates import UpdateManager
+
+
+@dataclass(slots=True)
+class AppServices:
+    settings: Settings
+    database: Database
+    tor: TorController
+    metrics: MetricsSampler
+    login_limiter: LoginLimiter
+    circumvention: CircumventionManager
+    relay: SnowflakeRelay
+    agent: PrivilegedAgent
+    device_guard: DeviceGuard
+    dns_filter: DnsFilter
+    tor_policy: TorPolicy
+    onion: OnionService
+    updates: UpdateManager
+    speedtest_limiter: RateLimiter
+    firewall: FirewallBackend
+    access_point: AccessPointBackend
+    maintenance: MaintenanceWindow
+    onboarding: OnboardingManager
+
+
+def build_app_services(settings: Settings) -> AppServices:
+    database = Database(settings.database_path)
+    tor = TorController(
+        settings.tor_control_host,
+        settings.tor_control_port,
+        settings.tor_cookie_path,
+        settings.demo_mode,
+    )
+    metrics = MetricsSampler(settings.upstream_interface, settings.demo_mode)
+    login_limiter = LoginLimiter()
+    circumvention = CircumventionManager(
+        config_path=settings.bridge_config_path,
+        state_path=settings.circumvention_state_path,
+        cache_path=settings.circumvention_cache_path,
+        controller=tor,
+        country=settings.country,
+        demo_mode=settings.demo_mode,
+        on_event=lambda kind, message: database.add_activity(kind, message),
+    )
+    relay = SnowflakeRelay(settings.relay_state_path, settings.demo_mode)
+    agent = PrivilegedAgent(
+        settings.agent_request_path, settings.agent_result_path, settings.demo_mode
+    )
+    device_guard = DeviceGuard(
+        database,
+        settings.blocked_macs_path,
+        agent,
+        settings.demo_mode,
+        on_event=lambda kind, message: database.add_activity(kind, message),
+    )
+    dns_filter = DnsFilter(
+        database,
+        settings.dns_block_path,
+        agent,
+        demo_mode=settings.demo_mode,
+        on_event=lambda kind, message: database.add_activity(kind, message),
+    )
+    tor_policy = TorPolicy(
+        database,
+        settings.tor_policy_path,
+        tor,
+        settings.demo_mode,
+        on_event=lambda kind, message: database.add_activity(kind, message),
+    )
+    onion = OnionService(
+        database,
+        settings.onion_key_path,
+        tor,
+        target=f"127.0.0.1:{settings.onion_target_port}",
+        demo_mode=settings.demo_mode,
+        on_event=lambda kind, message: database.add_activity(kind, message),
+    )
+    updates = UpdateManager(
+        settings.update_state_path,
+        settings.update_settings_path,
+        settings.version,
+        settings.demo_mode,
+    )
+    if settings.demo_mode:
+        firewall: FirewallBackend = DemoFirewallBackend()
+        access_point: AccessPointBackend = DemoAccessPointBackend(
+            settings.wifi_interface, settings.upstream_interface, settings.gateway_ip
+        )
+    else:
+        firewall = RaspberryPiFirewallBackend(agent)
+        access_point = RaspberryPiAccessPointBackend(
+            agent,
+            settings.wifi_interface,
+            settings.upstream_interface,
+            settings.gateway_ip,
+        )
+    maintenance = MaintenanceWindow(settings.maintenance_state_path, settings.demo_mode)
+    onboarding = OnboardingManager(database, settings, firewall, maintenance)
+    return AppServices(
+        settings=settings,
+        database=database,
+        tor=tor,
+        metrics=metrics,
+        login_limiter=login_limiter,
+        circumvention=circumvention,
+        relay=relay,
+        agent=agent,
+        device_guard=device_guard,
+        dns_filter=dns_filter,
+        tor_policy=tor_policy,
+        onion=onion,
+        updates=updates,
+        speedtest_limiter=RateLimiter(events=3, window_seconds=120),
+        firewall=firewall,
+        access_point=access_point,
+        maintenance=maintenance,
+        onboarding=onboarding,
+    )

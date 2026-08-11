@@ -7,7 +7,7 @@ annoncer sa présence au réseau local, ni installer n’importe quoi.
 ## La chaîne complète
 
 ```
-git push origin main            git push origin v0.2.0
+git push origin main            git push origin v0.3.0
         │                                │
         ▼                                ▼
    .github/workflows/release.yml (tests, puis publication)
@@ -18,9 +18,9 @@ git push origin main            git push origin v0.2.0
                        ▼
       onionpi-update.timer  →  onionpi-update --apply
                        │
-      SHA256SUMS (+ signature) → sauvegarde → install.sh --upgrade
+ SHA256SUMS (+ signature) → journal root → install.sh --upgrade hors ligne
                        │
-              onionpi-verify → retour arrière si échec
+       lien current atomique → onionpi-verify → retour arrière si échec
 ```
 
 Rien n’est poussé vers la Pi : c’est elle qui demande, aux heures qu’elle
@@ -100,16 +100,12 @@ sudo onionpi-update --apply --force
    Ce que cela couvre, et ce que cela ne couvre pas :
 
    - couvert : une archive modifiée entre GitHub et la Pi, un miroir hostile,
-     un fichier remplacé sur la page de publication, et une publication faite
-     par quelqu’un qui n’a pas accès aux secrets de ce dépôt ;
-   - **non couvert** : un attaquant capable d’écrire dans ce dépôt. Un
-     workflow qu’il ajoute peut demander `ONIONPI_GPG_PRIVATE_KEY` au coffre
-     d’Actions et signer ce qu’il veut. La clé de signature vit dans le même
-     système que le code qu’elle authentifie, et c’est la limite de ce montage.
-
-   Pour cette séparation-là, il faut sortir la clé du CI : la garder hors
-   ligne, signer `SHA256SUMS` à la main et téléverser le `.asc` sur la
-   publication. Le client de mise à jour ne voit aucune différence.
+     un fichier remplacé sur la page de publication, et une modification du
+     workflow qui n’a pas obtenu l’approbation de publication ;
+   - **non couvert** : la compromission simultanée d’un administrateur du dépôt
+     et d’un approbateur de l’environnement de signature, ou celle de la clé
+     privée elle-même. Une clé conservée et utilisée entièrement hors ligne
+     reste la séparation la plus forte.
 
    Vérifier à la main ce que la Pi vérifie toute seule :
 
@@ -124,30 +120,34 @@ sudo onionpi-update --apply --force
    signalée. Passez à `0` uniquement si vous construisez vos propres archives
    non signées.
 
-   Côté dépôt, la signature est faite en CI avec le secret
-   `ONIONPI_GPG_PRIVATE_KEY` (et `ONIONPI_GPG_PASSPHRASE` si la clé en a une).
-   Perdre la clé privée n’empêche rien de fonctionner, mais oblige à publier
-   une nouvelle clé publique par une mise à jour signée avec l’ancienne — donc
-   à ne pas la perdre en premier.
+   Côté dépôt, le job de construction ne reçoit aucun secret. Après les tests,
+   ses artefacts sont transmis au job `publish`, rattaché à l’environnement
+   protégé `stable-release-signing`. Cet environnement doit imposer des
+   approbateurs, des branches de déploiement protégées et contenir
+   `ONIONPI_GPG_PRIVATE_KEY` (ainsi que `ONIONPI_GPG_PASSPHRASE` si nécessaire).
+   Perdre la clé privée oblige à publier sa remplaçante par une mise à jour
+   signée avec l’ancienne.
 4. **Le contenu.** L’archive doit contenir `packaging/install.sh`, une
-   interface construite, et un fichier `VERSION` égal à la version annoncée par
-   le nom du fichier.
+   interface construite, un `VERSION` cohérent, les wheelhouses arm64 avec leur
+   propre manifeste SHA-256 et une nomenclature SPDX. Le SBOM externe est lui
+   aussi couvert par le `SHA256SUMS` signé.
 
 ## Ce qui se passe pendant l’installation
 
-`/opt/onionpi` est copié dans `/var/backups/onionpi-update-<horodatage>/`, avec
-les unités systemd, les helpers privilégiés, nginx, dnsmasq, sysctl, les
-fragments Tor et les autres fichiers installés sous `/etc/onionpi`. Puis
-`packaging/install.sh --upgrade` réinstalle par‑dessus : il relit
-`/etc/onionpi/install.conf` au lieu de poser des questions, ne touche ni au
-profil NetworkManager (qui contient le PSK), ni au compte administrateur, ni à
-la base, ni au proxy Snowflake s’il tourne.
+L’application est construite dans un nouveau répertoire immuable
+`/opt/onionpi/releases/<version>`. Python est installé depuis le wheelhouse de
+l’archive, sans accès réseau. Avant toute mutation, le client enregistre la
+cible actuelle et les fichiers système gérés dans
+`/var/backups/onionpi-update-<horodatage>/`, puis écrit un journal root. Le lien
+`/opt/onionpi/current` n’est basculé qu’une fois la nouvelle arborescence
+complète.
 
-`onionpi-verify` juge le résultat. En cas d’échec, toute cette copie est
-restaurée, puis Tor, nftables, le pare-feu OnionPi, dnsmasq, nginx et
-l’application sont redémarrés dans cet ordre : la version précédente revient
-sans mélange avec les helpers de la nouvelle. Les trois dernières sauvegardes
-sont conservées.
+`onionpi-verify` juge ensuite le résultat. En cas d’échec, ou si
+`onionpi-update-recover.service` trouve le journal après une coupure, les
+fichiers introduits sont retirés, les précédents sont restaurés et `current`
+revient atomiquement vers l’ancienne version. Tor, nftables, dnsmasq, nginx et
+l’application redémarrent alors dans cet ordre. Les trois dernières
+sauvegardes et leurs versions référencées sont conservées.
 
 ## Diagnostiquer
 
@@ -156,6 +156,7 @@ onionpi-update --status                 # document JSON, lisible sans root
 sudo onionpi-update --check             # cherche, n'installe pas
 sudo onionpi-update --apply             # installe maintenant
 sudo onionpi-update --rollback          # revient à la sauvegarde la plus récente
+sudo onionpi-update --recover           # reprend immédiatement un journal interrompu
 journalctl -u onionpi-update -n 100 --no-pager
 ```
 

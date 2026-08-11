@@ -1,8 +1,9 @@
 [Unit]
 Description=OnionPi protected Wi-Fi access point
-Documentation=file:/opt/onionpi/README.md
+Documentation=file:/opt/onionpi/current/README.md
 Requires=NetworkManager.service onionpi-firewall.service
-After=NetworkManager.service onionpi-firewall.service
+Wants=onionpi-update-recover.service
+After=NetworkManager.service onionpi-firewall.service onionpi-update-recover.service
 BindsTo=onionpi-firewall.service
 PartOf=onionpi-firewall.service
 

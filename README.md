@@ -25,6 +25,10 @@ partage de fichiers, chat et journaux système.
 - administration HTTPS locale, session HttpOnly, CSRF et limitation des essais ;
 - état de protection unique qui distingue démonstration, dégradation sûre,
   confinement et protection complète ;
+- assistant de première ouverture : mot de passe, interfaces, test du
+  coupe-circuit, horloge et code de récupération ;
+- récupération locale limitée dans le temps par `onionpi-maintenance`, sans
+  SSH ni porte de secours permanente ;
 - nouvelle identité Tor depuis l’interface ;
 - ponts et transports enfichables (Snowflake, obfs4, meek) avec bascule
   automatique quand Tor est bloqué ;
@@ -35,8 +39,8 @@ partage de fichiers, chat et journaux système.
 - pays du relais de sortie et rotation d’identité programmée ;
 - mesure du débit réel à travers le circuit courant ;
 - service onion optionnel pour joindre l’interface depuis l’extérieur ;
-- redémarrage des services, redémarrage/extinction de la Pi et
-  export/import de la configuration depuis l’interface ;
+- redémarrage des services, redémarrage/extinction de la Pi et sauvegarde
+  chiffrée/restauration avec aperçu depuis l’interface ;
 - diagnostic local de santé (SQLite, stockage, services, Tor, horloge et
   fichiers système), accompagné de remèdes et exportable en JSON ;
 - métriques CPU, mémoire, température, disque et débit réseau ;
@@ -48,8 +52,8 @@ partage de fichiers, chat et journaux système.
 - console de la Pi habillée : bannière ASCII au démarrage et à la connexion,
   message du jour avec l’état réel, invite de commande et `onionpi-status` ;
 - mise à jour automatique aux heures choisies, téléchargée par Tor, vérifiée
-  par empreinte/signature, bornée en taille et annulée toute seule si le
-  contrôle post-installation échoue.
+  par empreinte/signature, installée hors ligne dans une version immuable et
+  annulée toute seule si le contrôle post-installation échoue ou est interrompu.
 
 ## Matériel et système
 
@@ -326,11 +330,11 @@ Ce qui protège l’appareil :
   est installée avec le code, et la signature est exigée, pas seulement
   signalée. Ce que cela couvre exactement est décrit dans
   [`docs/updates.md`](docs/updates.md) ;
-- **toute la surface installée est copiée avant écriture** : `/opt/onionpi`,
-  unités systemd, helpers privilégiés et configurations. La réinstallation
-  garde le point d’accès, les mots de passe et les données ; si
-  `onionpi-verify` échoue ensuite, l’ensemble de la version précédente est
-  restauré puis redémarré ;
+- **chaque version applicative est immuable** sous
+  `/opt/onionpi/releases/<version>` et le lien `current` est basculé
+  atomiquement. Les dépendances Python viennent du wheelhouse signé, sans
+  téléchargement pendant l’installation. Un journal root restaure aussi les
+  fichiers système après un échec ou une coupure ;
 - **l’interface web ne peut pas se mettre à jour elle-même** : elle écrit un
   verbe, `onionpi-agent-apply` le revalide en root, comme pour un redémarrage.
 
@@ -345,9 +349,21 @@ version et signature : [`docs/updates.md`](docs/updates.md).
 ## Maintenance depuis l’interface
 
 La page **Paramètres** permet de redémarrer Tor, le DNS, le Wi-Fi ou le
-pare-feu, de redémarrer ou d’éteindre la Pi, et d’exporter/importer la
-configuration (ponts, politique de sortie, filtrage DNS, appareils bloqués —
-jamais un mot de passe ni la clé onion).
+pare-feu, de redémarrer ou d’éteindre la Pi, et de créer/restaurer une
+sauvegarde AES-256-GCM de la configuration. La restauration affiche les
+changements avant application ; le mot de passe administrateur et la clé onion
+ne sont jamais inclus.
+
+En cas de perte du mot de passe, ouvrez une fenêtre physique depuis la console
+de la Pi, puis utilisez le code conservé pendant l’assistant initial :
+
+```bash
+sudo onionpi-maintenance --open 15
+```
+
+La récupération apparaît alors sur la page de connexion pendant quinze
+minutes au maximum. `sudo onionpi-maintenance --close` referme immédiatement la
+fenêtre. Cette commande n’active ni SSH ni nouveau port réseau.
 
 Le panneau **Diagnostic de santé** vérifie en une fois l’intégrité de la base,
 l’espace restant, les quatre services critiques, le bootstrap Tor, la file

@@ -5,6 +5,29 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [0.3.0] — 2026-08-11
+
+Version appliance : mise à jour hermétique et récupérable après une coupure,
+première ouverture guidée, protection actionnable, sauvegardes chiffrées et
+contrats internes modulaires.
+
+### Ajouté
+
+- Wheelhouses arm64 CPython 3.11/3.13 inclus dans l’archive signée, installation
+  `pip --no-index` et nomenclature SPDX publiée avec chaque version.
+- Versions immuables sous `/opt/onionpi/releases`, bascule atomique de `current`,
+  journal des mutations root et service de reprise au démarrage.
+- Matrice de douze interruptions de mise à jour, test fail-closed en espace réseau
+  Linux et budget de ressources contrôlés par la CI.
+- Assistant initial en cinq étapes, code de récupération scrypt et fenêtre de
+  maintenance physique de 1 à 30 minutes.
+- Page Protection à quatre états, actions correctives et métriques de temps
+  protégé, confinement et récupération réussie.
+- Sauvegardes AES-256-GCM protégées par phrase secrète, avec aperçu des
+  changements avant restauration.
+- Composition `AppServices`, interfaces de backends, routeurs FastAPI séparés,
+  schémas OpenAPI versionnés et types TypeScript générés.
+
 ### Corrigé
 
 - Le point d’accès dépend maintenant du coupe-circuit et le remplacement de la
@@ -24,6 +47,9 @@ numérotation [SemVer](https://semver.org/lang/fr/).
   connecté » avec « routeur protégé ».
 - Le manifeste OpenPGP est contrôlé avant l’archive de mise à jour, limitée à
   256 Mio ; les secrets de signature CI ne sont visibles que par l’étape GPG.
+- La signature est isolée dans un job de publication rattaché à l’environnement
+  GitHub protégé `stable-release-signing` ; le job de construction ne reçoit
+  jamais la clé privée.
 
 ## [0.2.1] — 2026-08-11
 
@@ -196,3 +222,4 @@ partage de fichiers, chat local et service onion optionnel.
 [0.1.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.1.0
 [0.2.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.2.0
 [0.2.1]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.2.1
+[0.3.0]: https://github.com/0xmagicduck/onionpi-router/releases/tag/v0.3.0

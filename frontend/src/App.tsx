@@ -10,6 +10,7 @@ import { CircumventionPage } from './pages/CircumventionPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { FilesPage } from './pages/FilesPage'
 import { LoginPage } from './pages/LoginPage'
+import { OnboardingPage } from './pages/OnboardingPage'
 import { ChatPage, LogsPage, NetworkPage, SettingsPage, TorPage } from './pages/OperationalPages'
 import { ProtectionPage } from './pages/ProtectionPage'
 import type { Session } from './types'
@@ -41,6 +42,7 @@ function AuthenticatedApp({ session, onSignedOut }: { session: Session; onSigned
   const [identityBusy, setIdentityBusy] = useState(false)
   const [toast, setToast] = useState<{ message: string; error?: boolean }>()
   const status = usePolling(api.status, 10_000)
+  const onboarding = usePolling(api.onboarding, 15_000)
   const devices = usePolling(api.devices, 12_000)
   const traffic = usePolling(api.traffic, 5_000)
   const chat = useChat(true)
@@ -82,6 +84,13 @@ function AuthenticatedApp({ session, onSignedOut }: { session: Session; onSigned
     if (authExpired) void logout()
   }, [authExpired])
 
+  if (!onboarding.data && !onboarding.error) {
+    return <div className="app-loader"><img src="/onionpi-mark.png" alt="" /><span>Vérification de la configuration…</span></div>
+  }
+  if (onboarding.data && !onboarding.data.complete) {
+    return <OnboardingPage state={onboarding.data} refresh={onboarding.refresh} onPasswordChanged={onSignedOut} />
+  }
+
   return (
     <div className={`app-shell ${collapsed ? 'app-collapsed' : ''}`}>
       <Sidebar page={page} collapsed={collapsed} mobileOpen={mobileOpen} onSelect={setPage} onCollapse={() => setCollapsed((value) => !value)} onMobileClose={() => setMobileOpen(false)} />
@@ -93,7 +102,7 @@ function AuthenticatedApp({ session, onSignedOut }: { session: Session; onSigned
         {page === 'tor' && <TorPage status={status.data} busy={identityBusy} onNewIdentity={newIdentity} onOpenBridges={() => setPage('bridges')} notify={notify} />}
         {page === 'bridges' && <CircumventionPage status={status.data} notify={notify} onStatusRefresh={() => void status.refresh()} />}
         {page === 'devices' && <div className="page operational-page"><div className="page-title"><h1>Appareils</h1><p>Clients actuellement visibles sur le point d’accès OnionPi.</p></div><DeviceTable devices={devices.data ?? []} /></div>}
-        {page === 'protection' && <ProtectionPage devices={devices.data ?? []} notify={notify} onDevicesRefresh={() => void devices.refresh()} />}
+        {page === 'protection' && <ProtectionPage status={status.data} devices={devices.data ?? []} notify={notify} onDevicesRefresh={() => void devices.refresh()} />}
         {page === 'files' && <FilesPage activities={status.data?.activities ?? []} chat={chat} />}
         {page === 'chat' && <ChatPage {...chat} />}
         {page === 'logs' && <LogsPage />}

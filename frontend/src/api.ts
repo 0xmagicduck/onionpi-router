@@ -1,5 +1,7 @@
 import type {
   BlockedDevice,
+  BackupEnvelope,
+  BackupPreview,
   CircumventionPayload,
   ConnectionMode,
   DevicesPayload,
@@ -7,6 +9,7 @@ import type {
   DnsFilterState,
   FilesPayload,
   OnionState,
+  OnboardingState,
   Session,
   SpeedTestResult,
   StatusPayload,
@@ -66,6 +69,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),
+  recoverAccount: (recoveryCode: string, newPassword: string) =>
+    request<{ ok: boolean; message: string }>('/api/v1/auth/recover', {
+      method: 'POST',
+      body: JSON.stringify({ recovery_code: recoveryCode, new_password: newPassword }),
+    }),
+  onboarding: () => request<OnboardingState>('/api/v1/onboarding'),
+  confirmOnboardingInterfaces: (wan: string, accessPoint: string) =>
+    request<OnboardingState>('/api/v1/onboarding/interfaces', {
+      method: 'POST',
+      body: JSON.stringify({ wan, access_point: accessPoint }),
+    }),
+  testOnboardingFirewall: () =>
+    request<{ onboarding: OnboardingState; test: { message: string } }>(
+      '/api/v1/onboarding/firewall',
+      { method: 'POST' },
+    ),
+  confirmOnboardingClock: () =>
+    request<OnboardingState>('/api/v1/onboarding/clock', { method: 'POST' }),
+  createRecoveryCode: () =>
+    request<{ code: string; onboarding: OnboardingState }>(
+      '/api/v1/onboarding/recovery-code',
+      { method: 'POST' },
+    ),
+  confirmRecoveryCodeSaved: () =>
+    request<OnboardingState>('/api/v1/onboarding/recovery-code/confirm', { method: 'POST' }),
   status: () => request<StatusPayload>('/api/v1/status'),
   traffic: async () => (await request<{ samples: TrafficSample[] }>('/api/v1/traffic')).samples,
   devices: async () => (await request<DevicesPayload>('/api/v1/devices')).devices,
@@ -107,6 +135,21 @@ export const api = {
     request<{ applied: string[]; failures: string[] }>('/api/v1/system/config', {
       method: 'POST',
       body: JSON.stringify({ document }),
+    }),
+  createBackup: (passphrase: string) =>
+    request<BackupEnvelope>('/api/v1/system/backup', {
+      method: 'POST',
+      body: JSON.stringify({ passphrase }),
+    }),
+  previewBackup: (backup: BackupEnvelope, passphrase: string) =>
+    request<BackupPreview>('/api/v1/system/backup/preview', {
+      method: 'POST',
+      body: JSON.stringify({ backup, passphrase }),
+    }),
+  restoreBackup: (backup: BackupEnvelope, passphrase: string) =>
+    request<{ applied: string[]; failures: string[] }>('/api/v1/system/backup/restore', {
+      method: 'POST',
+      body: JSON.stringify({ backup, passphrase }),
     }),
   newIdentity: () => request<{ ok: boolean; message: string }>('/api/v1/tor/new-identity', { method: 'POST' }),
   circumvention: () => request<CircumventionPayload>('/api/v1/circumvention'),

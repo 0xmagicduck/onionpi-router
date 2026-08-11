@@ -31,6 +31,8 @@ step() {
 if [[ "$ONLY" == all || "$ONLY" == meta ]]; then
   step "Cohérence des versions" ./scripts/check-version.sh
   step "Secrets" ./scripts/check-secrets.sh
+  step "Budget Raspberry Pi" ./scripts/check-resource-budget.sh
+  step "Types API générés" ./scripts/generate-api-types.py
   # A workflow that does not parse fails in zero seconds with "workflow file
   # issue" and no log to read, so it is worth catching here.
   step "YAML des workflows" "$PYTHON" - <<'PY'
@@ -69,6 +71,7 @@ if [[ "$ONLY" == all || "$ONLY" == frontend ]]; then
 fi
 
 if [[ "$ONLY" == all || "$ONLY" == shell ]]; then
+  step "Matrice d’interruption" packaging/tests/update-interruption-matrix.sh
   if command -v shellcheck >/dev/null; then
     # shellcheck disable=SC2046
     step "shellcheck" shellcheck --severity=warning --shell=bash $(git ls-files '*.sh')

@@ -1,6 +1,6 @@
 [Unit]
 Description=Applies the OnionPi Snowflake proxy switch
-Documentation=file:/opt/onionpi/README.md
+Documentation=file:/opt/onionpi/current/README.md
 After=network-online.target
 Wants=network-online.target
 

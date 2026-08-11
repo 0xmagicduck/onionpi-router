@@ -2,6 +2,15 @@
 set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+RELEASE_VERSION="$(head -n 1 "$PROJECT_ROOT/VERSION" 2>/dev/null | tr -d '[:space:]')"
+if [[ ! "$RELEASE_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]{0,39}$ || "$RELEASE_VERSION" == *..* ]]; then
+  printf 'Version de publication invalide: %s\n' "$RELEASE_VERSION" >&2
+  exit 1
+fi
+INSTALL_BASE="/opt/onionpi"
+RELEASES_ROOT="$INSTALL_BASE/releases"
+RELEASE_DIR="$RELEASES_ROOT/$RELEASE_VERSION"
+CURRENT_LINK="$INSTALL_BASE/current"
 WAN_INTERFACE="eth0"
 WIFI_INTERFACE="wlan0"
 SSID="OnionPi Wi-Fi"
@@ -44,7 +53,7 @@ Mises à jour automatiques:
   --update-check-only      télécharge l'information, n'installe pas tout seul
   --no-updates             installe le service mais laisse la minuterie arrêtée
 
-Réinstallation en place (utilisée par onionpi-update):
+Mise à niveau immuable (utilisée par onionpi-update):
   --upgrade            conserve mots de passe, Wi-Fi et comptes existants
 
 Les mots de passe ne sont jamais acceptés en argument. Utilisez les invites
@@ -222,7 +231,7 @@ if (( ! UPGRADE )); then
 fi
 
 if (( UPGRADE )); then
-  printf '\nMise à jour d’OnionPi en place (%s, %s).\n' "$WIFI_INTERFACE" "$SSID"
+  printf '\nMise à niveau immuable d’OnionPi (%s, %s).\n' "$WIFI_INTERFACE" "$SSID"
   printf '  Le point d’accès, les mots de passe et les données sont conservés.\n\n'
 else
   printf '\nOnionPi va configurer:\n'
@@ -237,20 +246,31 @@ if (( ! ASSUME_YES )); then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y --no-install-recommends \
-  tor nftables dnsmasq network-manager nginx openssl avahi-daemon curl iw \
-  python3 python3-venv python3-pip rsync ca-certificates systemd-timesyncd dnsutils \
-  gnupg gpgv
+if (( ! UPGRADE )); then
+  apt-get update
+  apt-get install -y --no-install-recommends \
+    tor nftables dnsmasq network-manager nginx openssl avahi-daemon curl iw \
+    python3 python3-venv python3-pip rsync ca-certificates systemd-timesyncd dnsutils \
+    gnupg gpgv
+else
+  for command in python3 rsync nft tor dnsmasq nginx gpgv; do
+    command -v "$command" >/dev/null 2>&1 || {
+      printf 'Mise à niveau hors ligne impossible: %s est absent.\n' "$command" >&2
+      exit 1
+    }
+  done
+fi
 
 # Circumvention. obfs4proxy also provides meek_lite. snowflake-client lets the
 # Pi use volunteer proxies; snowflake-proxy lets it become one. Missing
 # packages only remove the matching option from the interface.
-for package in obfs4proxy snowflake-client snowflake-proxy; do
-  if ! apt-get install -y --no-install-recommends "$package"; then
-    printf 'Paquet %s indisponible: le transport correspondant sera masqué.\n' "$package" >&2
-  fi
-done
+if (( ! UPGRADE )); then
+  for package in obfs4proxy snowflake-client snowflake-proxy; do
+    if ! apt-get install -y --no-install-recommends "$package"; then
+      printf 'Paquet %s indisponible: le transport correspondant sera masqué.\n' "$package" >&2
+    fi
+  done
+fi
 # Hosting a proxy is opt-in from the web interface, never on by default. An
 # upgrade must not undo the choice someone already made there.
 if (( ! UPGRADE )); then
@@ -262,6 +282,9 @@ fi
 BUILD_FRONTEND=1
 if [[ -s "$PROJECT_ROOT/frontend/dist/index.html" ]]; then
   BUILD_FRONTEND=0
+elif (( UPGRADE )); then
+  printf 'Archive de mise à niveau incomplète: frontend/dist absent.\n' >&2
+  exit 1
 elif ! command -v npm >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends nodejs npm
 fi
@@ -321,7 +344,7 @@ install -d -m 2750 -o onionpi -g "$BRIDGE_GROUP" /etc/onionpi/tor
 # blocklist cannot live under the 0750 /var/lib/onionpi directory.
 install -d -m 0755 -o onionpi -g onionpi /etc/onionpi/dns
 install -d -m 0755 /etc/tor/torrc.d
-install -d -m 0755 /opt/onionpi
+install -d -m 0755 "$INSTALL_BASE" "$RELEASES_ROOT"
 install -d -m 0755 /usr/local/lib/onionpi
 
 require_regular_state_file() {
@@ -348,12 +371,6 @@ if (( UPGRADE )); then
   done
 fi
 
-rsync -a --delete --exclude '__pycache__' --exclude '.pytest_cache' \
-  "$PROJECT_ROOT/backend/" /opt/onionpi/backend/
-python3 -m venv /opt/onionpi/venv
-/opt/onionpi/venv/bin/pip install --disable-pip-version-check --no-cache-dir \
-  -r /opt/onionpi/backend/requirements.txt
-
 if (( BUILD_FRONTEND )); then
   npm ci --no-audit --no-fund --prefix "$PROJECT_ROOT/frontend"
   npm run build --prefix "$PROJECT_ROOT/frontend"
@@ -362,9 +379,51 @@ if [[ ! -s "$PROJECT_ROOT/frontend/dist/index.html" ]]; then
   printf 'Interface web absente: frontend/dist/index.html introuvable.\n' >&2
   exit 1
 fi
-install -d -m 0755 /opt/onionpi/frontend
-rsync -a --delete "$PROJECT_ROOT/frontend/dist/" /opt/onionpi/frontend/dist/
-install -m 0644 "$PROJECT_ROOT/README.md" /opt/onionpi/README.md
+
+# A release is prepared under a hidden name and becomes visible only after the
+# backend, virtualenv and frontend are complete. Existing releases are never
+# edited in place; retrying the same signed version reuses its complete tree.
+if [[ ! -f "$RELEASE_DIR/.complete" ]]; then
+  if [[ -e "$RELEASE_DIR" || -L "$RELEASE_DIR" ]]; then
+    rm -rf -- "$RELEASE_DIR"
+  fi
+  RELEASE_STAGE="$(mktemp -d "$RELEASES_ROOT/.incoming-$RELEASE_VERSION.XXXXXX")"
+  cleanup_release_stage() {
+    [[ -z "${RELEASE_STAGE:-}" ]] || rm -rf -- "$RELEASE_STAGE"
+  }
+  trap cleanup_release_stage EXIT
+  install -d -m 0755 "$RELEASE_STAGE/backend" "$RELEASE_STAGE/frontend"
+  rsync -a --delete --exclude '__pycache__' --exclude '.pytest_cache' \
+    "$PROJECT_ROOT/backend/" "$RELEASE_STAGE/backend/"
+  python3 -m venv "$RELEASE_STAGE/venv"
+
+  PYTHON_TAG="$(python3 -c 'import sys; print(f"cp{sys.version_info.major}{sys.version_info.minor}")')"
+  DEB_ARCH="$(dpkg --print-architecture 2>/dev/null || printf unknown)"
+  WHEELHOUSE="$PROJECT_ROOT/wheelhouse/$PYTHON_TAG-$DEB_ARCH"
+  if [[ -d "$WHEELHOUSE" && -s "$PROJECT_ROOT/wheelhouse/SHA256SUMS" ]]; then
+    (cd "$PROJECT_ROOT" && sha256sum -c wheelhouse/SHA256SUMS)
+    "$RELEASE_STAGE/venv/bin/pip" install --disable-pip-version-check \
+      --no-index --find-links "$WHEELHOUSE" \
+      -r "$RELEASE_STAGE/backend/requirements.txt"
+  elif (( UPGRADE )); then
+    printf 'Wheelhouse %s absent: mise à niveau refusée sans téléchargement.\n' "$WHEELHOUSE" >&2
+    exit 1
+  else
+    "$RELEASE_STAGE/venv/bin/pip" install --disable-pip-version-check --no-cache-dir \
+      -r "$RELEASE_STAGE/backend/requirements.txt"
+  fi
+
+  rsync -a --delete "$PROJECT_ROOT/frontend/dist/" "$RELEASE_STAGE/frontend/dist/"
+  install -m 0644 "$PROJECT_ROOT/README.md" "$RELEASE_STAGE/README.md"
+  install -m 0644 "$PROJECT_ROOT/VERSION" "$RELEASE_STAGE/VERSION"
+  : >"$RELEASE_STAGE/.complete"
+  chown -R root:root "$RELEASE_STAGE"
+  sync -f "$RELEASE_STAGE"
+  mv -T "$RELEASE_STAGE" "$RELEASE_DIR"
+  sync -f "$RELEASES_ROOT"
+  RELEASE_STAGE=""
+  trap - EXIT
+fi
 
 SESSION_SECRET=""
 if [[ -r /etc/onionpi/onionpi.env ]]; then
@@ -377,7 +436,7 @@ cat >/etc/onionpi/onionpi.env <<EOF
 ONIONPI_DATA_DIR=/var/lib/onionpi
 ONIONPI_SHARED_DIR=/var/lib/onionpi/shared
 ONIONPI_DB_PATH=/var/lib/onionpi/onionpi.db
-ONIONPI_FRONTEND_DIR=/opt/onionpi/frontend/dist
+ONIONPI_FRONTEND_DIR=/opt/onionpi/current/frontend/dist
 ONIONPI_GATEWAY_IP=$GATEWAY_IP
 ONIONPI_WIFI_INTERFACE=$WIFI_INTERFACE
 ONIONPI_UPSTREAM_INTERFACE=$WAN_INTERFACE
@@ -393,6 +452,7 @@ ONIONPI_RELAY_STATE=/var/lib/onionpi/relay.state
 ONIONPI_DNS_FILTER_DIR=/etc/onionpi/dns
 ONIONPI_AGENT_RESULT=/var/lib/onionpi-privileged/agent.result
 ONIONPI_UPDATE_STATE=/var/lib/onionpi-privileged/update.state
+ONIONPI_MAINTENANCE_STATE=/var/lib/onionpi-privileged/maintenance.state
 ONIONPI_COUNTRY=$COUNTRY
 EOF
 chown root:onionpi /etc/onionpi/onionpi.env
@@ -417,12 +477,12 @@ if (( ! UPGRADE )); then
     ADMIN_MODE=--password-stdin
   fi
   printf '%s\n' "$ADMIN_SECRET" | runuser -u onionpi -- env \
-    PYTHONPATH=/opt/onionpi/backend \
+    PYTHONPATH="$RELEASE_DIR/backend" \
     ONIONPI_DATA_DIR=/var/lib/onionpi \
     ONIONPI_SHARED_DIR=/var/lib/onionpi/shared \
     ONIONPI_DB_PATH=/var/lib/onionpi/onionpi.db \
     ONIONPI_SESSION_SECRET="$SESSION_SECRET" \
-    /opt/onionpi/venv/bin/python -m onionpi.cli create-admin --username admin \
+    "$RELEASE_DIR/venv/bin/python" -m onionpi.cli create-admin --username admin \
     --display-name Administrateur "$ADMIN_MODE"
 fi
 unset ADMIN_SECRET ADMIN_PASSWORD ADMIN_PASSWORD_HASH ONIONPI_ADMIN_PASSWORD ONIONPI_ADMIN_PASSWORD_HASH
@@ -549,19 +609,17 @@ install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-agent.path" /etc/system
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-boot-banner.service" /etc/systemd/system/onionpi-boot-banner.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-update.service" /etc/systemd/system/onionpi-update.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-update.timer" /etc/systemd/system/onionpi-update.timer
+install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-update-recover.service" /etc/systemd/system/onionpi-update-recover.service
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-relay-apply.sh" /usr/local/sbin/onionpi-relay-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-firewall-apply.sh" /usr/local/sbin/onionpi-firewall-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-devices-apply.sh" /usr/local/sbin/onionpi-devices-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-agent-apply.sh" /usr/local/sbin/onionpi-agent-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-update.sh" /usr/local/sbin/onionpi-update
+install -m 0755 "$PROJECT_ROOT/packaging/onionpi-maintenance.sh" /usr/local/sbin/onionpi-maintenance
 install -m 0755 "$PROJECT_ROOT/packaging/verify.sh" /usr/local/sbin/onionpi-verify
 install -m 0755 "$PROJECT_ROOT/packaging/uninstall.sh" /usr/local/sbin/onionpi-uninstall
 
 # --------------------------------------------------------- update client ----
-# The version the updater compares against. It is the installed tree that
-# matters, not the checkout it came from, so it is written next to the code.
-install -m 0644 "$PROJECT_ROOT/VERSION" /opt/onionpi/VERSION
-
 # Public half of the release signing key, in the binary form gpgv reads. It
 # travels with the code: an update can only be installed if it is signed by the
 # key that was already on the appliance before that update existed.
@@ -597,7 +655,7 @@ if (( ! UPGRADE )) && [[ ! -e /var/lib/onionpi/update.settings.json ]]; then
   chmod 0640 /var/lib/onionpi/update.settings.json
 fi
 if [[ ! -e /var/lib/onionpi-privileged/update.state ]]; then
-  install -m 0640 -o root -g onionpi /dev/null /var/lib/onionpi-privileged/update.state
+install -m 0640 -o root -g onionpi /dev/null /var/lib/onionpi-privileged/update.state
 elif [[ -L /var/lib/onionpi-privileged/update.state || ! -f /var/lib/onionpi-privileged/update.state ]]; then
   printf 'État privilégié invalide: /var/lib/onionpi-privileged/update.state\n' >&2
   exit 1
@@ -664,11 +722,20 @@ tor --verify-config -f /etc/tor/torrc
 dnsmasq --test
 sysctl --system >/dev/null
 
+# Commit the application version in one rename. Relative links keep the tree
+# relocatable and `mv -T` never exposes a half-written link to systemd.
+current_temporary="$INSTALL_BASE/.current-$RELEASE_VERSION-$$"
+ln -s "releases/$RELEASE_VERSION" "$current_temporary"
+mv -Tf "$current_temporary" "$CURRENT_LINK"
+ln -sfn current/VERSION "$INSTALL_BASE/VERSION"
+sync -f "$INSTALL_BASE"
+
 systemctl daemon-reload
 # Without an RTC the Pi boots in 1970 and Tor rejects every relay certificate.
 systemctl enable --now systemd-timesyncd || true
 systemctl enable tor dnsmasq nftables onionpi-firewall onionpi-ap nginx avahi-daemon NetworkManager onionpi
 systemctl enable onionpi-boot-banner.service
+systemctl enable onionpi-update-recover.service
 systemctl enable --now onionpi-relay.path
 systemctl enable --now onionpi-agent.path
 # Writes /etc/systemd/system/onionpi-update.timer.d/schedule.conf from the
@@ -690,7 +757,7 @@ systemctl restart dnsmasq nginx avahi-daemon onionpi
 
 if (( UPGRADE )); then
   printf '\nMise à jour terminée (version %s). Sauvegarde: %s\n' \
-    "$(head -n 1 /opt/onionpi/VERSION)" "$BACKUP_DIR"
+    "$(head -n 1 "$CURRENT_LINK/VERSION")" "$BACKUP_DIR"
   # onionpi-update runs onionpi-verify itself and rolls back on failure, so a
   # second full check here would only double the downtime.
   exit 0
