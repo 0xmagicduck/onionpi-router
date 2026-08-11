@@ -152,7 +152,9 @@ jobs:
         run: |
           # "edge" is a moving pointer: the previous build is replaced so a Pi
           # on that channel always sees exactly one candidate.
-          gh release delete edge --yes --cleanup-tag 2>/dev/null || true
+          gh release delete edge --yes 2>/dev/null || true
+          gh api --method DELETE \
+            "repos/$GITHUB_REPOSITORY/git/refs/tags/edge" 2>/dev/null || true
           cat >/tmp/edge-notes.md <<EOF
           Construction automatique de ${GITHUB_SHA:0:7} sur \`main\`.
 
