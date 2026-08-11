@@ -405,7 +405,10 @@ download_release() {
       die "Signature exigée mais absente ou sans trousseau (${ONIONPI_UPDATE_GPG_KEYRING})"
     fi
     local expected actual
-    expected="$(awk -v name="onionpi-$version.tar.gz" '$2 ~ name {print $1; exit}' "$work/SHA256SUMS")"
+    # Exact name comparison: a regex match would let onionpi-1X0.tar.gz answer
+    # for onionpi-1.0.tar.gz.
+    expected="$(awk -v name="onionpi-$version.tar.gz" \
+      '{ sub(/^\*/, "", $2); if ($2 == name) { print $1; exit } }' "$work/SHA256SUMS")"
     [[ -n "$expected" ]] || die "onionpi-$version.tar.gz absent de SHA256SUMS"
     actual="$(sha256sum "$archive" | awk '{print $1}')"
     [[ "$expected" == "$actual" ]] || die "Empreinte SHA-256 incorrecte: $actual"
@@ -419,7 +422,9 @@ download_release() {
   install -d -m 0700 "$STAGING_ROOT"
   rm -rf "${STAGING_ROOT:?}/$version"
   install -d -m 0700 "$STAGING_ROOT/$version"
-  tar -xzf "$archive" -C "$STAGING_ROOT/$version" --strip-components=1
+  # --no-same-owner: the archive is verified, but nothing it contains should be
+  # able to choose a uid when it is unpacked by root.
+  tar -xzf "$archive" -C "$STAGING_ROOT/$version" --strip-components=1 --no-same-owner
   rm -rf "$work"
 
   [[ -x "$STAGING_ROOT/$version/packaging/install.sh" ]] \
