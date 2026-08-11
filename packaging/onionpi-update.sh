@@ -16,9 +16,9 @@ set -Eeuo pipefail
 #   * The release tarball is only unpacked once its SHA-256 matches the
 #     SHA256SUMS file published next to it, and, when a key is configured, only
 #     once that file carries a valid OpenPGP signature.
-#   * /opt/onionpi is copied aside before anything is written. A failed health
-#     check restores the copy, so a bad release costs a few minutes of downtime
-#     instead of a trip to the Raspberry Pi with a screen and a keyboard.
+#   * Application releases are immutable below /opt/onionpi/releases. The
+#     current symlink is switched atomically, while a root-owned journal tracks
+#     system files so an interrupted update can restore one coherent version.
 #   * The web interface never reaches this file. It writes preferences into
 #     /var/lib/onionpi/update.settings.json, which is untrusted input revalidated
 #     here field by field, exactly like the agent request queue.
@@ -27,9 +27,12 @@ CONFIG_FILE="/etc/onionpi/update.conf"
 OVERRIDES_FILE="/var/lib/onionpi/update.settings.json"
 STATE_FILE="/var/lib/onionpi-privileged/update.state"
 LOCK_FILE="/run/onionpi-update.lock"
-INSTALL_ROOT="/opt/onionpi"
+INSTALL_BASE="/opt/onionpi"
+INSTALL_ROOT="$INSTALL_BASE/current"
+RELEASES_ROOT="$INSTALL_BASE/releases"
 STAGING_ROOT="/var/cache/onionpi-update"
 BACKUP_ROOT="/var/backups"
+TRANSACTION_FILE="/var/lib/onionpi-privileged/update-transaction.json"
 TIMER_DROPIN="/etc/systemd/system/onionpi-update.timer.d/schedule.conf"
 
 # Defaults. /etc/onionpi/update.conf is root-owned and may override all of them.
@@ -63,6 +66,8 @@ Usage: onionpi-update [action]
   --apply          installe la version disponible si la politique l'autorise
   --force          installe même si la version est identique ou plus ancienne
   --rollback       restaure la dernière sauvegarde connue
+  --recover        termine le rollback d'une mise à jour interrompue
+  --boot-recover   reprise au démarrage, sans redémarrer les services trop tôt
   --status         affiche l'état courant sans rien contacter
   --write-timer    régénère l'horaire systemd depuis la configuration
   --quiet          n'écrit que les erreurs sur la sortie standard
@@ -75,6 +80,8 @@ while (($#)); do
     --check) MODE="check"; shift ;;
     --apply) MODE="apply"; shift ;;
     --rollback) MODE="rollback"; shift ;;
+    --recover) MODE="recover"; shift ;;
+    --boot-recover) MODE="boot-recover"; shift ;;
     --status) MODE="status"; shift ;;
     --write-timer) MODE="write-timer"; shift ;;
     --force) FORCE=1; shift ;;
@@ -158,6 +165,96 @@ installed_version() {
   else
     printf '0.0.0'
   fi
+}
+
+# Closed list of every root-owned path install.sh may mutate. Rollback walks
+# the same list, so a file introduced by an interrupted version is removed
+# instead of surviving beside the restored release.
+ROOT_MUTATION_PATHS=(
+  /etc/onionpi
+  /etc/tor/torrc.d/onionpi.conf
+  /etc/dnsmasq.d/onionpi.conf
+  /etc/sysctl.d/70-onionpi.conf
+  /etc/nginx/sites-available/onionpi
+  /etc/nginx/sites-enabled/onionpi
+  /etc/avahi/hosts
+  /etc/modprobe.d/onionpi-regdom.conf
+  /etc/update-motd.d/10-onionpi
+  /etc/profile.d/onionpi.sh
+  /etc/issue /etc/issue.net /etc/motd
+  /etc/systemd/system/onionpi.service
+  /etc/systemd/system/onionpi-ap.service
+  /etc/systemd/system/onionpi-firewall.service
+  /etc/systemd/system/onionpi-relay.service
+  /etc/systemd/system/onionpi-relay.path
+  /etc/systemd/system/onionpi-agent.service
+  /etc/systemd/system/onionpi-agent.path
+  /etc/systemd/system/onionpi-boot-banner.service
+  /etc/systemd/system/onionpi-update.service
+  /etc/systemd/system/onionpi-update.timer
+  /etc/systemd/system/onionpi-update-recover.service
+  /etc/systemd/system/multi-user.target.wants/onionpi-update-recover.service
+  /etc/systemd/system/onionpi-update.timer.d
+  /usr/local/sbin/onionpi-firewall-apply
+  /usr/local/sbin/onionpi-devices-apply
+  /usr/local/sbin/onionpi-relay-apply
+  /usr/local/sbin/onionpi-agent-apply
+  /usr/local/sbin/onionpi-update
+  /usr/local/sbin/onionpi-maintenance
+  /usr/local/sbin/onionpi-verify
+  /usr/local/sbin/onionpi-uninstall
+  /usr/local/lib/onionpi
+  /usr/local/bin/onionpi-status
+)
+
+transaction_write() {
+  local backup="$1" old_target="$2" new_version="$3"
+  python3 - "$TRANSACTION_FILE" "$backup" "$old_target" "$new_version" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+path, backup, old_target, new_version = sys.argv[1:]
+handle = tempfile.NamedTemporaryFile(
+    "w", encoding="utf-8", dir=os.path.dirname(path), delete=False,
+    prefix=".update-transaction."
+)
+try:
+    json.dump({"phase": "applying", "backup": backup,
+               "old_target": old_target, "new_version": new_version},
+              handle, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+    os.fchmod(handle.fileno(), 0o600)
+finally:
+    handle.close()
+os.replace(handle.name, path)
+directory_fd = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(directory_fd)
+finally:
+    os.close(directory_fd)
+PY
+}
+
+transaction_clear() {
+  python3 - "$TRANSACTION_FILE" <<'PY'
+import os
+import sys
+
+path = sys.argv[1]
+try:
+    os.unlink(path)
+except FileNotFoundError:
+    pass
+directory_fd = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(directory_fd)
+finally:
+    os.close(directory_fd)
+PY
 }
 
 # --------------------------------------------------------------- state io ----
@@ -484,6 +581,10 @@ download_release() {
     || die "Archive incomplète: packaging/install.sh manquant"
   [[ -s "$STAGING_ROOT/$version/frontend/dist/index.html" ]] \
     || die "Archive incomplète: interface web absente"
+  [[ -s "$STAGING_ROOT/$version/wheelhouse/SHA256SUMS" ]] \
+    || die "Archive incomplète: wheelhouse signé absent"
+  [[ -s "$STAGING_ROOT/$version/SBOM.spdx.json" ]] \
+    || die "Archive incomplète: nomenclature SPDX absente"
   local shipped
   shipped="$(head -n 1 "$STAGING_ROOT/$version/VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
   [[ "$shipped" == "$version" ]] \
@@ -499,41 +600,7 @@ latest_backup() {
 backup_root_files() {
   local destination="$1" path
   install -d -m 0700 "$destination"
-  # install.sh --upgrade replaces more than /opt/onionpi. Keep the complete
-  # installed surface so a failed release cannot leave a new helper, unit or
-  # network template running next to the old application code.
-  for path in \
-    /etc/onionpi \
-    /etc/tor/torrc.d/onionpi.conf \
-    /etc/dnsmasq.d/onionpi.conf \
-    /etc/sysctl.d/70-onionpi.conf \
-    /etc/nginx/sites-available/onionpi \
-    /etc/nginx/sites-enabled/onionpi \
-    /etc/avahi/hosts \
-    /etc/modprobe.d/onionpi-regdom.conf \
-    /etc/update-motd.d/10-onionpi \
-    /etc/profile.d/onionpi.sh \
-    /etc/issue /etc/issue.net /etc/motd \
-    /etc/systemd/system/onionpi.service \
-    /etc/systemd/system/onionpi-ap.service \
-    /etc/systemd/system/onionpi-firewall.service \
-    /etc/systemd/system/onionpi-relay.service \
-    /etc/systemd/system/onionpi-relay.path \
-    /etc/systemd/system/onionpi-agent.service \
-    /etc/systemd/system/onionpi-agent.path \
-    /etc/systemd/system/onionpi-boot-banner.service \
-    /etc/systemd/system/onionpi-update.service \
-    /etc/systemd/system/onionpi-update.timer \
-    /etc/systemd/system/onionpi-update.timer.d \
-    /usr/local/sbin/onionpi-firewall-apply \
-    /usr/local/sbin/onionpi-devices-apply \
-    /usr/local/sbin/onionpi-relay-apply \
-    /usr/local/sbin/onionpi-agent-apply \
-    /usr/local/sbin/onionpi-update \
-    /usr/local/sbin/onionpi-verify \
-    /usr/local/sbin/onionpi-uninstall \
-    /usr/local/lib/onionpi \
-    /usr/local/bin/onionpi-status; do
+  for path in "${ROOT_MUTATION_PATHS[@]}"; do
     [[ -e "$path" || -L "$path" ]] || continue
     rsync -aR "$path" "$destination/"
   done
@@ -541,19 +608,62 @@ backup_root_files() {
 
 restore_backup() {
   local backup="$1"
-  [[ -d "$backup/opt-onionpi" ]] || return 1
+  local restart_services="${2:-1}"
+  [[ -s "$backup/current-target" ]] || return 1
   log "Restauration de $backup…"
-  rsync -a --delete "$backup/opt-onionpi/" "$INSTALL_ROOT/"
-  if [[ -d "$backup/rootfs" ]]; then
-    rsync -a "$backup/rootfs/" /
-  elif [[ -d "$backup/systemd" ]]; then
-    # Compatibility with backups made by OnionPi 0.1.0.
-    rsync -a "$backup/systemd/" /etc/systemd/system/
-  fi
+  local target path saved temporary
+  target="$(head -n 1 "$backup/current-target")"
+  [[ "$target" =~ ^/opt/onionpi/releases/[0-9A-Za-z][0-9A-Za-z.+-]{0,39}$ ]] || return 1
+  [[ -f "$target/.complete" ]] || return 1
+  for path in "${ROOT_MUTATION_PATHS[@]}"; do
+    saved="$backup/rootfs$path"
+    rm -rf -- "$path"
+    if [[ -e "$saved" || -L "$saved" ]]; then
+      install -d "$(dirname -- "$path")"
+      cp -a -- "$saved" "$path"
+    fi
+  done
+  temporary="$INSTALL_BASE/.current-rollback-$$"
+  ln -s "${target#"$INSTALL_BASE/"}" "$temporary"
+  mv -Tf "$temporary" "$INSTALL_ROOT"
+  ln -sfn current/VERSION "$INSTALL_BASE/VERSION"
+  # syncfs through the install root also persists restored /etc and /usr files
+  # because the appliance keeps them on the same root filesystem.
+  sync -f "$INSTALL_BASE"
   systemctl daemon-reload
-  systemctl restart tor
-  systemctl restart onionpi-firewall
-  systemctl restart dnsmasq nginx onionpi
+  if (( restart_services )); then
+    systemctl restart tor
+    systemctl restart onionpi-firewall
+    systemctl restart dnsmasq nginx onionpi
+  fi
+}
+
+recover_interrupted() {
+  local restart_services="${1:-1}"
+  [[ -s "$TRANSACTION_FILE" ]] || return 0
+  local backup
+  backup="$(python3 - "$TRANSACTION_FILE" <<'PY'
+import json
+import sys
+
+try:
+    value = json.load(open(sys.argv[1], encoding="utf-8")).get("backup", "")
+except (OSError, ValueError):
+    value = ""
+print(value)
+PY
+)"
+  [[ "$backup" =~ ^/var/backups/onionpi-update-[0-9]{8}T[0-9]{6}Z$ ]] \
+    || die "Journal de mise à jour invalide: $TRANSACTION_FILE"
+  warn "Mise à jour interrompue détectée; restauration de $backup."
+  restore_backup "$backup" "$restart_services" \
+    || die "Restauration automatique impossible depuis $backup"
+  prune_releases
+  transaction_clear
+  state_set "running=false" "last_apply_status=rolled-back" \
+    "last_apply_message=Restauration automatique après interruption" \
+    "installed=$(installed_version)" \
+    "history+=$(stamp) restauration automatique après interruption"
 }
 
 prune_backups() {
@@ -564,6 +674,28 @@ prune_backups() {
     rm -rf -- "$directory"
   done < <(find "$BACKUP_ROOT" -maxdepth 1 -type d -name 'onionpi-update-*' 2>/dev/null \
     | sort -r | tail -n +$((keep + 1)))
+}
+
+prune_releases() {
+  local directory target referenced
+  target="$(readlink -f "$INSTALL_ROOT" 2>/dev/null || true)"
+  while IFS= read -r directory; do
+    [[ -n "$directory" && "$directory" != "$target" ]] || continue
+    referenced=0
+    while IFS= read -r saved; do
+      [[ "$saved" == "$directory" ]] && referenced=1
+    done < <(find "$BACKUP_ROOT" -maxdepth 2 -type f -name current-target \
+      -exec head -n 1 {} \; 2>/dev/null)
+    (( referenced )) || rm -rf -- "$directory"
+  done < <(find "$RELEASES_ROOT" -mindepth 1 -maxdepth 1 -type d \
+    -name '[0-9A-Za-z]*' 2>/dev/null | sort)
+  # A hard cut can bypass install.sh's EXIT trap. Hidden build directories and
+  # temporary current links are never valid release targets, so remove them
+  # once the journal has restored a known-complete version.
+  find "$RELEASES_ROOT" -mindepth 1 -maxdepth 1 -type d \
+    -name '.incoming-[0-9A-Za-z]*' -exec rm -rf -- {} + 2>/dev/null || true
+  find "$INSTALL_BASE" -mindepth 1 -maxdepth 1 -type l \
+    -name '.current-*' -delete 2>/dev/null || true
 }
 
 health_check() {
@@ -616,10 +748,12 @@ do_apply() {
   download_release "$version" "$TARBALL_URL" "$SUMS_URL" "$SIGNATURE_URL"
 
   backup="$BACKUP_ROOT/onionpi-update-$(stamp)"
-  install -d -m 0700 "$backup/opt-onionpi"
-  rsync -a "$INSTALL_ROOT/" "$backup/opt-onionpi/"
+  install -d -m 0700 "$backup"
   backup_root_files "$backup/rootfs"
   printf '%s\n' "$current" >"$backup/VERSION"
+  readlink -f "$INSTALL_ROOT" >"$backup/current-target"
+  sync -f "$backup"
+  transaction_write "$backup" "$(cat "$backup/current-target")" "$version"
   log "Sauvegarde: $backup"
 
   local failure=""
@@ -632,6 +766,8 @@ do_apply() {
   if [[ -n "$failure" ]]; then
     warn "Mise à jour vers $version refusée: $failure."
     if restore_backup "$backup"; then
+      prune_releases
+      transaction_clear
       state_set "running=false" "last_apply=$(now)" "last_apply_status=rolled-back" \
         "last_apply_message=Retour à $current: $failure" "installed=$(installed_version)" \
         "history+=$(stamp) rollback $version ($failure)"
@@ -643,7 +779,9 @@ do_apply() {
     die "Échec de la mise à jour et de la restauration. Intervention manuelle nécessaire."
   fi
 
+  transaction_clear
   prune_backups
+  prune_releases
   rm -rf "${STAGING_ROOT:?}/$version"
   state_set "running=false" "installed=$(installed_version)" "update_pending=false" \
     "last_apply=$(now)" "last_apply_status=ok" \
@@ -653,10 +791,22 @@ do_apply() {
 }
 
 do_rollback() {
-  local backup
+  local backup current_target target_path target_version
   backup="$(latest_backup)"
   [[ -n "$backup" ]] || die "Aucune sauvegarde de mise à jour disponible."
+  current_target="$(readlink -f "$INSTALL_ROOT")"
+  target_path="$(head -n 1 "$backup/current-target" 2>/dev/null || true)"
+  [[ "$target_path" =~ ^/opt/onionpi/releases/[0-9A-Za-z][0-9A-Za-z.+-]{0,39}$ ]] \
+    && [[ -f "$target_path/.complete" ]] \
+    || die "Sauvegarde de mise à jour invalide: $backup"
+  target_version="$(basename -- "$target_path")"
+  # Manual rollback mutates the same root surface as automatic recovery. Its
+  # journal must be durable first, otherwise a power cut could leave a mixed
+  # set of helpers with no boot-time repair instruction.
+  transaction_write "$backup" "$current_target" "$target_version"
   restore_backup "$backup" || die "Restauration impossible depuis $backup."
+  prune_releases
+  transaction_clear
   health_check || warn "Le contrôle après restauration signale un problème."
   state_set "running=false" "installed=$(installed_version)" \
     "last_apply=$(now)" "last_apply_status=rolled-back" \
@@ -681,6 +831,19 @@ case "$MODE" in
     write_timer
     exit 0
     ;;
+  recover|boot-recover)
+    [[ "$EUID" -eq 0 ]] || die "Exécutez onionpi-update avec les droits root."
+    exec 9>"$LOCK_FILE"
+    if ! flock -n 9; then
+      die "Une mise à jour est déjà en cours."
+    fi
+    if [[ "$MODE" == "boot-recover" ]]; then
+      recover_interrupted 0
+    else
+      recover_interrupted
+    fi
+    exit 0
+    ;;
 esac
 
 [[ "$EUID" -eq 0 ]] || die "Exécutez onionpi-update avec les droits root."
@@ -690,6 +853,9 @@ exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   die "Une mise à jour est déjà en cours."
 fi
+
+# A timer run or manual action also heals a journal left by a hard power cut.
+recover_interrupted
 
 cleanup_update() {
   local status=$?

@@ -151,6 +151,13 @@ class Settings:
         return self.data_dir / "update.settings.json"
 
     @property
+    def maintenance_state_path(self) -> Path:
+        """Root-owned proof that a local operator opened maintenance mode."""
+        return Path(
+            os.getenv("ONIONPI_MAINTENANCE_STATE", self.data_dir / "maintenance.state")
+        ).resolve()
+
+    @property
     def dns_block_path(self) -> Path:
         """Hosts file dnsmasq reads through addn-hosts.
 
@@ -179,7 +186,7 @@ class Settings:
 def _installed_version(project_root: Path) -> str:
     """The VERSION file of the deployed tree, falling back to the package one.
 
-    install.sh copies VERSION next to the code in /opt/onionpi, and
+    install.sh stores VERSION in the immutable release selected by `current`, and
     onionpi-update compares that file with the version published on GitHub.
     Reading the same file here keeps the interface and the updater in
     agreement even when someone reinstalls by hand.

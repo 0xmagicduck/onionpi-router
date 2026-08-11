@@ -13,46 +13,7 @@ export type TorNode = {
   name: string
 }
 
-export type StatusPayload = {
-  device_name: string
-  demo_mode: boolean
-  version: string
-  system: {
-    hostname: string
-    cpu_percent: number
-    memory_percent: number
-    temperature_c: number | null
-    storage_percent: number
-    storage_used: number
-    storage_total: number
-    uptime_seconds: number
-    services: Array<{ id: string; label: string; active: boolean }>
-  }
-  tor: {
-    connected: boolean
-    bootstrap: number
-    summary: string
-    circuit: TorNode[]
-    exit_ip: string | null
-    exit_country: string | null
-    bridges: BridgeState
-  }
-  network: {
-    ssid: string
-    wifi_interface: string
-    upstream_interface: string
-    gateway_ip: string
-    channel: string
-  }
-  protection: {
-    status: 'protected' | 'contained' | 'degraded' | 'demo'
-    safe: boolean
-    label: string
-    summary: string
-    checks: Array<{ id: string; label: string; ok: boolean; detail: string }>
-  }
-  activities: Activity[]
-}
+export type StatusPayload = GeneratedStatusResponse
 
 export type BridgeState = {
   use_bridges: boolean
@@ -226,6 +187,34 @@ export type DiagnosticsPayload = {
 
 export type UpdateChannel = 'stable' | 'edge'
 
+export type OnboardingState = {
+  complete: boolean
+  steps: {
+    password: boolean
+    interfaces: boolean
+    firewall: boolean
+    clock: boolean
+    recovery: boolean
+  }
+  interfaces: { wan: string; access_point: string }
+  clock_synchronised: boolean
+  maintenance: { active: boolean; expires_at: number | null; source: string }
+}
+
+export type BackupEnvelope = {
+  schema: string
+  created_at: number
+  kdf: { name: string; n: number; r: number; p: number; salt: string }
+  cipher: { name: string; nonce: string }
+  payload: string
+}
+
+export type BackupPreview = {
+  valid: boolean
+  document_version: number
+  changes: Array<{ section: string; before: unknown; after: unknown }>
+}
+
 export type UpdateState = {
   /** False when the update client is not installed on this appliance. */
   supported: boolean
@@ -273,3 +262,4 @@ export type ChatMessage = {
   body: string
   created_at: number
 }
+import type { StatusResponse as GeneratedStatusResponse } from './generated/api-v1'

@@ -43,6 +43,30 @@ install -m 0644 README.md LICENSE "$TREE/"
 printf '%s\n' "$VERSION" >"$TREE/VERSION"
 chmod 0755 "$TREE"/packaging/*.sh "$TREE"/packaging/assets/*.sh 2>/dev/null || true
 
+# Bookworm uses CPython 3.11 and Trixie uses 3.13. Both arm64 wheelhouses are
+# built before the archive is signed, so install.sh --upgrade never reaches a
+# package index after the OpenPGP check.
+install -d "$TREE/wheelhouse"
+for python_tag in cp311 cp313; do
+  destination="$TREE/wheelhouse/$python_tag-arm64"
+  install -d "$destination"
+  python3 -m pip download \
+    --disable-pip-version-check \
+    --dest "$destination" \
+    --no-deps \
+    --only-binary=:all: \
+    --platform manylinux_2_28_aarch64 \
+    --platform manylinux2014_aarch64 \
+    --implementation cp \
+    --python-version "${python_tag#cp}" \
+    --abi "$python_tag" --abi abi3 --abi none \
+    -r backend/requirements.txt
+done
+(cd "$TREE" && find wheelhouse -type f -name '*.whl' -print0 \
+  | sort -z | xargs -0 sha256sum >wheelhouse/SHA256SUMS)
+
+python3 scripts/generate-sbom.py "$VERSION" "$TREE/SBOM.spdx.json"
+
 rm -rf dist
 install -d dist
 
@@ -61,7 +85,8 @@ else
   "$TAR" -czf "dist/onionpi-$VERSION.tar.gz" -C "$STAGE" "onionpi-$VERSION"
 fi
 
-(cd dist && sha256sum "onionpi-$VERSION.tar.gz" >SHA256SUMS)
+install -m 0644 "$TREE/SBOM.spdx.json" "dist/onionpi-$VERSION.spdx.json"
+(cd dist && sha256sum "onionpi-$VERSION.tar.gz" "onionpi-$VERSION.spdx.json" >SHA256SUMS)
 
 printf 'dist/onionpi-%s.tar.gz\n' "$VERSION"
 cat dist/SHA256SUMS

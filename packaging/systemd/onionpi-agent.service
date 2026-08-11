@@ -1,6 +1,6 @@
 [Unit]
 Description=Applies an OnionPi privileged action
-Documentation=file:/opt/onionpi/README.md
+Documentation=file:/opt/onionpi/current/README.md
 
 [Service]
 Type=oneshot

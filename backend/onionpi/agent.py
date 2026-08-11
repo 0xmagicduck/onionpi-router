@@ -32,6 +32,7 @@ ACTIONS: dict[str, tuple[str, bool]] = {
     "restart-dnsmasq": ("Redémarrage du service DNS", True),
     "restart-network": ("Redémarrage du Wi-Fi", True),
     "restart-firewall": ("Rechargement du pare-feu", True),
+    "self-test-network": ("Test du coupe-circuit", True),
     "update-check": ("Recherche d’une mise à jour", True),
     "update": ("Installation de la mise à jour", True),
     "update-schedule": ("Application de l’horaire de mise à jour", True),

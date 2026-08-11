@@ -1,7 +1,8 @@
 [Unit]
 Description=OnionPi local administration service
-Documentation=file:/opt/onionpi/README.md
-After=network-online.target tor.service tor@default.service
+Documentation=file:/opt/onionpi/current/README.md
+After=network-online.target tor.service tor@default.service onionpi-update-recover.service
+Wants=onionpi-update-recover.service
 Wants=network-online.target tor.service tor@default.service
 
 [Service]
@@ -9,9 +10,9 @@ Type=simple
 User=onionpi
 Group=onionpi
 SupplementaryGroups=debian-tor systemd-journal
-WorkingDirectory=/opt/onionpi/backend
+WorkingDirectory=/opt/onionpi/current/backend
 EnvironmentFile=/etc/onionpi/onionpi.env
-ExecStart=/opt/onionpi/venv/bin/uvicorn onionpi.main:app --host 127.0.0.1 --port 8080 --proxy-headers --forwarded-allow-ips=127.0.0.1
+ExecStart=/opt/onionpi/current/venv/bin/uvicorn onionpi.main:app --host 127.0.0.1 --port 8080 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=15s
@@ -41,6 +42,10 @@ SystemCallArchitectures=native
 # The service already runs unprivileged with NoNewPrivileges; an empty bounding
 # set means even a setuid binary it manages to exec inherits nothing.
 CapabilityBoundingSet=
+MemoryHigh=320M
+MemoryMax=384M
+TasksMax=64
+LimitNOFILE=1024
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 ReadWritePaths=/var/lib/onionpi
 # Bridge and exit-policy fragments, plus the DNS blocklist: the only files

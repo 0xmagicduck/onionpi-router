@@ -73,6 +73,18 @@ case "$action" in
       exit 1
     fi
     ;;
+  self-test-network)
+    if /usr/local/sbin/onionpi-firewall-apply \
+      && systemctl is-active --quiet onionpi-firewall \
+      && nft list chain inet onionpi kill_switch | grep -q 'iifname.*drop' \
+      && nft list chain inet onionpi tor_prerouting | grep -q 'redirect to :9040' \
+      && nft list chain inet onionpi tor_prerouting | grep -q 'redirect to :53'; then
+      reply ok "Coupe-circuit chargé et sorties directes bloquées"
+    else
+      reply fail "Le test du coupe-circuit a échoué"
+      exit 1
+    fi
+    ;;
   update-check)
     # Bounded on purpose: this runs inside a oneshot unit whose own timeout is
     # 120 s, and a check over Tor should never take longer than that.

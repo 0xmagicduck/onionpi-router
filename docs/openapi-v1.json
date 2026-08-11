@@ -1,0 +1,2862 @@
+{
+  "components": {
+    "schemas": {
+      "Activity": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "message",
+          "created_at"
+        ],
+        "title": "Activity",
+        "type": "object"
+      },
+      "BackupRequest": {
+        "properties": {
+          "passphrase": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Passphrase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "passphrase"
+        ],
+        "title": "BackupRequest",
+        "type": "object"
+      },
+      "BackupRestoreRequest": {
+        "properties": {
+          "backup": {
+            "additionalProperties": true,
+            "title": "Backup",
+            "type": "object"
+          },
+          "passphrase": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Passphrase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "passphrase",
+          "backup"
+        ],
+        "title": "BackupRestoreRequest",
+        "type": "object"
+      },
+      "BridgeStatus": {
+        "properties": {
+          "bridge_count": {
+            "title": "Bridge Count",
+            "type": "integer"
+          },
+          "known": {
+            "title": "Known",
+            "type": "boolean"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transport"
+          },
+          "use_bridges": {
+            "title": "Use Bridges",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "use_bridges",
+          "transport",
+          "bridge_count",
+          "known"
+        ],
+        "title": "BridgeStatus",
+        "type": "object"
+      },
+      "CircumventionRequest": {
+        "properties": {
+          "country": {
+            "default": "",
+            "maxLength": 2,
+            "title": "Country",
+            "type": "string"
+          },
+          "custom_bridges": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Custom Bridges",
+            "type": "array"
+          },
+          "mode": {
+            "pattern": "^(direct|auto|manual)$",
+            "title": "Mode",
+            "type": "string"
+          },
+          "transport": {
+            "default": "snowflake",
+            "maxLength": 32,
+            "title": "Transport",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "CircumventionRequest",
+        "type": "object"
+      },
+      "ConfigImportRequest": {
+        "properties": {
+          "document": {
+            "additionalProperties": true,
+            "title": "Document",
+            "type": "object"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "title": "ConfigImportRequest",
+        "type": "object"
+      },
+      "ConfigurationDocument": {
+        "properties": {
+          "blocked_devices": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Blocked Devices",
+            "type": "array"
+          },
+          "circumvention": {
+            "additionalProperties": true,
+            "title": "Circumvention",
+            "type": "object"
+          },
+          "device_name": {
+            "title": "Device Name",
+            "type": "string"
+          },
+          "dns_filter": {
+            "additionalProperties": true,
+            "title": "Dns Filter",
+            "type": "object"
+          },
+          "exported_at": {
+            "title": "Exported At",
+            "type": "integer"
+          },
+          "tor_policy": {
+            "additionalProperties": true,
+            "title": "Tor Policy",
+            "type": "object"
+          },
+          "version": {
+            "const": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "exported_at",
+          "device_name",
+          "tor_policy",
+          "dns_filter",
+          "blocked_devices",
+          "circumvention"
+        ],
+        "title": "ConfigurationDocument",
+        "type": "object"
+      },
+      "DeviceBlockRequest": {
+        "properties": {
+          "blocked": {
+            "title": "Blocked",
+            "type": "boolean"
+          },
+          "label": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Label",
+            "type": "string"
+          },
+          "mac": {
+            "maxLength": 17,
+            "minLength": 11,
+            "title": "Mac",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mac",
+          "blocked"
+        ],
+        "title": "DeviceBlockRequest",
+        "type": "object"
+      },
+      "DnsFilterRequest": {
+        "properties": {
+          "allowed": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "title": "Allowed",
+            "type": "array"
+          },
+          "custom_blocked": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "title": "Custom Blocked",
+            "type": "array"
+          },
+          "profiles": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Profiles",
+            "type": "array"
+          }
+        },
+        "title": "DnsFilterRequest",
+        "type": "object"
+      },
+      "FolderRequest": {
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Parent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FolderRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InterfaceConfirmationRequest": {
+        "properties": {
+          "access_point": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Access Point",
+            "type": "string"
+          },
+          "wan": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Wan",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wan",
+          "access_point"
+        ],
+        "title": "InterfaceConfirmationRequest",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 32,
+            "minLength": 3,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "NetworkStatus": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "gateway_ip": {
+            "title": "Gateway Ip",
+            "type": "string"
+          },
+          "ssid": {
+            "title": "Ssid",
+            "type": "string"
+          },
+          "upstream_interface": {
+            "title": "Upstream Interface",
+            "type": "string"
+          },
+          "wifi_interface": {
+            "title": "Wifi Interface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ssid",
+          "wifi_interface",
+          "upstream_interface",
+          "gateway_ip",
+          "channel"
+        ],
+        "title": "NetworkStatus",
+        "type": "object"
+      },
+      "OnionRequest": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "OnionRequest",
+        "type": "object"
+      },
+      "PasswordChangeRequest": {
+        "properties": {
+          "current_password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChangeRequest",
+        "type": "object"
+      },
+      "ProtectionCheck": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "ok",
+          "detail"
+        ],
+        "title": "ProtectionCheck",
+        "type": "object"
+      },
+      "ProtectionMetrics": {
+        "properties": {
+          "contained_entries": {
+            "title": "Contained Entries",
+            "type": "integer"
+          },
+          "protected_ratio": {
+            "title": "Protected Ratio",
+            "type": "number"
+          },
+          "protected_seconds": {
+            "title": "Protected Seconds",
+            "type": "integer"
+          },
+          "recoveries": {
+            "title": "Recoveries",
+            "type": "integer"
+          },
+          "recovery_success_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Success Rate"
+          }
+        },
+        "required": [
+          "protected_seconds",
+          "protected_ratio",
+          "contained_entries",
+          "recoveries",
+          "recovery_success_rate"
+        ],
+        "title": "ProtectionMetrics",
+        "type": "object"
+      },
+      "ProtectionStatus": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ProtectionCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/ProtectionMetrics"
+          },
+          "safe": {
+            "title": "Safe",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "protected",
+              "contained",
+              "degraded",
+              "demo"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "safe",
+          "label",
+          "summary",
+          "checks",
+          "metrics"
+        ],
+        "title": "ProtectionStatus",
+        "type": "object"
+      },
+      "RecoveryRequest": {
+        "properties": {
+          "new_password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          },
+          "recovery_code": {
+            "maxLength": 64,
+            "minLength": 20,
+            "title": "Recovery Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recovery_code",
+          "new_password"
+        ],
+        "title": "RecoveryRequest",
+        "type": "object"
+      },
+      "RelayRequest": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "RelayRequest",
+        "type": "object"
+      },
+      "ServiceStatus": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "active"
+        ],
+        "title": "ServiceStatus",
+        "type": "object"
+      },
+      "StatusResponse": {
+        "properties": {
+          "activities": {
+            "items": {
+              "$ref": "#/components/schemas/Activity"
+            },
+            "title": "Activities",
+            "type": "array"
+          },
+          "demo_mode": {
+            "title": "Demo Mode",
+            "type": "boolean"
+          },
+          "device_name": {
+            "title": "Device Name",
+            "type": "string"
+          },
+          "network": {
+            "$ref": "#/components/schemas/NetworkStatus"
+          },
+          "protection": {
+            "$ref": "#/components/schemas/ProtectionStatus"
+          },
+          "system": {
+            "$ref": "#/components/schemas/SystemStatus"
+          },
+          "tor": {
+            "$ref": "#/components/schemas/TorStatus"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_name",
+          "demo_mode",
+          "version",
+          "system",
+          "tor",
+          "network",
+          "protection",
+          "activities"
+        ],
+        "title": "StatusResponse",
+        "type": "object"
+      },
+      "SystemActionRequest": {
+        "properties": {
+          "action": {
+            "pattern": "^[a-z-]{3,24}$",
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "SystemActionRequest",
+        "type": "object"
+      },
+      "SystemStatus": {
+        "properties": {
+          "cpu_percent": {
+            "title": "Cpu Percent",
+            "type": "number"
+          },
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "memory_percent": {
+            "title": "Memory Percent",
+            "type": "number"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceStatus"
+            },
+            "title": "Services",
+            "type": "array"
+          },
+          "storage_percent": {
+            "title": "Storage Percent",
+            "type": "number"
+          },
+          "storage_total": {
+            "title": "Storage Total",
+            "type": "integer"
+          },
+          "storage_used": {
+            "title": "Storage Used",
+            "type": "integer"
+          },
+          "temperature_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature C"
+          },
+          "uptime_seconds": {
+            "title": "Uptime Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hostname",
+          "cpu_percent",
+          "memory_percent",
+          "temperature_c",
+          "storage_percent",
+          "storage_used",
+          "storage_total",
+          "uptime_seconds",
+          "services"
+        ],
+        "title": "SystemStatus",
+        "type": "object"
+      },
+      "TorNodeStatus": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "name"
+        ],
+        "title": "TorNodeStatus",
+        "type": "object"
+      },
+      "TorPolicyRequest": {
+        "properties": {
+          "exit_country": {
+            "default": "",
+            "maxLength": 2,
+            "title": "Exit Country",
+            "type": "string"
+          },
+          "rotation_seconds": {
+            "default": 0,
+            "maximum": 86400.0,
+            "minimum": 0.0,
+            "title": "Rotation Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "TorPolicyRequest",
+        "type": "object"
+      },
+      "TorStatus": {
+        "properties": {
+          "bootstrap": {
+            "title": "Bootstrap",
+            "type": "integer"
+          },
+          "bridges": {
+            "$ref": "#/components/schemas/BridgeStatus"
+          },
+          "circuit": {
+            "items": {
+              "$ref": "#/components/schemas/TorNodeStatus"
+            },
+            "title": "Circuit",
+            "type": "array"
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "exit_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Country"
+          },
+          "exit_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Ip"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connected",
+          "bootstrap",
+          "summary",
+          "circuit",
+          "exit_ip",
+          "exit_country",
+          "bridges"
+        ],
+        "title": "TorStatus",
+        "type": "object"
+      },
+      "UpdateSettingsRequest": {
+        "properties": {
+          "apply": {
+            "default": true,
+            "title": "Apply",
+            "type": "boolean"
+          },
+          "channel": {
+            "pattern": "^(stable|edge)$",
+            "title": "Channel",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "schedule": {
+            "maxLength": 41,
+            "minLength": 5,
+            "title": "Schedule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "schedule"
+        ],
+        "title": "UpdateSettingsRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "OnionPi API",
+    "version": "0.3.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Login Api V1 Auth Login Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login"
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout_api_v1_auth_logout_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout"
+      }
+    },
+    "/api/v1/auth/password": {
+      "post": {
+        "operationId": "change_password_api_v1_auth_password_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Change Password Api V1 Auth Password Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Password"
+      }
+    },
+    "/api/v1/auth/recover": {
+      "post": {
+        "operationId": "recover_account_api_v1_auth_recover_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Recover Account Api V1 Auth Recover Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recover Account"
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "operationId": "session_info_api_v1_auth_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Session Info Api V1 Auth Session Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Session Info"
+      }
+    },
+    "/api/v1/circumvention": {
+      "get": {
+        "operationId": "circumvention_state_api_v1_circumvention_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Circumvention State Api V1 Circumvention Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Circumvention State"
+      },
+      "post": {
+        "operationId": "update_circumvention_api_v1_circumvention_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CircumventionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Circumvention Api V1 Circumvention Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Circumvention"
+      }
+    },
+    "/api/v1/circumvention/refresh": {
+      "post": {
+        "description": "Updates the built-in bridge list straight from the Tor Project.\n\nRequires a working direct connection to bridges.torproject.org, which is\nexactly what censorship removes: failure here is expected, not fatal.",
+        "operationId": "refresh_circumvention_api_v1_circumvention_refresh_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Refresh Circumvention Api V1 Circumvention Refresh Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Circumvention"
+      }
+    },
+    "/api/v1/devices": {
+      "get": {
+        "operationId": "devices_api_v1_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Devices Api V1 Devices Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Devices"
+      }
+    },
+    "/api/v1/devices/block": {
+      "post": {
+        "operationId": "block_device_api_v1_devices_block_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceBlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Block Device Api V1 Devices Block Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Block Device"
+      }
+    },
+    "/api/v1/dns-filter": {
+      "get": {
+        "operationId": "dns_filter_state_api_v1_dns_filter_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Dns Filter State Api V1 Dns Filter Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dns Filter State"
+      },
+      "post": {
+        "operationId": "update_dns_filter_api_v1_dns_filter_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DnsFilterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Dns Filter Api V1 Dns Filter Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Dns Filter"
+      }
+    },
+    "/api/v1/dns-filter/refresh": {
+      "post": {
+        "operationId": "refresh_dns_filter_api_v1_dns_filter_refresh_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Refresh Dns Filter Api V1 Dns Filter Refresh Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Dns Filter"
+      }
+    },
+    "/api/v1/files": {
+      "delete": {
+        "operationId": "delete_file_api_v1_files_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete File"
+      },
+      "get": {
+        "operationId": "list_files_api_v1_files_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Files Api V1 Files Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Files"
+      }
+    },
+    "/api/v1/files/download": {
+      "get": {
+        "operationId": "download_file_api_v1_files_download_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 500,
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download File"
+      }
+    },
+    "/api/v1/files/folders": {
+      "post": {
+        "operationId": "create_folder_api_v1_files_folders_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Folder Api V1 Files Folders Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Folder"
+      }
+    },
+    "/api/v1/files/upload": {
+      "post": {
+        "operationId": "upload_file_api_v1_files_upload_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload File Api V1 Files Upload Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload File"
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "description": "Unauthenticated liveness probe used by onionpi-verify and first boot.\n\nDeliberately says nothing else: this is the one endpoint any Wi-Fi client\ncan reach without an account, and the installed version would tell whoever\nasks which published advisories apply to this appliance. The interface\nreads the version from /api/v1/status, behind the session.",
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Api V1 Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/v1/logs": {
+      "get": {
+        "operationId": "logs_api_v1_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "service",
+            "required": false,
+            "schema": {
+              "default": "tor",
+              "pattern": "^(tor|NetworkManager|dnsmasq|nftables|onionpi-firewall|onionpi|snowflake-proxy)$",
+              "title": "Service",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Logs Api V1 Logs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logs"
+      }
+    },
+    "/api/v1/onboarding": {
+      "get": {
+        "operationId": "onboarding_state_api_v1_onboarding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Onboarding State Api V1 Onboarding Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Onboarding State"
+      }
+    },
+    "/api/v1/onboarding/clock": {
+      "post": {
+        "operationId": "onboarding_clock_api_v1_onboarding_clock_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Onboarding Clock Api V1 Onboarding Clock Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Onboarding Clock"
+      }
+    },
+    "/api/v1/onboarding/firewall": {
+      "post": {
+        "operationId": "onboarding_firewall_api_v1_onboarding_firewall_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Onboarding Firewall Api V1 Onboarding Firewall Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Onboarding Firewall"
+      }
+    },
+    "/api/v1/onboarding/interfaces": {
+      "post": {
+        "operationId": "onboarding_interfaces_api_v1_onboarding_interfaces_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterfaceConfirmationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Onboarding Interfaces Api V1 Onboarding Interfaces Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Onboarding Interfaces"
+      }
+    },
+    "/api/v1/onboarding/recovery-code": {
+      "post": {
+        "operationId": "onboarding_recovery_code_api_v1_onboarding_recovery_code_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Onboarding Recovery Code Api V1 Onboarding Recovery Code Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Onboarding Recovery Code"
+      }
+    },
+    "/api/v1/onboarding/recovery-code/confirm": {
+      "post": {
+        "operationId": "onboarding_recovery_code_confirm_api_v1_onboarding_recovery_code_confirm_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Onboarding Recovery Code Confirm Api V1 Onboarding Recovery Code Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Onboarding Recovery Code Confirm"
+      }
+    },
+    "/api/v1/onion": {
+      "post": {
+        "operationId": "set_onion_api_v1_onion_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Onion Api V1 Onion Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Onion"
+      }
+    },
+    "/api/v1/onion/rotate": {
+      "post": {
+        "operationId": "rotate_onion_api_v1_onion_rotate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rotate Onion Api V1 Onion Rotate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Onion"
+      }
+    },
+    "/api/v1/relay/snowflake": {
+      "post": {
+        "operationId": "set_snowflake_relay_api_v1_relay_snowflake_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RelayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Snowflake Relay Api V1 Relay Snowflake Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Snowflake Relay"
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "operationId": "status_api_v1_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Status"
+      }
+    },
+    "/api/v1/system/action": {
+      "post": {
+        "operationId": "run_system_action_api_v1_system_action_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Run System Action Api V1 System Action Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run System Action"
+      }
+    },
+    "/api/v1/system/actions": {
+      "get": {
+        "operationId": "system_actions_api_v1_system_actions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Actions Api V1 System Actions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System Actions"
+      }
+    },
+    "/api/v1/system/backup": {
+      "post": {
+        "operationId": "create_encrypted_backup_api_v1_system_backup_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Encrypted Backup"
+      }
+    },
+    "/api/v1/system/backup/preview": {
+      "post": {
+        "operationId": "preview_encrypted_backup_api_v1_system_backup_preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Encrypted Backup Api V1 System Backup Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Encrypted Backup"
+      }
+    },
+    "/api/v1/system/backup/restore": {
+      "post": {
+        "operationId": "restore_encrypted_backup_api_v1_system_backup_restore_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Restore Encrypted Backup Api V1 System Backup Restore Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Encrypted Backup"
+      }
+    },
+    "/api/v1/system/config": {
+      "get": {
+        "operationId": "export_configuration_api_v1_system_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationDocument"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export Configuration"
+      },
+      "post": {
+        "operationId": "import_configuration_api_v1_system_config_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Import Configuration Api V1 System Config Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Configuration"
+      }
+    },
+    "/api/v1/system/diagnostics": {
+      "get": {
+        "description": "Authenticated readiness report with no secrets or client identifiers.",
+        "operationId": "system_diagnostics_api_v1_system_diagnostics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response System Diagnostics Api V1 System Diagnostics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System Diagnostics"
+      }
+    },
+    "/api/v1/system/update": {
+      "get": {
+        "operationId": "update_state_api_v1_system_update_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update State Api V1 System Update Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Update State"
+      }
+    },
+    "/api/v1/system/update/check": {
+      "post": {
+        "operationId": "check_for_update_api_v1_system_update_check_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Check For Update Api V1 System Update Check Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check For Update"
+      }
+    },
+    "/api/v1/system/update/run": {
+      "post": {
+        "operationId": "run_update_api_v1_system_update_run_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Run Update Api V1 System Update Run Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Update"
+      }
+    },
+    "/api/v1/system/update/settings": {
+      "post": {
+        "operationId": "save_update_settings_api_v1_system_update_settings_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Save Update Settings Api V1 System Update Settings Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Update Settings"
+      }
+    },
+    "/api/v1/tor/advanced": {
+      "get": {
+        "operationId": "tor_advanced_api_v1_tor_advanced_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tor Advanced Api V1 Tor Advanced Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tor Advanced"
+      }
+    },
+    "/api/v1/tor/new-identity": {
+      "post": {
+        "operationId": "new_identity_api_v1_tor_new_identity_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response New Identity Api V1 Tor New Identity Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "New Identity"
+      }
+    },
+    "/api/v1/tor/policy": {
+      "post": {
+        "operationId": "update_tor_policy_api_v1_tor_policy_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TorPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Tor Policy Api V1 Tor Policy Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Tor Policy"
+      }
+    },
+    "/api/v1/tor/speedtest": {
+      "post": {
+        "operationId": "tor_speedtest_api_v1_tor_speedtest_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tor Speedtest Api V1 Tor Speedtest Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tor Speedtest"
+      }
+    },
+    "/api/v1/traffic": {
+      "get": {
+        "operationId": "traffic_api_v1_traffic_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Traffic Api V1 Traffic Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Traffic"
+      }
+    }
+  }
+}

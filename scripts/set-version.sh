@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Moves VERSION, package.json and __init__.py together.
+# Moves VERSION, package manifests and __init__.py together.
 #
 #   ./scripts/set-version.sh 0.2.0     # prepare a release
 #   git tag v0.2.0 && git push --tags  # publish it
@@ -31,6 +31,12 @@ import sys
 path = pathlib.Path("frontend/package.json")
 document = json.loads(path.read_text())
 document["version"] = sys.argv[1]
+path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n")
+
+path = pathlib.Path("frontend/package-lock.json")
+document = json.loads(path.read_text())
+document["version"] = sys.argv[1]
+document["packages"][""]["version"] = sys.argv[1]
 path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n")
 PY
 python3 - "$VERSION" <<'PY'

@@ -1,6 +1,6 @@
 [Unit]
 Description=OnionPi boot banner on the local console
-Documentation=file:/opt/onionpi/README.md
+Documentation=file:/opt/onionpi/current/README.md
 After=systemd-tmpfiles-setup.service
 Before=getty.target
 

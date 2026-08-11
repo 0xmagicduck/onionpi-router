@@ -1,19 +1,21 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { Filter, RefreshCw, ShieldOff } from 'lucide-react'
+import { AlertTriangle, Download, Filter, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react'
 import { api } from '../api'
 import { DeviceTable } from '../components/DeviceTable'
 import { Panel } from '../components/Panel'
 import { relativeTime } from '../lib'
-import type { Device, DnsFilterState } from '../types'
+import type { Device, DnsFilterState, StatusPayload } from '../types'
 
 type Props = {
+  status?: StatusPayload
   devices: Device[]
   notify: (message: string, error?: boolean) => void
   onDevicesRefresh: () => void
 }
 
-export function ProtectionPage({ devices, notify, onDevicesRefresh }: Props) {
+export function ProtectionPage({ status, devices, notify, onDevicesRefresh }: Props) {
   const [busyMac, setBusyMac] = useState('')
+  const [repairBusy, setRepairBusy] = useState(false)
 
   const toggleBlock = async (device: Device) => {
     setBusyMac(device.mac)
@@ -28,12 +30,64 @@ export function ProtectionPage({ devices, notify, onDevicesRefresh }: Props) {
     }
   }
 
+  const failed = status?.protection.checks.find((check) => !check.ok)
+  const repairActions: Record<string, { action: string; label: string }> = {
+    firewall: { action: 'restart-firewall', label: 'Relancer le pare-feu' },
+    tor: { action: 'restart-tor', label: 'Réparer Tor' },
+    dns: { action: 'restart-dnsmasq', label: 'Corriger le DNS' },
+    'access-point': { action: 'restart-network', label: 'Relancer le Wi-Fi' },
+  }
+  const repair = failed ? repairActions[failed.id] : undefined
+
+  const runRepair = async () => {
+    if (!repair) return
+    setRepairBusy(true)
+    try {
+      const result = await api.runSystemAction(repair.action)
+      notify(result.message)
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Réparation refusée', true)
+    } finally {
+      setRepairBusy(false)
+    }
+  }
+
+  const downloadReport = async () => {
+    try {
+      const report = await api.diagnostics()
+      const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `onionpi-diagnostic-${report.generated_at}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Rapport indisponible', true)
+    }
+  }
+
   return (
     <div className="page operational-page">
       <div className="page-title">
         <h1>Protection</h1>
-        <p>Filtrage des domaines indésirables et contrôle des appareils autorisés sur le Wi-Fi.</p>
+        <p>Un état unique, sa cause et l’action sûre à prendre immédiatement.</p>
       </div>
+      {status && (
+        <section className={`protection-hero protection-${status.protection.status}`}>
+          {status.protection.safe ? <ShieldCheck /> : <AlertTriangle />}
+          <div>
+            <span>{status.protection.status}</span>
+            <h2>{status.protection.label}</h2>
+            <p>{status.protection.summary}</p>
+            <small>Temps protégé : {Math.round(status.protection.metrics.protected_ratio * 100)} % · entrées en confinement : {status.protection.metrics.contained_entries}</small>
+          </div>
+          <div className="protection-actions">
+            {repair && <button className="button button-primary" disabled={repairBusy} onClick={() => void runRepair()}><RefreshCw size={15} />{repairBusy ? 'Réparation…' : repair.label}</button>}
+            <button className="button button-secondary" onClick={() => void downloadReport()}><Download size={15} /> Télécharger le rapport</button>
+          </div>
+        </section>
+      )}
+      {status && <ul className="protection-check-grid">{status.protection.checks.map((check) => <li className={check.ok ? 'check-ok' : 'check-failed'} key={check.id}>{check.ok ? <ShieldCheck /> : <AlertTriangle />}<div><strong>{check.label}</strong><span>{check.detail}</span></div></li>)}</ul>}
       <DnsFilterPanel notify={notify} />
       <DeviceTable devices={devices} onToggleBlock={toggleBlock} busyMac={busyMac} />
     </div>

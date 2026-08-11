@@ -60,7 +60,7 @@ systemctl is-active --quiet onionpi-agent.path \
 
 printf 'Mises à jour\n'
 if [[ -x /usr/local/sbin/onionpi-update ]]; then
-  version="$(head -n 1 /opt/onionpi/VERSION 2>/dev/null | tr -d '[:space:]')"
+  version="$(head -n 1 /opt/onionpi/current/VERSION 2>/dev/null | tr -d '[:space:]')"
   ok "version installée ${version:-inconnue}"
   if systemctl is-active --quiet onionpi-update.timer; then
     next="$(systemctl show onionpi-update.timer -p NextElapseUSecRealtime --value 2>/dev/null)"
