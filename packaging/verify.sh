@@ -70,6 +70,21 @@ if [[ -x /usr/local/sbin/onionpi-update ]]; then
   fi
   if [[ -r /etc/onionpi/update.conf ]]; then
     ok 'politique de mise à jour présente'
+    require_signature="$(sed -n 's/^ONIONPI_UPDATE_REQUIRE_SIGNATURE=//p' /etc/onionpi/update.conf | head -n 1)"
+    keyring="$(sed -n 's/^ONIONPI_UPDATE_GPG_KEYRING=//p' /etc/onionpi/update.conf | head -n 1)"
+    keyring="${keyring:-/etc/onionpi/update-signing-key.gpg}"
+    if [[ -s "$keyring" ]]; then
+      fingerprint="$(gpg --show-keys --with-colons "$keyring" 2>/dev/null \
+        | awk -F: '/^fpr:/ {print $10; exit}')"
+      ok "clé de signature installée ${fingerprint:0:16}…"
+      [[ "$require_signature" == "1" ]] \
+        && ok 'signature exigée avant toute installation' \
+        || warn 'signature présente mais non exigée (ONIONPI_UPDATE_REQUIRE_SIGNATURE=0)'
+    elif [[ "$require_signature" == "1" ]]; then
+      fail "signature exigée mais aucun trousseau en $keyring: toute mise à jour sera refusée"
+    else
+      warn 'aucune clé de signature: les archives ne sont vérifiées que par empreinte'
+    fi
   else
     fail '/etc/onionpi/update.conf absent: onionpi-update utilisera ses valeurs par défaut'
   fi

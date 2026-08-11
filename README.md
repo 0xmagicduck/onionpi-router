@@ -309,8 +309,10 @@ Ce qui protège l’appareil :
   compris la résolution DNS : le réseau local n’apprend pas que cette adresse
   est une OnionPi. Sans Tor, aucune mise à jour, plutôt que la même requête en
   clair ;
-- **l’archive n’est dépliée qu’après contrôle de son empreinte SHA-256**, et de
-  sa signature OpenPGP si vous en configurez une ;
+- **l’archive n’est dépliée qu’après contrôle de son empreinte SHA-256 et de sa
+  signature OpenPGP**. La clé publique (`FD4DC3B7A6C94E1F3B2F130A99EFBC5B082A1AB8`)
+  est installée avec le code : une mise à jour doit être signée par une clé qui
+  était déjà sur l’appareil, donc un compte GitHub compromis ne suffit pas ;
 - **`/opt/onionpi` est copié avant toute écriture**. La réinstallation garde le
   point d’accès, les mots de passe et les données ; si `onionpi-verify` échoue
   ensuite, la version précédente est restaurée toute seule ;

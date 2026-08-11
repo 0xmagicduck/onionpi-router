@@ -83,18 +83,38 @@ sudo onionpi-update --apply --force
    jour — plutôt que la même requête en clair.
 2. **L’empreinte.** L’archive doit correspondre à la ligne qui la concerne dans
    `SHA256SUMS`.
-3. **La signature**, si vous en avez configuré une :
+3. **La signature.** `SHA256SUMS.asc` doit être une signature OpenPGP valide de
+   `SHA256SUMS`, faite par la clé de publication OnionPi :
 
-   ```bash
-   gpg --export VOTRE_CLE | sudo tee /etc/onionpi/update-signing-key.gpg >/dev/null
-   sudo sed -i 's/^ONIONPI_UPDATE_REQUIRE_SIGNATURE=0/ONIONPI_UPDATE_REQUIRE_SIGNATURE=1/' \
-     /etc/onionpi/update.conf
+   ```
+   FD4D C3B7 A6C9 4E1F 3B2F  130A 99EF BC5B 082A 1AB8
    ```
 
-   Côté dépôt, les secrets `ONIONPI_GPG_PRIVATE_KEY` et
-   `ONIONPI_GPG_PASSPHRASE` font signer `SHA256SUMS` à chaque publication.
-   Sans trousseau, l’empreinte reste vérifiée mais rien ne prouve qui l’a
-   écrite : c’est la configuration par défaut, et c’est le maillon faible.
+   Cette empreinte est celle de `packaging/keys/onionpi-release.asc`, que
+   `install.sh` convertit en trousseau `/etc/onionpi/update-signing-key.gpg`.
+   La clé publique voyage donc **avec le code déjà installé** : une mise à jour
+   ne peut être acceptée que si elle est signée par une clé qui se trouvait sur
+   l’appareil avant même que cette mise à jour existe. Un compte GitHub
+   compromis ne suffit plus, il faut aussi la clé privée.
+
+   Vérifier à la main ce que la Pi vérifie toute seule :
+
+   ```bash
+   gpg --import packaging/keys/onionpi-release.asc
+   gpg --verify SHA256SUMS.asc SHA256SUMS
+   sha256sum -c SHA256SUMS
+   ```
+
+   `ONIONPI_UPDATE_REQUIRE_SIGNATURE=1` est la valeur par défaut : une
+   publication sans signature valide est refusée, elle n’est pas simplement
+   signalée. Passez à `0` uniquement si vous construisez vos propres archives
+   non signées.
+
+   Côté dépôt, la signature est faite en CI avec le secret
+   `ONIONPI_GPG_PRIVATE_KEY` (et `ONIONPI_GPG_PASSPHRASE` si la clé en a une).
+   Perdre la clé privée n’empêche rien de fonctionner, mais oblige à publier
+   une nouvelle clé publique par une mise à jour signée avec l’ancienne — donc
+   à ne pas la perdre en premier.
 4. **Le contenu.** L’archive doit contenir `packaging/install.sh`, une
    interface construite, et un fichier `VERSION` égal à la version annoncée par
    le nom du fichier.

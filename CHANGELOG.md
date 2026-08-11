@@ -18,6 +18,10 @@ numérotation [SemVer](https://semver.org/lang/fr/).
   la minute exacte de sa requête).
 - Deux canaux : `stable` (versions étiquetées) et `edge` (chaque envoi sur
   `main`, publié après les tests).
+- Publications signées OpenPGP (`FD4DC3B7A6C94E1F3B2F130A99EFBC5B082A1AB8`).
+  La clé publique est installée avec le code et la signature est **exigée** par
+  défaut : une mise à jour doit être signée par une clé déjà présente sur
+  l’appareil, un compte GitHub compromis ne suffit donc pas.
 - `install.sh --upgrade` : réinstallation en place qui conserve le point
   d’accès, les mots de passe, la base et la configuration.
 - Verbes privilégiés `update`, `update-check` et `update-schedule` dans

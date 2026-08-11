@@ -26,7 +26,8 @@ qui reçoit les correctifs.
 - élévation de privilèges depuis l’interface web vers root, y compris par la
   file d’attente `agent.request` ou par `update.settings.json` ;
 - installation d’une archive de mise à jour non vérifiée, ou contournement du
-  contrôle SHA-256 ou de la signature ;
+  contrôle SHA-256 ou de la signature OpenPGP
+  (`FD4DC3B7A6C94E1F3B2F130A99EFBC5B082A1AB8`) ;
 - lecture ou écriture hors de `/var/lib/onionpi/shared` par l’API de fichiers ;
 - contournement de l’authentification, de la protection CSRF ou de la
   limitation des tentatives de connexion ;

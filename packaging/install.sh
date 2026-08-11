@@ -240,7 +240,8 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
   tor nftables dnsmasq network-manager nginx openssl avahi-daemon curl iw \
-  python3 python3-venv python3-pip rsync ca-certificates systemd-timesyncd dnsutils
+  python3 python3-venv python3-pip rsync ca-certificates systemd-timesyncd dnsutils \
+  gnupg gpgv
 
 # Circumvention. obfs4proxy also provides meek_lite. snowflake-client lets the
 # Pi use volunteer proxies; snowflake-proxy lets it become one. Missing
@@ -518,6 +519,18 @@ install -m 0755 "$PROJECT_ROOT/packaging/uninstall.sh" /usr/local/sbin/onionpi-u
 # The version the updater compares against. It is the installed tree that
 # matters, not the checkout it came from, so it is written next to the code.
 install -m 0644 "$PROJECT_ROOT/VERSION" /opt/onionpi/VERSION
+
+# Public half of the release signing key, in the binary form gpgv reads. It
+# travels with the code: an update can only be installed if it is signed by the
+# key that was already on the appliance before that update existed.
+if [[ -s "$PROJECT_ROOT/packaging/keys/onionpi-release.asc" ]]; then
+  gpg --dearmor --yes --output /run/onionpi-release-key.gpg \
+    <"$PROJECT_ROOT/packaging/keys/onionpi-release.asc"
+  install -m 0644 /run/onionpi-release-key.gpg /etc/onionpi/update-signing-key.gpg
+  rm -f /run/onionpi-release-key.gpg
+else
+  printf 'Clé de signature absente: les mises à jour ne seront vérifiées que par empreinte.\n' >&2
+fi
 # A first installation writes the policy; an upgrade keeps the file already
 # there, since an operator may have edited it by hand.
 if [[ ! -s /etc/onionpi/update.conf ]]; then
