@@ -34,7 +34,7 @@ def login(client: TestClient) -> str:
 
 def test_auth_status_and_security_headers() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         assert client.get("/api/v1/status").status_code == 401
         csrf = login(client)
         response = client.get("/api/v1/status")
@@ -46,16 +46,16 @@ def test_auth_status_and_security_headers() -> None:
 
 def test_password_reset_revokes_existing_session() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         login(client)
         assert client.get("/api/v1/auth/session").status_code == 200
-        database.create_user("admin", "Bastien", hash_password("nouvelle-phrase-secrete-solide"))
+        database.create_user("admin", "Camille", hash_password("nouvelle-phrase-secrete-solide"))
         assert client.get("/api/v1/auth/session").status_code == 401
 
 
 def test_mutations_require_csrf_and_paths_stay_in_share() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         rejected = client.post(
             "/api/v1/files/folders",
@@ -89,7 +89,7 @@ def test_mutations_require_csrf_and_paths_stay_in_share() -> None:
 
 def test_password_change_requires_the_current_one_and_closes_sessions() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         wrong = client.post(
             "/api/v1/auth/password",
@@ -126,7 +126,7 @@ def test_upload_refuses_when_storage_reserve_is_not_met() -> None:
     from onionpi import main as main_module
 
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         original = main_module.settings
         object.__setattr__(original, "storage_reserve_bytes", 1 << 62)
@@ -144,7 +144,7 @@ def test_upload_refuses_when_storage_reserve_is_not_met() -> None:
 
 def test_foreign_origin_is_rejected_on_mutations() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         response = client.post(
             "/api/v1/files/folders",
@@ -156,7 +156,7 @@ def test_foreign_origin_is_rejected_on_mutations() -> None:
 
 def test_circumvention_requires_a_session_and_reports_transports() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         assert client.get("/api/v1/circumvention").status_code == 401
         login(client)
         payload = client.get("/api/v1/circumvention").json()
@@ -167,7 +167,7 @@ def test_circumvention_requires_a_session_and_reports_transports() -> None:
 
 def test_circumvention_rejects_an_invalid_bridge_line() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         response = client.post(
             "/api/v1/circumvention",
@@ -189,7 +189,7 @@ def test_circumvention_rejects_an_invalid_bridge_line() -> None:
 
 def test_snowflake_relay_toggle_requires_csrf() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         assert client.post("/api/v1/relay/snowflake", json={"enabled": True}).status_code == 403
         response = client.post(
@@ -203,7 +203,7 @@ def test_snowflake_relay_toggle_requires_csrf() -> None:
 
 def test_chat_persists_messages() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         login(client)
         with client.websocket_connect("/api/v1/chat/ws") as websocket:
             history = websocket.receive_json()
@@ -218,7 +218,7 @@ def test_chat_persists_messages() -> None:
 
 def test_device_blocking_round_trip() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         assert client.post(
             "/api/v1/devices/block",
@@ -259,7 +259,7 @@ def test_device_blocking_round_trip() -> None:
 
 def test_dns_filter_endpoints() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         assert client.get("/api/v1/dns-filter").json()["enabled"] is False
 
@@ -280,7 +280,7 @@ def test_dns_filter_endpoints() -> None:
 
 def test_tor_policy_speedtest_and_onion() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         advanced = client.get("/api/v1/tor/advanced").json()
         assert advanced["policy"]["exit_country"] == ""
@@ -312,7 +312,7 @@ def test_tor_policy_speedtest_and_onion() -> None:
 
 def test_system_actions_and_configuration_export() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         csrf = login(client)
         assert client.post(
             "/api/v1/system/action",
@@ -358,7 +358,7 @@ def test_system_actions_and_configuration_export() -> None:
 
 def test_update_page_reads_state_and_refuses_bad_schedules() -> None:
     with TestClient(app) as client:
-        database.create_user("admin", "Bastien", hash_password(PASSWORD))
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
         assert client.get("/api/v1/system/update").status_code == 401
         csrf = login(client)
 

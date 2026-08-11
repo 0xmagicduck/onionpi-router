@@ -16,7 +16,7 @@ WIFI_CHANNEL=""
 LAN_SSH=1
 ASSUME_YES=0
 UPGRADE=0
-UPDATE_REPOSITORY="bastienjavx/onionpi-router"
+UPDATE_REPOSITORY="0xmagicduck/onionpi-router"
 UPDATE_CHANNEL="stable"
 UPDATE_SCHEDULE="04:30"
 UPDATE_ENABLED=1
@@ -38,7 +38,7 @@ Usage: sudo ./packaging/install.sh [options]
   -h, --help           afficher cette aide
 
 Mises à jour automatiques:
-  --update-repo OWNER/NOM  dépôt GitHub des publications (défaut: bastienjavx/onionpi-router)
+  --update-repo OWNER/NOM  dépôt GitHub des publications (défaut: 0xmagicduck/onionpi-router)
   --update-channel CANAL   stable (publications) ou edge (branche main)
   --update-time HH:MM      heures de vérification, séparées par des virgules
   --update-check-only      télécharge l'information, n'installe pas tout seul

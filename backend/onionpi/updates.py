@@ -181,7 +181,7 @@ class UpdateManager:
         return {
             **self.state(),
             "supported": True,
-            "repository": "bastienjavx/onionpi-router",
+            "repository": "0xmagicduck/onionpi-router",
             "available": self.version,
             "update_pending": False,
             "next_run": now + 3600,

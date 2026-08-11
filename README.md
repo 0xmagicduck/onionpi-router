@@ -1,7 +1,7 @@
 # OnionPi — routeur Tor pour Raspberry Pi
 
-[![CI](https://github.com/bastienjavx/onionpi-router/actions/workflows/ci.yml/badge.svg)](https://github.com/bastienjavx/onionpi-router/actions/workflows/ci.yml)
-[![Release](https://github.com/bastienjavx/onionpi-router/actions/workflows/release.yml/badge.svg)](https://github.com/bastienjavx/onionpi-router/actions/workflows/release.yml)
+[![CI](https://github.com/0xmagicduck/onionpi-router/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmagicduck/onionpi-router/actions/workflows/ci.yml)
+[![Release](https://github.com/0xmagicduck/onionpi-router/actions/workflows/release.yml/badge.svg)](https://github.com/0xmagicduck/onionpi-router/actions/workflows/release.yml)
 [![Licence MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 OnionPi transforme une Raspberry Pi en point d’accès Wi‑Fi dont le trafic TCP

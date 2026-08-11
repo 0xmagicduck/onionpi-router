@@ -33,7 +33,7 @@ BACKUP_ROOT="/var/backups"
 TIMER_DROPIN="/etc/systemd/system/onionpi-update.timer.d/schedule.conf"
 
 # Defaults. /etc/onionpi/update.conf is root-owned and may override all of them.
-ONIONPI_UPDATE_REPOSITORY="bastienjavx/onionpi-router"
+ONIONPI_UPDATE_REPOSITORY="0xmagicduck/onionpi-router"
 ONIONPI_UPDATE_CHANNEL="stable"
 ONIONPI_UPDATE_SCHEDULE="04:30"
 ONIONPI_UPDATE_CALENDAR=""

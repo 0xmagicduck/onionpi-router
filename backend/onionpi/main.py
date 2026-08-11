@@ -196,7 +196,7 @@ def _seed_demo_content() -> None:
         for kind, message in reversed(demo_activities):
             database.add_activity(kind, message)
     if not database.messages(1):
-        database.add_message(None, "Bastien", "J’ai ajouté les photos dans le dossier partagé.")
+        database.add_message(None, "Camille", "J’ai ajouté les photos dans le dossier partagé.")
         database.add_message(None, "Alice", "Parfait, merci ! Je vais les regarder ce soir.")
         database.add_message(None, "OnionPi", "Sauvegarde automatique des fichiers activée.")
 
