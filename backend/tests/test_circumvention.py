@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -140,6 +141,18 @@ def test_rejected_reload_restores_the_previous_fragment(tmp_path: Path) -> None:
     assert manager.config.mode == "direct"
 
 
+def long_ago(manager: CircumventionManager) -> None:
+    """Push the watchdog clocks far enough back to cross every threshold.
+
+    time.monotonic() counts from boot on Linux: a literal 0.0 only reads as
+    "long ago" on a machine that has been up for a while, and a freshly booted
+    CI runner made these tests silently observe a stall of a few seconds.
+    """
+    past = time.monotonic() - 10_000
+    manager._stalled_since = past
+    manager._last_switch = past
+
+
 def test_watchdog_enables_bridges_after_a_stalled_bootstrap(tmp_path: Path) -> None:
     controller = FakeController(progress=10)
     manager = build(tmp_path, country="BE", controller=controller)
@@ -148,15 +161,13 @@ def test_watchdog_enables_bridges_after_a_stalled_bootstrap(tmp_path: Path) -> N
     manager.tick()  # first stalled observation only starts the timer
     assert manager.config.auto_transport == ""
 
-    manager._stalled_since = 0.0  # simulate a long stall
-    manager._last_switch = 0.0
+    long_ago(manager)  # simulate a long stall
     manager.tick()
     first = manager.config.auto_transport
     assert first in {"snowflake", "obfs4"}
     assert "UseBridges 1" in (tmp_path / "bridges.conf").read_text()
 
-    manager._stalled_since = 0.0
-    manager._last_switch = 0.0
+    long_ago(manager)
     manager.tick()
     assert manager.config.auto_transport != first
 
@@ -165,8 +176,7 @@ def test_watchdog_does_nothing_once_tor_is_bootstrapped(tmp_path: Path) -> None:
     manager = build(tmp_path, country="IR", controller=FakeController(progress=100))
     manager.update(mode="auto", transport="snowflake", country="IR", custom_bridges=[])
     chosen = manager.config.auto_transport
-    manager._stalled_since = 0.0
-    manager._last_switch = 0.0
+    long_ago(manager)
     manager.tick()
     assert manager.config.auto_transport == chosen
 
