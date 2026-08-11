@@ -1,0 +1,11 @@
+[Unit]
+Description=Applies the OnionPi Snowflake proxy switch
+Documentation=file:/opt/onionpi/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/onionpi-relay-apply
+RemainAfterExit=no
+TimeoutStartSec=60s

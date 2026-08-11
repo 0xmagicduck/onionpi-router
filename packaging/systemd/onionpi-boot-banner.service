@@ -1,0 +1,17 @@
+[Unit]
+Description=OnionPi boot banner on the local console
+Documentation=file:/opt/onionpi/README.md
+After=systemd-tmpfiles-setup.service
+Before=getty.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment=ONIONPI_FORCE_COLOR=1
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+ExecStart=/usr/local/lib/onionpi/onionpi-banner.sh
+
+[Install]
+WantedBy=multi-user.target

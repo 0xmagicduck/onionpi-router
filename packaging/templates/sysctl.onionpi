@@ -1,0 +1,15 @@
+# OnionPi: transparent local interception with no direct client forwarding.
+net.ipv4.ip_forward = 1
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv6.conf.__WIFI_INTERFACE__.disable_ipv6 = 1
+
+# nginx and Tor bind explicitly to the access point address. Without this the
+# services lose the boot race against NetworkManager and fail with
+# EADDRNOTAVAIL before wlan0 receives 10.42.0.1.
+net.ipv4.ip_nonlocal_bind = 1

@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # Everything here lands on a Raspberry Pi that updates itself, so the point
+  # of a weekly cadence is that a security bump reaches appliances within days,
+  # not that the repository stays fashionable.
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+    open-pull-requests-limit: 5
+    labels: [dependencies, frontend]
+    groups:
+      # One pull request for the toolchain, one per runtime dependency.
+      build-tooling:
+        patterns: ['vite', '@vitejs/*', 'typescript', '@types/*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies, ci]

@@ -1,0 +1,123 @@
+name: Release
+
+# What makes the automatic update work end to end:
+#
+#   push on main  -> tests, then a rolling "edge" pre-release
+#   push of a tag -> tests, then a stable release
+#
+# A Raspberry Pi asks GitHub for one of those two at the hours configured in
+# /etc/onionpi/update.conf, and installs it only after checking SHA256SUMS.
+# Nothing is ever pushed to a Pi: no port is opened on the appliance.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # A release nobody tested is a release that bricks an appliance at 04:30.
+      - name: Backend tests
+        run: |
+          pip install -r backend/requirements-dev.txt
+          ruff check backend
+          cd backend && python -m pytest -q
+
+      - name: Build the interface
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: frontend
+
+      - name: Decide the version and the channel
+        id: version
+        run: |
+          base="$(head -n 1 VERSION | tr -d '[:space:]')"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/v}"
+            if [[ "$tag" != "$base" ]]; then
+              echo "::error::L'étiquette v$tag ne correspond pas au fichier VERSION ($base)."
+              exit 1
+            fi
+            echo "version=$base" >>"$GITHUB_OUTPUT"
+            echo "channel=stable" >>"$GITHUB_OUTPUT"
+          else
+            # A pre-release of the version being prepared, so an edge build is
+            # always newer than the last edge build and older than the release
+            # it leads to.
+            echo "version=$base-edge.$GITHUB_RUN_NUMBER" >>"$GITHUB_OUTPUT"
+            echo "channel=edge" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Assemble the archive
+        id: package
+        run: ./scripts/build-release.sh "${{ steps.version.outputs.version }}"
+
+      # Optional: set the two secrets and every release becomes verifiable by a
+      # Pi configured with ONIONPI_UPDATE_REQUIRE_SIGNATURE=1.
+      - name: Sign SHA256SUMS
+        if: ${{ secrets.ONIONPI_GPG_PRIVATE_KEY != '' }}
+        env:
+          SIGNING_KEY: ${{ secrets.ONIONPI_GPG_PRIVATE_KEY }}
+          SIGNING_PASSPHRASE: ${{ secrets.ONIONPI_GPG_PASSPHRASE }}
+        run: |
+          printf '%s' "$SIGNING_KEY" | gpg --batch --import
+          gpg --batch --yes --pinentry-mode loopback \
+            ${SIGNING_PASSPHRASE:+--passphrase "$SIGNING_PASSPHRASE"} \
+            --detach-sign --armor --output dist/SHA256SUMS.asc dist/SHA256SUMS
+
+      - name: Publish the stable release
+        if: steps.version.outputs.channel == 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" dist/* \
+            --title "OnionPi ${{ steps.version.outputs.version }}" \
+            --generate-notes
+
+      - name: Refresh the edge pre-release
+        if: steps.version.outputs.channel == 'edge'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # "edge" is a moving pointer: the previous build is replaced so a Pi
+          # on that channel always sees exactly one candidate.
+          gh release delete edge --yes --cleanup-tag 2>/dev/null || true
+          gh release create edge dist/* \
+            --title "OnionPi edge (${{ steps.version.outputs.version }})" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --notes "Construction automatique de ${GITHUB_SHA:0:7} sur main.
+
+Canal \`edge\`: une Raspberry Pi configurée sur ce canal installera cette
+version à sa prochaine vérification. Utilisez \`stable\` pour ne recevoir que
+les versions étiquetées."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: onionpi-${{ steps.version.outputs.version }}
+          path: dist/
+          retention-days: 14

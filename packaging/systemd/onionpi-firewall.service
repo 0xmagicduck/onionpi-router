@@ -1,0 +1,14 @@
+[Unit]
+Description=OnionPi Tor redirection and network kill switch
+After=nftables.service
+PartOf=nftables.service
+Before=NetworkManager.service dnsmasq.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/onionpi-firewall-apply
+ExecReload=/usr/local/sbin/onionpi-firewall-apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

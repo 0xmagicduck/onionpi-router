@@ -1,0 +1,12 @@
+[Unit]
+Description=Watches the OnionPi Snowflake proxy switch
+Documentation=file:/opt/onionpi/README.md
+
+[Path]
+# The web application runs unprivileged and only writes this one word file.
+# systemd, not the application, performs the privileged start/stop.
+PathChanged=/var/lib/onionpi/relay.state
+Unit=onionpi-relay.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,27 @@
+# Build and local development state.
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+.venv/
+.data/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# Flashable images and everything build-image.sh produces.
+build/
+*.img
+*.img.xz
+
+# Credentials must stay out of the working tree. build-image.sh writes the
+# generated passwords to a 0600 file next to the image; it belongs in a
+# password manager, never in a commit.
+*-identifiants.txt
+clouds.yaml
+*openrc*
+*.pem
+*.key
+
+# macOS
+.DS_Store

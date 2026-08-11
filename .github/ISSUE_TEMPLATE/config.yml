@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Faille de sécurité
+    url: https://github.com/bastienjavx/onionpi-router/security/advisories/new
+    about: Signalement privé. N’ouvrez jamais d’issue publique pour une faille.
+  - name: Question sur Tor lui-même
+    url: https://support.torproject.org/
+    about: Ponts, censure, comportement du réseau Tor.

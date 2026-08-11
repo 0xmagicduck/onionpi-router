@@ -1,0 +1,5 @@
+#!/bin/sh
+# Installed as /etc/update-motd.d/10-onionpi. pam_motd runs it at every
+# interactive login, so it must stay fast and never fail the login.
+[ -x /usr/local/bin/onionpi-status ] || exit 0
+/usr/local/bin/onionpi-status --motd 2>/dev/null || true

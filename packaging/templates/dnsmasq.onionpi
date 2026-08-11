@@ -1,0 +1,23 @@
+# DHCP and Tor-backed DNS for the OnionPi access point.
+interface=__WIFI_INTERFACE__
+bind-dynamic
+listen-address=127.0.0.1,__GATEWAY_IP__
+
+dhcp-authoritative
+dhcp-range=__DHCP_START__,__DHCP_END__,255.255.255.0,12h
+dhcp-option=option:router,__GATEWAY_IP__
+dhcp-option=option:dns-server,__GATEWAY_IP__
+dhcp-leasefile=/var/lib/misc/dnsmasq.leases
+
+# Never use the ISP resolver. Tor's DNSPort is the only upstream.
+no-resolv
+server=127.0.0.1#9053
+domain-needed
+bogus-priv
+stop-dns-rebind
+rebind-domain-ok=/.onion/
+cache-size=1000
+
+# Domain blocklist maintained from the web interface. The file always exists,
+# even empty: dnsmasq refuses to start when an addn-hosts file is missing.
+addn-hosts=/etc/onionpi/dns/block.hosts

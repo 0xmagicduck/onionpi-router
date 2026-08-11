@@ -1,0 +1,7 @@
+# Every user-visible string in this project is French, and French typography
+# uses ’ as an apostrophe. Inside a quoted string it is data, not a quote.
+disable=SC1112
+
+# The scripts are bash, and `source /etc/onionpi/*.conf` files that only exist
+# on the appliance.
+external-sources=false

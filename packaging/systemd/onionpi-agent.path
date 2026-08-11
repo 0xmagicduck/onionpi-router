@@ -1,0 +1,12 @@
+[Unit]
+Description=Watches the OnionPi privileged action queue
+Documentation=file:/opt/onionpi/README.md
+
+[Path]
+# The web application runs unprivileged and only writes a nonce and a verb.
+# systemd, not the application, performs the privileged work.
+PathChanged=/var/lib/onionpi/agent.request
+Unit=onionpi-agent.service
+
+[Install]
+WantedBy=multi-user.target

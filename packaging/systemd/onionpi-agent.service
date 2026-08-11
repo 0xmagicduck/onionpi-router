@@ -1,0 +1,9 @@
+[Unit]
+Description=Applies an OnionPi privileged action
+Documentation=file:/opt/onionpi/README.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/onionpi-agent-apply
+RemainAfterExit=no
+TimeoutStartSec=120s

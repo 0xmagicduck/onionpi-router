@@ -1,0 +1,26 @@
+name: Proposition
+description: Suggérer une fonctionnalité ou une amélioration
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: Le besoin
+      description: Quelle situation concrète cette fonctionnalité résout-elle ?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: La proposition
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Contraintes du projet
+      description: |
+        OnionPi refuse par construction ce qui ferait fuiter du trafic hors de
+        Tor, ce qui donnerait root à l’interface web, ou ce qui transformerait
+        la Pi en relais de sortie.
+      options:
+        - label: Cette proposition ne fait sortir aucun trafic client hors de Tor
+        - label: Elle ne demande pas de privilèges supplémentaires au service web

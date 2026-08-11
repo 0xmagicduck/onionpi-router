@@ -1,0 +1,51 @@
+name: Anomalie
+description: Quelque chose ne fonctionne pas comme décrit
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **N’ouvrez pas d’issue pour une faille de sécurité.** Utilisez
+        Security → Report a vulnerability (voir `SECURITY.md`).
+
+        Ne collez jamais un mot de passe, un PSK Wi-Fi ni une adresse `.onion`.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: '`cat /opt/onionpi/VERSION`, ou la version affichée dans Paramètres'
+      placeholder: '0.1.0'
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation
+      options:
+        - Image prête à flasher
+        - packaging/install.sh
+        - Mise à jour automatique (canal stable)
+        - Mise à jour automatique (canal edge)
+        - Développement local (mode démonstration)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Ce qui se passe
+      description: Attendu, obtenu, et comment le reproduire.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Journaux
+      description: |
+        `sudo onionpi-verify` et, selon le cas :
+        `sudo journalctl -u onionpi -u tor -u onionpi-update -n 100 --no-pager`
+      render: shell
+  - type: input
+    id: hardware
+    attributes:
+      label: Matériel et système
+      placeholder: 'Raspberry Pi 4 (4 Go), Raspberry Pi OS Lite 64 bits Bookworm'

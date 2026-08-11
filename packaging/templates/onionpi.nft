@@ -1,0 +1,63 @@
+#!/usr/sbin/nft -f
+
+define onionpi_lan_if = "__WIFI_INTERFACE__"
+define onionpi_lan_net = __LAN_NETWORK__
+define onionpi_trans_port = 9040
+
+table inet onionpi {
+  # Filled by onionpi-devices-apply from /var/lib/onionpi/blocked-macs.txt,
+  # which the web interface writes. Empty right after a rule reload.
+  set blocked_clients {
+    type ether_addr
+  }
+
+  chain client_guard {
+    type filter hook prerouting priority raw; policy accept;
+    # A blocked device loses everything, DHCP included: it simply stops
+    # existing for this router.
+    iifname $onionpi_lan_if ether saddr @blocked_clients counter drop
+  }
+
+  chain tor_prerouting {
+    type nat hook prerouting priority dstnat - 5; policy accept;
+
+    # Keep local administration and LAN destinations local.
+    iifname $onionpi_lan_if ip daddr $onionpi_lan_net return
+
+    # Capture hard-coded DNS resolvers before the generic TCP rule.
+    iifname $onionpi_lan_if udp dport 53 redirect to :53
+    iifname $onionpi_lan_if tcp dport 53 redirect to :53
+
+    # Tor TransPort supports TCP only. Every other forwarded protocol is
+    # stopped by the kill switch below.
+    iifname $onionpi_lan_if meta l4proto tcp redirect to :$onionpi_trans_port
+  }
+
+  chain kill_switch {
+    type filter hook forward priority filter - 5; policy accept;
+    # Nothing is ever routed between the access point and the upstream link.
+    # Client traffic only leaves this machine through Tor's own sockets.
+    iifname $onionpi_lan_if counter drop
+    oifname $onionpi_lan_if counter drop
+  }
+
+  chain lan_input {
+    # Reached only for packets coming from the access point, after the
+    # prerouting redirects above have rewritten the destination port.
+    ct state established,related accept
+    ip protocol icmp icmp type { echo-request, destination-unreachable, time-exceeded } accept
+    udp dport { 53, 67, 5353 } accept
+    tcp dport { 53, 80, 443 } accept
+    tcp dport $onionpi_trans_port accept
+__LAN_SSH_RULE__
+    counter drop
+  }
+
+  chain protect_local {
+    type filter hook input priority filter - 5; policy accept;
+    # Default-deny for Wi-Fi clients: SOCKS (9050), ControlPort (9051), the
+    # private app port (8080) and any other daemon on this host stay
+    # unreachable. HTTPS is terminated by nginx on 443.
+    iifname $onionpi_lan_if jump lan_input
+  }
+}

@@ -1,0 +1,41 @@
+[Unit]
+Description=OnionPi local administration service
+Documentation=file:/opt/onionpi/README.md
+After=network-online.target tor.service tor@default.service
+Wants=network-online.target tor.service tor@default.service
+
+[Service]
+Type=simple
+User=onionpi
+Group=onionpi
+SupplementaryGroups=debian-tor systemd-journal
+WorkingDirectory=/opt/onionpi/backend
+EnvironmentFile=/etc/onionpi/onionpi.env
+ExecStart=/opt/onionpi/venv/bin/uvicorn onionpi.main:app --host 127.0.0.1 --port 8080 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+UMask=0027
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+ReadWritePaths=/var/lib/onionpi
+# Bridge and exit-policy fragments, plus the DNS blocklist: the only files
+# outside /var/lib the interface may write.
+ReadWritePaths=/etc/onionpi/tor
+ReadWritePaths=/etc/onionpi/dns
+ReadOnlyPaths=-/run/tor /var/log/journal
+
+[Install]
+WantedBy=multi-user.target

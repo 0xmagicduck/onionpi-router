@@ -1,0 +1,34 @@
+# Lint rules for the backend. Deliberately narrow: the value here is catching
+# an unused import or a shadowed name before it ships to an appliance that
+# updates itself, not enforcing a house style on code that already has one.
+
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = [
+  "E",    # pycodestyle
+  "F",    # pyflakes
+  "I",    # import order
+  "B",    # bugbears: mutable defaults, loop variable capture…
+  "UP",   # syntax available on the Python shipped with Bookworm
+  "S",    # bandit: subprocess, tempfiles, weak hashes
+  "RUF",
+]
+ignore = [
+  "E501",    # line length is reported by the formatter, not as an error
+  "S101",    # assert is how the tests are written
+  "S603",    # subprocess calls here take argument lists, never a shell string
+  "S607",    # partial executable paths: systemctl and nft come from PATH
+  "S311",    # random is only used to shape demonstration data
+  "B008",    # Depends(...) in a default argument is the FastAPI idiom
+  "RUF001",  # French typography: ’ and — are intentional, not confusables
+  "RUF002",
+  "RUF003",
+]
+
+[lint.per-file-ignores]
+"backend/tests/*" = ["S105", "S106", "S108"]
+
+[format]
+quote-style = "double"
