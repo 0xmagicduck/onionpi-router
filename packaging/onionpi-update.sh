@@ -206,9 +206,12 @@ try:
     handle.write("\n")
     handle.flush()
     os.fsync(handle.fileno())
+    # By descriptor, never by name: the directory belongs to the unprivileged
+    # application, which could otherwise swap the temporary file for a symlink
+    # and have root widen the permissions of a file of its choosing.
+    os.fchmod(handle.fileno(), 0o644)
 finally:
     handle.close()
-os.chmod(handle.name, 0o644)
 os.replace(handle.name, path)
 PY
 }
@@ -439,7 +442,16 @@ download_release() {
     warn "Aucun SHA256SUMS publié: l’archive n’a pas pu être vérifiée."
   fi
 
-  install -d -m 0700 "$STAGING_ROOT"
+  # The parent directory belongs to the unprivileged application, so the name
+  # below is only ours once we have checked it. A symlink planted there would
+  # redirect both the `rm -rf` and the extraction that follow, as root.
+  if [[ -L "$STAGING_ROOT" ]]; then
+    warn "Lien symbolique inattendu en $STAGING_ROOT: supprimé avant extraction."
+    rm -f -- "$STAGING_ROOT"
+  fi
+  install -d -m 0700 -o root -g root "$STAGING_ROOT"
+  [[ "$(stat -c '%u:%a' "$STAGING_ROOT")" == "0:700" ]] \
+    || die "$STAGING_ROOT n’appartient pas exclusivement à root: extraction refusée"
   rm -rf "${STAGING_ROOT:?}/$version"
   install -d -m 0700 "$STAGING_ROOT/$version"
   # --no-same-owner: the archive is verified, but nothing it contains should be

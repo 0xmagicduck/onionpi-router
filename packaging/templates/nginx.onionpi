@@ -13,6 +13,8 @@ server {
     listen __GATEWAY_IP__:443 ssl http2;
     server_name onionpi.local __GATEWAY_IP__;
 
+    server_tokens off;
+
     ssl_certificate /etc/onionpi/tls/onionpi.crt;
     ssl_certificate_key /etc/onionpi/tls/onionpi.key;
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -20,7 +22,11 @@ server {
     ssl_session_timeout 1d;
     ssl_session_tickets off;
 
-    client_max_body_size 1024m;
+    # Large enough for a configuration import, and nothing else. Only the
+    # upload endpoint below is allowed to send a file-sized body: a gigabyte of
+    # JSON is parsed into the memory of a Raspberry Pi before any handler of
+    # ours gets to look at it.
+    client_max_body_size 4m;
 
     location /api/v1/chat/ws {
         proxy_pass http://127.0.0.1:8080;
@@ -38,6 +44,18 @@ server {
         proxy_read_timeout 1h;
     }
 
+    location /api/v1/files/upload {
+        client_max_body_size 1024m;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_request_buffering off;
+        proxy_read_timeout 5m;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
@@ -46,6 +64,59 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         # See the WebSocket block above: the forwarded address is rewritten,
         # never appended to.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_request_buffering off;
+        proxy_read_timeout 5m;
+    }
+}
+
+# Entrance for the onion service, reachable from loopback only. Tor hands the
+# connection over in clear text — it is already encrypted end to end — so there
+# is no certificate here, and the firewall never sees these packets at all.
+#
+# It exists so that the onion service does not talk to uvicorn directly:
+# uvicorn is started with --forwarded-allow-ips=127.0.0.1 and would take the
+# X-Forwarded-For of a visitor coming out of Tor at face value, handing that
+# visitor a fresh login-throttle budget on every attempt. Going through nginx
+# rewrites the address from the real peer, exactly like a Wi-Fi client, and
+# applies the same body limits.
+server {
+    listen 127.0.0.1:8081;
+    server_name _;
+
+    server_tokens off;
+
+    client_max_body_size 4m;
+
+    location /api/v1/chat/ws {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $onionpi_connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 1h;
+    }
+
+    location /api/v1/files/upload {
+        client_max_body_size 1024m;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_request_buffering off;
+        proxy_read_timeout 5m;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_request_buffering off;
         proxy_read_timeout 5m;

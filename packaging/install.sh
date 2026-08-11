@@ -357,6 +357,9 @@ ONIONPI_COOKIE_SECURE=1
 ONIONPI_SESSION_SECRET=$SESSION_SECRET
 ONIONPI_DEVICE_NAME=OnionPi
 ONIONPI_PORT=8080
+# The onion service points at the loopback nginx listener, never at uvicorn:
+# see the second server block in /etc/nginx/sites-available/onionpi.
+ONIONPI_ONION_TARGET_PORT=8081
 ONIONPI_TOR_CONFIG_DIR=/etc/onionpi/tor
 ONIONPI_RELAY_STATE=/var/lib/onionpi/relay.state
 ONIONPI_DNS_FILTER_DIR=/etc/onionpi/dns

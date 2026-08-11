@@ -187,6 +187,12 @@ if [[ "$status" == "200" ]]; then
 else
   fail "réponse HTTPS inattendue sur /api/v1/health: $status"
 fi
+if ss -ltnH 2>/dev/null | grep -q '127\.0\.0\.1:8081'; then
+  ok 'entrée locale du service onion en écoute'
+else
+  warn 'nginx n’écoute pas sur 127.0.0.1:8081: le service onion serait injoignable'
+fi
+
 status="$(wait_for_http_status 401 /api/v1/status)"
 if [[ "$status" == "401" ]]; then
   ok 'API protégée par authentification'

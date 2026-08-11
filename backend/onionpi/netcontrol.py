@@ -153,6 +153,38 @@ class DeviceGuard:
             self.on_event("device", f"Appareil {label or address} bloqué")
         return entries
 
+    def block_many(
+        self, requested: list[tuple[str, str]]
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Blocks a whole batch in one pass, for a configuration import.
+
+        Calling block() in a loop rewrites the file and waits for the privileged
+        agent once per device: a list of a few hundred entries would hold a
+        worker thread for as long as that agent stays silent, which is minutes
+        rather than seconds. Returns the resulting list and the entries that
+        were not valid MAC addresses.
+        """
+        rejected: list[str] = []
+        additions: dict[str, dict[str, Any]] = {}
+        now = int(time.time())
+        for mac, label in requested:
+            try:
+                address = normalize_mac(mac)
+            except ValueError as error:
+                rejected.append(str(error))
+                continue
+            additions[address] = {"mac": address, "label": label.strip()[:64], "blocked_at": now}
+        if not additions:
+            return self.entries(), rejected
+        with self._lock:
+            entries = [entry for entry in self.entries() if entry["mac"] not in additions]
+            entries.extend(additions.values())
+            entries.sort(key=lambda entry: entry["mac"])
+            self._apply(entries)
+        if self.on_event:
+            self.on_event("device", f"{len(additions)} appareil(s) bloqué(s)")
+        return entries, rejected
+
     def unblock(self, mac: str) -> list[dict[str, Any]]:
         try:
             address = normalize_mac(mac)
