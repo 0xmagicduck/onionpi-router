@@ -76,9 +76,12 @@ def test_policy_writes_a_valid_torrc_fragment(database: Database, tmp_path: Path
 
 
 def test_policy_reports_a_refused_reload(database: Database, tmp_path: Path) -> None:
-    policy = TorPolicy(database, tmp_path / "policy.conf", FakeController(fail=True))  # type: ignore[arg-type]
+    path = tmp_path / "policy.conf"
+    policy = TorPolicy(database, path, FakeController(fail=True))  # type: ignore[arg-type]
     with pytest.raises(PolicyError):
         policy.update("FR", 0)
+    assert path.exists()
+    assert "ExitNodes" not in path.read_text()
 
 
 def test_policy_ensure_file_creates_the_include(database: Database, tmp_path: Path) -> None:

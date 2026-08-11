@@ -73,6 +73,7 @@ def test_valid_bridge_lines(line: str) -> None:
         "obfs4 192.0.2.1:443\nExitPolicy accept *:*",
         "wireguard 192.0.2.1:443 KEY",
         "obfs4 192.0.2.1:99999 ABCDEF",
+        "obfs4 999.0.2.1:443 ABCDEF",
         "obfs4 192.0.2.1:443 cert=" + "a" * 900,
     ],
 )
@@ -139,6 +140,20 @@ def test_rejected_reload_restores_the_previous_fragment(tmp_path: Path) -> None:
 
     assert (tmp_path / "bridges.conf").read_text() == before
     assert manager.config.mode == "direct"
+
+
+def test_rejected_first_reload_leaves_a_safe_mandatory_fragment(tmp_path: Path) -> None:
+    manager = build(tmp_path, controller=FakeController(refuse=True))
+
+    with pytest.raises(CircumventionError):
+        manager.update(
+            mode="manual",
+            transport="snowflake",
+            country="BE",
+            custom_bridges=[],
+        )
+
+    assert (tmp_path / "bridges.conf").read_text().endswith("UseBridges 0\n")
 
 
 def long_ago(manager: CircumventionManager) -> None:

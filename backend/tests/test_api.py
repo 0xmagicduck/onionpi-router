@@ -122,6 +122,26 @@ def test_health_is_public_and_unknown_api_routes_return_json_404() -> None:
         assert unknown.json()["detail"]
 
 
+def test_diagnostics_are_authenticated_and_run_real_database_checks() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        assert client.get("/api/v1/system/diagnostics").status_code == 401
+        login(client)
+
+        response = client.get("/api/v1/system/diagnostics")
+
+        assert response.status_code == 200
+        report = response.json()
+        assert report["status"] == "ok"
+        assert {check["id"] for check in report["checks"]} >= {
+            "database",
+            "storage",
+            "tor-bootstrap",
+            "agent",
+        }
+        assert report["database"]["users"] >= 1
+
+
 def test_upload_refuses_when_storage_reserve_is_not_met() -> None:
     from onionpi import main as main_module
 
@@ -199,6 +219,13 @@ def test_snowflake_relay_toggle_requires_csrf() -> None:
         )
         assert response.status_code == 200
         assert response.json()["relay"]["active"] is True
+        disabled = client.post(
+            "/api/v1/relay/snowflake",
+            json={"enabled": False},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert disabled.status_code == 200
+        assert disabled.json()["relay"]["active"] is False
 
 
 def test_chat_persists_messages() -> None:

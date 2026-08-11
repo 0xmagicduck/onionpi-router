@@ -18,6 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .atomic_io import atomic_write_text
 from .database import Database
 from .tor_control import TorControlError, TorController
 
@@ -122,25 +123,40 @@ class TorPolicy:
     def _write(self, country: str) -> None:
         if self.demo_mode:
             return
-        temporary = self.policy_path.with_suffix(".tmp")
         try:
-            temporary.write_text(self._render(country))
-            temporary.chmod(0o640)
-            temporary.replace(self.policy_path)
+            try:
+                previous = self.policy_path.read_text()
+            except FileNotFoundError:
+                # torrc includes this fragment unconditionally. Even a failed
+                # first change must leave behind a parseable previous state.
+                previous = self._render(self.state()["exit_country"])
+            atomic_write_text(self.policy_path, self._render(country), mode=0o640)
         except OSError as error:
             raise PolicyError(f"Écriture impossible dans {self.policy_path}: {error}") from error
         try:
             self.controller.reload_config()
         except TorControlError as error:
-            raise PolicyError(f"Tor a refusé de recharger sa configuration: {error}") from error
+            rollback_error = ""
+            try:
+                atomic_write_text(self.policy_path, previous, mode=0o640)
+                self.controller.reload_config()
+            except (OSError, TorControlError) as restore_error:
+                rollback_error = f"; restauration non confirmée: {restore_error}"
+                logger.exception("Restauration de la politique Tor non confirmée")
+            raise PolicyError(
+                f"Tor a refusé de recharger sa configuration: {error}{rollback_error}"
+            ) from error
 
     def ensure_file(self) -> None:
         """torrc includes the fragment unconditionally: it must always exist."""
         if self.demo_mode or self.policy_path.exists():
             return
         try:
-            self.policy_path.write_text(self._render(self.state()["exit_country"]))
-            self.policy_path.chmod(0o640)
+            atomic_write_text(
+                self.policy_path,
+                self._render(self.state()["exit_country"]),
+                mode=0o640,
+            )
         except OSError as error:
             logger.warning("Fragment de politique Tor non créé: %s", error)
 

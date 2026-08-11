@@ -1,7 +1,9 @@
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   Cable,
   CheckCircle2,
+  Database,
   Download,
   ExternalLink,
   Power,
@@ -21,6 +23,7 @@ import { TorAdvanced } from './TorAdvanced'
 import type {
   ChatMessage,
   Device,
+  DiagnosticsPayload,
   StatusPayload,
   SystemActionsPayload,
   UpdateState,
@@ -28,6 +31,99 @@ import type {
 
 function serviceActive(status: StatusPayload | undefined, id: string): boolean | undefined {
   return status?.system.services.find((service) => service.id === id)?.active
+}
+
+function DiagnosticsPanel() {
+  const [report, setReport] = useState<DiagnosticsPayload>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const mounted = useRef(true)
+
+  const load = useCallback(async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const next = await api.diagnostics()
+      if (mounted.current) setReport(next)
+    } catch (reason) {
+      if (mounted.current) {
+        setError(reason instanceof Error ? reason.message : 'Diagnostic indisponible')
+      }
+    } finally {
+      if (mounted.current) setBusy(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    mounted.current = true
+    void load()
+    return () => { mounted.current = false }
+  }, [load])
+
+  const label = report?.status === 'ok'
+    ? 'Tous les contrôles sont bons'
+    : report?.status === 'warning'
+      ? 'Une attention est recommandée'
+      : 'Une intervention est requise'
+
+  return (
+    <Panel title="Diagnostic de santé" className="diagnostics-panel">
+      <div className="feature-status">
+        <span className="feature-icon"><Database /></span>
+        <div>
+          <strong>Services, stockage et données</strong>
+          <p>Contrôle local, sans transmettre d’information hors de l’OnionPi.</p>
+        </div>
+        {report && (
+          <span className={`diagnostic-summary diagnostic-summary-${report.status}`}>
+            <i /> {label}
+          </span>
+        )}
+      </div>
+      {error && <p className="form-error diagnostic-error" role="alert">{error}</p>}
+      {!report && !error && <p className="muted diagnostic-loading">Contrôle en cours…</p>}
+      {report && (
+        <div className="diagnostic-list">
+          {report.checks.map((check) => (
+            <div className={`diagnostic-row diagnostic-${check.status}`} key={check.id}>
+              {check.status === 'ok' ? <CheckCircle2 /> : <AlertTriangle />}
+              <div>
+                <strong>{check.label}</strong>
+                <p>{check.detail}</p>
+                {check.remedy && <small>{check.remedy}</small>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {report && (
+        <p className="diagnostic-meta">
+          Base : {report.database.messages} messages · {report.database.activity} événements ·{' '}
+          {(report.database.bytes / 1024).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} Kio
+        </p>
+      )}
+      <div className="action-grid">
+        <button className="button button-secondary" disabled={busy} onClick={() => void load()}>
+          <RefreshCw size={15} /> {busy ? 'Contrôle…' : 'Relancer le diagnostic'}
+        </button>
+        {report && (
+          <button
+            className="button button-secondary"
+            onClick={() => {
+              const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }))
+              const link = document.createElement('a')
+              link.href = url
+              link.download = `onionpi-diagnostic-${report.generated_at}.json`
+              link.click()
+              URL.revokeObjectURL(url)
+            }}
+          >
+            <Download size={15} /> Exporter le rapport
+          </button>
+        )}
+      </div>
+    </Panel>
+  )
 }
 
 function ServiceBadge({ active, upLabel, downLabel }: { active?: boolean; upLabel: string; downLabel: string }) {
@@ -452,6 +548,7 @@ export function SettingsPage({ status, onPasswordChanged, notify }: { status?: S
       <div className="two-column"><Panel title="Cette OnionPi"><dl className="details-list"><div><dt>Nom</dt><dd>{status?.device_name ?? 'OnionPi'}</dd></div><div><dt>Hôte</dt><dd className="mono">{status?.system.hostname ?? '—'}</dd></div><div><dt>Mode démonstration</dt><dd>{status?.demo_mode ? 'Oui' : 'Non'}</dd></div><div><dt>Version</dt><dd className="mono">{status?.version ?? '—'}</dd></div></dl></Panel>
       <Panel title="Administration"><div className="privacy-note"><ShieldCheck size={20} /><p><strong>Accès local uniquement</strong>L’interface n’est pas publiée sur Internet et chaque mutation exige une session et un jeton CSRF.</p></div><p className="prose">Pour modifier le SSID ou le mot de passe Wi-Fi, relancez l’installateur depuis un terminal local. Cela évite de couper accidentellement la session web en cours.</p></Panel></div>
       <div className="two-column"><UpdatePanel notify={notify} /><MaintenancePanel notify={notify} /></div>
+      <DiagnosticsPanel />
       <div className="two-column"><ConfigPanel notify={notify} /></div>
       <div className="two-column"><PasswordPanel onChanged={onPasswordChanged} /></div>
     </div>

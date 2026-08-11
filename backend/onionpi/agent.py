@@ -12,10 +12,14 @@ here is a security boundary, `onionpi-agent-apply` is.
 from __future__ import annotations
 
 import logging
+import os
 import secrets
+import threading
 import time
 from pathlib import Path
 from typing import Any
+
+from .atomic_io import atomic_write_text
 
 logger = logging.getLogger("onionpi.agent")
 
@@ -45,11 +49,19 @@ class PrivilegedAgent:
         self.request_path = request_path
         self.result_path = result_path
         self.demo_mode = demo_mode
+        # The transport is one request file, not a queue. Serialising callers
+        # prevents two simultaneous buttons from overwriting each other.
+        self._lock = threading.Lock()
 
     @property
     def available(self) -> bool:
-        """True when the path unit has a directory to watch."""
-        return self.demo_mode or self.request_path.parent.is_dir()
+        """True when both halves of the request channel are usable."""
+        return self.demo_mode or (
+            self.request_path.is_file()
+            and self.result_path.is_file()
+            and os.access(self.request_path, os.W_OK)
+            and os.access(self.result_path, os.R_OK)
+        )
 
     def _result_for(self, nonce: str) -> tuple[str, str] | None:
         try:
@@ -66,24 +78,31 @@ class PrivilegedAgent:
         label, expects_result = ACTIONS[action]
         if self.demo_mode:
             return {"action": action, "status": "ok", "message": f"{label} (démonstration)"}
-        nonce = secrets.token_hex(8)
-        try:
-            self.request_path.write_text(f"{nonce} {action}\n")
-        except OSError as error:
-            raise AgentError(f"Écriture impossible dans {self.request_path}: {error}") from error
-        if not expects_result:
-            return {"action": action, "status": "pending", "message": label}
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            result = self._result_for(nonce)
-            if result:
-                status, message = result
-                if status != "ok":
-                    raise AgentError(message or f"{label}: échec")
-                return {"action": action, "status": "ok", "message": message or label}
-            time.sleep(0.25)
-        logger.warning("Aucune réponse de onionpi-agent pour %s", action)
-        raise AgentError(
-            f"{label}: aucune réponse du service privilégié. "
-            "Vérifiez « systemctl status onionpi-agent.path »."
-        )
+        with self._lock:
+            nonce = secrets.token_hex(8)
+            try:
+                atomic_write_text(
+                    self.request_path,
+                    f"{nonce} {action}\n",
+                    mode=0o640,
+                )
+            except OSError as error:
+                raise AgentError(
+                    f"Écriture impossible dans {self.request_path}: {error}"
+                ) from error
+            if not expects_result:
+                return {"action": action, "status": "pending", "message": label}
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                result = self._result_for(nonce)
+                if result:
+                    status, message = result
+                    if status != "ok":
+                        raise AgentError(message or f"{label}: échec")
+                    return {"action": action, "status": "ok", "message": message or label}
+                time.sleep(0.25)
+            logger.warning("Aucune réponse de onionpi-agent pour %s", action)
+            raise AgentError(
+                f"{label}: aucune réponse du service privilégié. "
+                "Vérifiez « systemctl status onionpi-agent.path »."
+            )

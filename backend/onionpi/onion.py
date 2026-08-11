@@ -20,6 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .atomic_io import atomic_write_text
 from .database import Database
 from .tor_control import TorControlError, TorController
 
@@ -74,11 +75,8 @@ class OnionService:
         return value if KEY_PATTERN.fullmatch(value) else None
 
     def _write_key(self, value: str) -> None:
-        temporary = self.key_path.with_suffix(".tmp")
         try:
-            temporary.write_text(value + "\n")
-            temporary.chmod(0o600)
-            temporary.replace(self.key_path)
+            atomic_write_text(self.key_path, value + "\n", mode=0o600)
         except OSError as error:
             raise OnionError(f"Écriture impossible dans {self.key_path}: {error}") from error
 

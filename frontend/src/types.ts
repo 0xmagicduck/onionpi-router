@@ -193,6 +193,30 @@ export type SystemActionsPayload = {
   actions: SystemAction[]
 }
 
+export type DiagnosticStatus = 'ok' | 'warning' | 'error'
+
+export type DiagnosticCheck = {
+  id: string
+  label: string
+  status: DiagnosticStatus
+  detail: string
+  remedy: string
+}
+
+export type DiagnosticsPayload = {
+  generated_at: number
+  status: DiagnosticStatus
+  checks: DiagnosticCheck[]
+  database: {
+    users: number
+    sessions: number
+    messages: number
+    activity: number
+    settings: number
+    bytes: number
+  }
+}
+
 export type UpdateChannel = 'stable' | 'edge'
 
 export type UpdateState = {

@@ -33,6 +33,8 @@ partage de fichiers, chat et journaux système.
 - service onion optionnel pour joindre l’interface depuis l’extérieur ;
 - redémarrage des services, redémarrage/extinction de la Pi et
   export/import de la configuration depuis l’interface ;
+- diagnostic local de santé (SQLite, stockage, services, Tor, horloge et
+  fichiers système), accompagné de remèdes et exportable en JSON ;
 - métriques CPU, mémoire, température, disque et débit réseau ;
 - liste des clients DHCP/ARP ;
 - fichiers confinés à `/var/lib/onionpi/shared`, avec import, téléchargement,
@@ -314,9 +316,11 @@ Ce qui protège l’appareil :
   est installée avec le code, et la signature est exigée, pas seulement
   signalée. Ce que cela couvre exactement est décrit dans
   [`docs/updates.md`](docs/updates.md) ;
-- **`/opt/onionpi` est copié avant toute écriture**. La réinstallation garde le
-  point d’accès, les mots de passe et les données ; si `onionpi-verify` échoue
-  ensuite, la version précédente est restaurée toute seule ;
+- **toute la surface installée est copiée avant écriture** : `/opt/onionpi`,
+  unités systemd, helpers privilégiés et configurations. La réinstallation
+  garde le point d’accès, les mots de passe et les données ; si
+  `onionpi-verify` échoue ensuite, l’ensemble de la version précédente est
+  restauré puis redémarré ;
 - **l’interface web ne peut pas se mettre à jour elle-même** : elle écrit un
   verbe, `onionpi-agent-apply` le revalide en root, comme pour un redémarrage.
 
@@ -334,6 +338,17 @@ La page **Paramètres** permet de redémarrer Tor, le DNS, le Wi-Fi ou le
 pare-feu, de redémarrer ou d’éteindre la Pi, et d’exporter/importer la
 configuration (ponts, politique de sortie, filtrage DNS, appareils bloqués —
 jamais un mot de passe ni la clé onion).
+
+Le panneau **Diagnostic de santé** vérifie en une fois l’intégrité de la base,
+l’espace restant, les quatre services critiques, le bootstrap Tor, la file
+d’actions root, les fragments gérés et la synchronisation NTP. Le rapport ne
+contient ni adresse MAC, ni message de chat, ni clé ; il peut être exporté en
+JSON pour une demande d’assistance.
+
+Les écritures courtes partagées avec Tor, dnsmasq et les helpers root sont
+atomiques et synchronisées avant renommage. La base conserve au maximum 2 000
+messages et 4 000 événements, purge les sessions expirées et s’optimise au
+démarrage afin qu’une OnionPi laissée allumée ne remplisse pas sa carte SD.
 
 L’application n’appelle jamais `systemctl` : elle écrit un nonce et un verbe
 dans `/var/lib/onionpi/agent.request`, l’unité `onionpi-agent.path` réveille un

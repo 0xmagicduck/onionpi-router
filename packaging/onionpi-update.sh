@@ -385,10 +385,12 @@ refresh_schedule_state() {
 # ------------------------------------------------------------- download ------
 # Leaves the verified, unpacked tree in $STAGING_DIR.
 STAGING_DIR=""
+DOWNLOAD_WORK=""
 download_release() {
   local version="$1" tarball_url="$2" sums_url="$3" signature_url="$4"
   local work
   work="$(mktemp -d "${TMPDIR:-/tmp}/onionpi-update.XXXXXX")"
+  DOWNLOAD_WORK="$work"
   local archive="$work/onionpi-$version.tar.gz"
 
   log "Téléchargement de la version $version…"
@@ -426,6 +428,7 @@ download_release() {
   # able to choose a uid when it is unpacked by root.
   tar -xzf "$archive" -C "$STAGING_ROOT/$version" --strip-components=1 --no-same-owner
   rm -rf "$work"
+  DOWNLOAD_WORK=""
 
   [[ -x "$STAGING_ROOT/$version/packaging/install.sh" ]] \
     || die "Archive incomplète: packaging/install.sh manquant"
@@ -443,22 +446,69 @@ latest_backup() {
   find "$BACKUP_ROOT" -maxdepth 1 -type d -name 'onionpi-update-*' 2>/dev/null | sort | tail -n 1
 }
 
+backup_root_files() {
+  local destination="$1" path
+  install -d -m 0700 "$destination"
+  # install.sh --upgrade replaces more than /opt/onionpi. Keep the complete
+  # installed surface so a failed release cannot leave a new helper, unit or
+  # network template running next to the old application code.
+  for path in \
+    /etc/onionpi \
+    /etc/tor/torrc.d/onionpi.conf \
+    /etc/dnsmasq.d/onionpi.conf \
+    /etc/sysctl.d/70-onionpi.conf \
+    /etc/nginx/sites-available/onionpi \
+    /etc/nginx/sites-enabled/onionpi \
+    /etc/avahi/hosts \
+    /etc/modprobe.d/onionpi-regdom.conf \
+    /etc/update-motd.d/10-onionpi \
+    /etc/profile.d/onionpi.sh \
+    /etc/issue /etc/issue.net /etc/motd \
+    /etc/systemd/system/onionpi.service \
+    /etc/systemd/system/onionpi-firewall.service \
+    /etc/systemd/system/onionpi-relay.service \
+    /etc/systemd/system/onionpi-relay.path \
+    /etc/systemd/system/onionpi-agent.service \
+    /etc/systemd/system/onionpi-agent.path \
+    /etc/systemd/system/onionpi-boot-banner.service \
+    /etc/systemd/system/onionpi-update.service \
+    /etc/systemd/system/onionpi-update.timer \
+    /etc/systemd/system/onionpi-update.timer.d \
+    /usr/local/sbin/onionpi-firewall-apply \
+    /usr/local/sbin/onionpi-devices-apply \
+    /usr/local/sbin/onionpi-relay-apply \
+    /usr/local/sbin/onionpi-agent-apply \
+    /usr/local/sbin/onionpi-update \
+    /usr/local/sbin/onionpi-verify \
+    /usr/local/sbin/onionpi-uninstall \
+    /usr/local/lib/onionpi \
+    /usr/local/bin/onionpi-status; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    rsync -aR "$path" "$destination/"
+  done
+}
+
 restore_backup() {
   local backup="$1"
   [[ -d "$backup/opt-onionpi" ]] || return 1
   log "Restauration de $backup…"
   rsync -a --delete "$backup/opt-onionpi/" "$INSTALL_ROOT/"
-  # Unit files travel with the release, so a rollback has to put them back too.
-  if [[ -d "$backup/systemd" ]]; then
+  if [[ -d "$backup/rootfs" ]]; then
+    rsync -a "$backup/rootfs/" /
+  elif [[ -d "$backup/systemd" ]]; then
+    # Compatibility with backups made by OnionPi 0.1.0.
     rsync -a "$backup/systemd/" /etc/systemd/system/
-    systemctl daemon-reload
   fi
-  systemctl restart onionpi
+  systemctl daemon-reload
+  systemctl restart tor
+  systemctl restart nftables
+  systemctl restart onionpi-firewall
+  systemctl restart dnsmasq nginx onionpi
 }
 
 prune_backups() {
   local keep="$ONIONPI_UPDATE_KEEP_BACKUPS" directory
-  (( keep > 0 )) || return 0
+  [[ "$keep" =~ ^[0-9]+$ ]] || keep=3
   while IFS= read -r directory; do
     [[ -n "$directory" ]] || continue
     rm -rf -- "$directory"
@@ -516,10 +566,9 @@ do_apply() {
   download_release "$version" "$TARBALL_URL" "$SUMS_URL" "$SIGNATURE_URL"
 
   backup="$BACKUP_ROOT/onionpi-update-$(stamp)"
-  install -d -m 0700 "$backup/opt-onionpi" "$backup/systemd"
+  install -d -m 0700 "$backup/opt-onionpi"
   rsync -a "$INSTALL_ROOT/" "$backup/opt-onionpi/"
-  cp -a /etc/systemd/system/onionpi*.service /etc/systemd/system/onionpi*.path \
-    /etc/systemd/system/onionpi*.timer "$backup/systemd/" 2>/dev/null || true
+  backup_root_files "$backup/rootfs"
   printf '%s\n' "$current" >"$backup/VERSION"
   log "Sauvegarde: $backup"
 
@@ -592,7 +641,16 @@ if ! flock -n 9; then
   die "Une mise à jour est déjà en cours."
 fi
 
-trap 'state_set "running=false"' EXIT
+cleanup_update() {
+  local status=$?
+  if [[ -n "$DOWNLOAD_WORK" && -d "$DOWNLOAD_WORK" ]]; then
+    rm -rf -- "$DOWNLOAD_WORK"
+  fi
+  state_set "running=false" || true
+  trap - EXIT
+  exit "$status"
+}
+trap cleanup_update EXIT
 
 case "$MODE" in
   check) do_check ;;

@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .atomic_io import atomic_write_text
 
 logger = logging.getLogger("onionpi.updates")
 
@@ -152,22 +152,7 @@ class UpdateManager:
         # choice survives a page reload, and it is inert without the root agent.
         document = json.dumps(preferences.as_document(), ensure_ascii=False, indent=2)
         try:
-            directory = self.settings_path.parent
-            handle = tempfile.NamedTemporaryFile(
-                "w",
-                encoding="utf-8",
-                dir=directory,
-                delete=False,
-                prefix=".update.settings.",
-            )
-            try:
-                handle.write(document + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            finally:
-                handle.close()
-            os.chmod(handle.name, 0o640)
-            os.replace(handle.name, self.settings_path)
+            atomic_write_text(self.settings_path, document + "\n", mode=0o640)
         except OSError as error:
             raise UpdateError(
                 f"Écriture impossible dans {self.settings_path}: {error}"

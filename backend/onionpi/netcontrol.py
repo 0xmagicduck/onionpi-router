@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from .agent import AgentError, PrivilegedAgent
+from .atomic_io import atomic_write_text
 from .database import Database
 
 logger = logging.getLogger("onionpi.netcontrol")
@@ -119,11 +120,11 @@ class DeviceGuard:
 
     def _write_state(self, entries: list[dict[str, Any]]) -> None:
         body = "".join(f"{entry['mac']}\n" for entry in entries)
-        temporary = self.state_path.with_suffix(".tmp")
-        temporary.write_text(
-            "# Généré par OnionPi. Une adresse MAC par ligne.\n" + body
+        atomic_write_text(
+            self.state_path,
+            "# Généré par OnionPi. Une adresse MAC par ligne.\n" + body,
+            mode=0o640,
         )
-        temporary.replace(self.state_path)
 
     def _apply(self, entries: list[dict[str, Any]]) -> None:
         self.database.set_setting(BLOCKED_DEVICES_KEY, entries)
@@ -258,14 +259,10 @@ class DnsFilter:
         return domains
 
     def _write_hosts(self, domains: list[str]) -> None:
-        temporary = self.hosts_path.with_suffix(".tmp")
-        with temporary.open("w") as output:
-            output.write("# Généré par OnionPi. Ne pas modifier à la main.\n")
-            for domain in domains:
-                output.write(f"0.0.0.0 {domain}\n")
         # dnsmasq re-reads this file as an unprivileged user on SIGHUP.
-        temporary.chmod(0o644)
-        temporary.replace(self.hosts_path)
+        body = "# Généré par OnionPi. Ne pas modifier à la main.\n"
+        body += "".join(f"0.0.0.0 {domain}\n" for domain in domains)
+        atomic_write_text(self.hosts_path, body, mode=0o644)
 
     def rebuild(self) -> dict[str, Any]:
         """Downloads every selected profile and regenerates the hosts file."""

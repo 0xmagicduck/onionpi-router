@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import re
+import shutil
 import socket
 import subprocess
 import threading
@@ -57,21 +58,30 @@ class MetricsSampler:
 
     def sample(self) -> None:
         now = time.time()
-        counters = psutil.net_io_counters(pernic=True)
-        counter = counters.get(self.interface) or psutil.net_io_counters()
-        sent, received = int(counter.bytes_sent), int(counter.bytes_recv)
-        if self._last is None:
-            down = up = 0.0
-        else:
-            last_time, last_sent, last_received = self._last
-            elapsed = max(now - last_time, 0.001)
-            up = max(0.0, (sent - last_sent) * 8 / elapsed / 1_000_000)
-            down = max(0.0, (received - last_received) * 8 / elapsed / 1_000_000)
-        self._last = (now, sent, received)
         if self.demo_mode:
             position = len(self._history)
             down = max(0.4, 4.6 + 1.8 * random.random() + 1.1 * (position % 8 == 0))
             up = max(0.2, 1.2 + 1.1 * random.random())
+        else:
+            try:
+                counters = psutil.net_io_counters(pernic=True)
+                counter = counters.get(self.interface) or psutil.net_io_counters()
+                if counter is None:
+                    raise OSError("compteurs réseau indisponibles")
+                sent, received = int(counter.bytes_sent), int(counter.bytes_recv)
+            except (OSError, psutil.Error):
+                # A restricted host must not kill the sampler thread forever.
+                self._last = None
+                down = up = 0.0
+            else:
+                if self._last is None:
+                    down = up = 0.0
+                else:
+                    last_time, last_sent, last_received = self._last
+                    elapsed = max(now - last_time, 0.001)
+                    up = max(0.0, (sent - last_sent) * 8 / elapsed / 1_000_000)
+                    down = max(0.0, (received - last_received) * 8 / elapsed / 1_000_000)
+                self._last = (now, sent, received)
         with self._lock:
             self._history.append(
                 {"timestamp": int(now), "download_mbps": round(down, 2), "upload_mbps": round(up, 2)}
@@ -91,7 +101,7 @@ def _temperature() -> float | None:
             temperatures = psutil.sensors_temperatures()
             first = next(iter(temperatures.values()))[0]
             return round(float(first.current), 1)
-        except (AttributeError, StopIteration, IndexError):
+        except (AttributeError, StopIteration, IndexError, OSError, psutil.Error):
             return None
 
 
@@ -115,19 +125,61 @@ def service_states(demo_mode: bool = False) -> list[dict[str, Any]]:
 
 
 def system_snapshot(shared_dir: Path, demo_mode: bool = False) -> dict[str, Any]:
-    usage = psutil.disk_usage(str(shared_dir))
-    memory = psutil.virtual_memory()
-    boot_time = psutil.boot_time()
+    if demo_mode:
+        return {
+            "hostname": "onionpi",
+            "cpu_percent": 34.0,
+            "memory_percent": 48.0,
+            "temperature_c": 52.0,
+            "storage_percent": 24.0,
+            "storage_used": 9_400_000_000,
+            "storage_total": 38_600_000_000,
+            "uptime_seconds": 243_600,
+            "services": service_states(True),
+        }
+
+    try:
+        usage = psutil.disk_usage(str(shared_dir))
+        storage_percent = round(usage.percent, 1)
+        storage_used = usage.used
+        storage_total = usage.total
+    except (OSError, psutil.Error):
+        try:
+            fallback = shutil.disk_usage(shared_dir)
+            storage_used = fallback.used
+            storage_total = fallback.total
+            storage_percent = round((fallback.used / fallback.total) * 100, 1)
+        except (OSError, ZeroDivisionError):
+            storage_percent = 0.0
+            storage_used = storage_total = 0
+
+    try:
+        memory_percent = round(psutil.virtual_memory().percent, 1)
+    except (OSError, psutil.Error):
+        memory_percent = 0.0
+    try:
+        boot_time = psutil.boot_time()
+        uptime_seconds = max(0, int(time.time() - boot_time))
+    except (OSError, psutil.Error):
+        uptime_seconds = 0
+    try:
+        cpu_percent = round(psutil.cpu_percent(interval=0.1), 1)
+    except (OSError, psutil.Error):
+        cpu_percent = 0.0
+    try:
+        hostname = socket.gethostname()
+    except OSError:
+        hostname = "onionpi"
     return {
-        "hostname": socket.gethostname(),
-        "cpu_percent": 34.0 if demo_mode else round(psutil.cpu_percent(interval=0.1), 1),
-        "memory_percent": 48.0 if demo_mode else round(memory.percent, 1),
-        "temperature_c": 52.0 if demo_mode else _temperature(),
-        "storage_percent": 24.0 if demo_mode else round(usage.percent, 1),
-        "storage_used": 9_400_000_000 if demo_mode else usage.used,
-        "storage_total": 38_600_000_000 if demo_mode else usage.total,
-        "uptime_seconds": max(0, int(time.time() - boot_time)),
-        "services": service_states(demo_mode),
+        "hostname": hostname,
+        "cpu_percent": cpu_percent,
+        "memory_percent": memory_percent,
+        "temperature_c": _temperature(),
+        "storage_percent": storage_percent,
+        "storage_used": storage_used,
+        "storage_total": storage_total,
+        "uptime_seconds": uptime_seconds,
+        "services": service_states(False),
     }
 
 
