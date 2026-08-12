@@ -182,44 +182,47 @@ fi
 
 # A prebuilt image ships precomputed secrets instead of plaintext: WIFI_PSK is
 # the PBKDF2 result of the passphrase, ADMIN_PASSWORD_HASH an scrypt digest.
+# Credential resolution starts here.
 WIFI_PASSWORD="${ONIONPI_WIFI_PASSWORD:-}"
 WIFI_PSK="${ONIONPI_WIFI_PSK:-}"
 ADMIN_PASSWORD="${ONIONPI_ADMIN_PASSWORD:-}"
 ADMIN_PASSWORD_HASH="${ONIONPI_ADMIN_PASSWORD_HASH:-}"
 if (( UPGRADE )); then
   # Nothing to ask and nothing to rewrite: the Wi-Fi PSK stays in
-  # NetworkManager and the administrator digest stays in the database.
+  # NetworkManager and the administrator digest stays in the database. An
+  # upgrade runs from a systemd oneshot without a terminal, so a single prompt
+  # reached here would abort every unattended update.
   WIFI_PASSWORD=""
   WIFI_PSK=""
   ADMIN_PASSWORD=""
   ADMIN_PASSWORD_HASH=""
-elif [[ -n "$WIFI_PSK" ]]; then
-  if [[ ! "$WIFI_PSK" =~ ^[0-9a-fA-F]{64}$ ]]; then
-    printf 'ONIONPI_WIFI_PSK doit contenir 64 caractères hexadécimaux.\n' >&2
-    exit 1
+else
+  if [[ -n "$WIFI_PSK" ]]; then
+    if [[ ! "$WIFI_PSK" =~ ^[0-9a-fA-F]{64}$ ]]; then
+      printf 'ONIONPI_WIFI_PSK doit contenir 64 caractères hexadécimaux.\n' >&2
+      exit 1
+    fi
+  elif [[ -z "$WIFI_PASSWORD" ]]; then
+    if [[ ! -t 0 ]]; then
+      printf 'Définissez ONIONPI_WIFI_PASSWORD ou ONIONPI_WIFI_PSK en mode non interactif.\n' >&2
+      exit 1
+    fi
+    read -r -s -p 'Mot de passe Wi-Fi (12 caractères minimum): ' WIFI_PASSWORD
+    printf '\n'
   fi
-elif [[ -z "$WIFI_PASSWORD" ]]; then
-  if [[ ! -t 0 ]]; then
-    printf 'Définissez ONIONPI_WIFI_PASSWORD ou ONIONPI_WIFI_PSK en mode non interactif.\n' >&2
-    exit 1
+  if [[ -n "$ADMIN_PASSWORD_HASH" ]]; then
+    if [[ ! "$ADMIN_PASSWORD_HASH" =~ ^scrypt\$ ]]; then
+      printf 'ONIONPI_ADMIN_PASSWORD_HASH n’est pas un condensat scrypt OnionPi.\n' >&2
+      exit 1
+    fi
+  elif [[ -z "$ADMIN_PASSWORD" ]]; then
+    if [[ ! -t 0 ]]; then
+      printf 'Définissez ONIONPI_ADMIN_PASSWORD ou ONIONPI_ADMIN_PASSWORD_HASH en mode non interactif.\n' >&2
+      exit 1
+    fi
+    read -r -s -p 'Mot de passe administrateur (12 caractères minimum): ' ADMIN_PASSWORD
+    printf '\n'
   fi
-  read -r -s -p 'Mot de passe Wi-Fi (12 caractères minimum): ' WIFI_PASSWORD
-  printf '\n'
-fi
-if [[ -n "$ADMIN_PASSWORD_HASH" ]]; then
-  if [[ ! "$ADMIN_PASSWORD_HASH" =~ ^scrypt\$ ]]; then
-    printf 'ONIONPI_ADMIN_PASSWORD_HASH n’est pas un condensat scrypt OnionPi.\n' >&2
-    exit 1
-  fi
-elif [[ -z "$ADMIN_PASSWORD" ]]; then
-  if [[ ! -t 0 ]]; then
-    printf 'Définissez ONIONPI_ADMIN_PASSWORD ou ONIONPI_ADMIN_PASSWORD_HASH en mode non interactif.\n' >&2
-    exit 1
-  fi
-  read -r -s -p 'Mot de passe administrateur (12 caractères minimum): ' ADMIN_PASSWORD
-  printf '\n'
-fi
-if (( ! UPGRADE )); then
   if [[ -z "$WIFI_PSK" ]] && (( ${#WIFI_PASSWORD} < 12 || ${#WIFI_PASSWORD} > 63 )); then
     printf 'Le mot de passe Wi-Fi doit contenir entre 12 et 63 caractères.\n' >&2
     exit 1
@@ -229,6 +232,10 @@ if (( ! UPGRADE )); then
     exit 1
   fi
 fi
+# Credential resolution ends here. packaging/tests/upgrade-noninteractive.sh
+# extracts the block between these two markers and runs it on its own, which is
+# the only way to prove, without a Raspberry Pi, that an upgrade started by
+# onionpi-update.service never reaches a prompt it cannot answer.
 
 if (( UPGRADE )); then
   printf '\nMise à niveau immuable d’OnionPi (%s, %s).\n' "$WIFI_INTERFACE" "$SSID"
