@@ -58,6 +58,7 @@ jobs:
         run: |
           scripts/check-resource-budget.sh
           packaging/tests/release-runtime.sh
+          packaging/tests/upgrade-noninteractive.sh
           packaging/tests/update-interruption-matrix.sh
 
       - name: Fail-closed network VM

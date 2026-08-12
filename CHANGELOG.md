@@ -44,6 +44,16 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Les mises à jour automatiques s’installent de nouveau. L’installateur lancé
+  avec `--upgrade` réclamait un mot de passe administrateur alors qu’il tourne
+  dans un service systemd sans terminal : il s’arrêtait aussitôt, et
+  `onionpi-update` revenait à la version précédente en signalant « Retour à
+  X.Y.Z : l’installateur a échoué ». Aucune version publiée après 0.3.1 ne
+  pouvait donc être installée à distance.
+- L’intégration continue exécute désormais réellement la résolution des
+  identifiants de `packaging/install.sh --upgrade` sans terminal
+  (`packaging/tests/upgrade-noninteractive.sh`), au lieu de ne simuler que le
+  journal de mise à jour.
 - La déconnexion n’est plus déclenchée par un clic sur le nom d’utilisateur :
   elle est devenue une entrée explicite du menu de compte.
 - Le bouton « plus d’actions » des fichiers, qui n’était relié à rien, est

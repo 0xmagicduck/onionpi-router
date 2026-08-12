@@ -66,6 +66,10 @@ jobs:
             bash -n "$script" || status=1
           done < <(git ls-files '*.sh')
           exit "$status"
+      - name: The unattended upgrade reaches no prompt
+        run: |
+          packaging/tests/upgrade-noninteractive.sh
+          packaging/tests/update-interruption-matrix.sh
       - name: systemd units are parseable
         run: |
           # A typo in a unit only shows up when the Pi refuses to boot the
