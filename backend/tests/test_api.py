@@ -486,3 +486,161 @@ def test_update_page_reads_state_and_refuses_bad_schedules() -> None:
         ).status_code == 422
         # Mutations still need the CSRF token.
         assert client.post("/api/v1/system/update/run").status_code == 403
+
+
+def test_device_access_rules_drive_the_effective_block_list() -> None:
+    from onionpi.main import services
+
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        csrf = login(client)
+        assert client.get("/api/v1/devices/access").json()["rules"] == []
+
+        assert client.post(
+            "/api/v1/devices/access/pause",
+            json={"mac": "6a:4f:12:8b:33:21", "minutes": 30},
+        ).status_code == 403
+
+        paused = client.post(
+            "/api/v1/devices/access/pause",
+            json={"mac": "6a:4f:12:8b:33:21", "minutes": 30},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert paused.status_code == 200
+        assert paused.json()["rules"][0]["state"] == "paused"
+        assert services.device_guard.policy_blocks == {"6a:4f:12:8b:33:21"}
+
+        # The listing carries the alias and the state, so one poll feeds the page.
+        named = client.post(
+            "/api/v1/devices/access",
+            json={
+                "mac": "6a:4f:12:8b:33:21",
+                "alias": "Portable de Camille",
+                "schedule": {
+                    "enabled": True,
+                    "days": [0, 1, 2, 3, 4],
+                    "start": "07:00",
+                    "end": "21:00",
+                },
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert named.status_code == 200
+        listing = client.get("/api/v1/devices").json()
+        device = next(
+            item for item in listing["devices"] if item["mac"] == "6a:4f:12:8b:33:21"
+        )
+        assert device["name"] == "Portable de Camille"
+        assert device["access_state"] in {"allowed", "outside", "paused"}
+        assert listing["access"]["rules"]
+
+        # An hour outside the accepted range never reaches the scheduler.
+        assert client.post(
+            "/api/v1/devices/access",
+            json={
+                "mac": "6a:4f:12:8b:33:21",
+                "alias": "Portable",
+                "schedule": {"enabled": True, "days": [0], "start": "31:00", "end": "21:00"},
+            },
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 400
+        assert client.post(
+            "/api/v1/devices/access/pause",
+            json={"mac": "6a:4f:12:8b:33:21", "minutes": 100000},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 422
+
+        removed = client.post(
+            "/api/v1/devices/access/remove",
+            json={"mac": "6a:4f:12:8b:33:21"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert removed.status_code == 200
+        assert removed.json()["rules"] == []
+        assert client.post(
+            "/api/v1/devices/access/remove",
+            json={"mac": "6a:4f:12:8b:33:21"},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 404
+
+
+def test_onion_client_authorisation_endpoints() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        csrf = login(client)
+        client.post("/api/v1/onion", json={"enabled": True}, headers={"X-CSRF-Token": csrf})
+
+        created = client.post(
+            "/api/v1/onion/clients",
+            json={"name": "Téléphone"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert created.status_code == 200
+        assert ":descriptor:x25519:" in created.json()["private_key"]
+        assert created.json()["onion"]["client_auth"] is True
+
+        # The key is shown once: no endpoint hands it out a second time.
+        advanced = client.get("/api/v1/tor/advanced").json()
+        assert advanced["onion"]["clients"][0]["name"] == "Téléphone"
+        assert "private_key" not in str(advanced["onion"])
+
+        assert client.post(
+            "/api/v1/onion/clients",
+            json={"name": "Téléphone"},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 400
+        assert client.post(
+            "/api/v1/onion/clients/remove",
+            json={"name": "Absent"},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 404
+        assert client.post(
+            "/api/v1/onion/clients/remove",
+            json={"name": "Téléphone"},
+            headers={"X-CSRF-Token": csrf},
+        ).json()["client_auth"] is False
+
+
+def test_security_audit_is_authenticated_and_actionable() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        assert client.get("/api/v1/security/audit").status_code == 401
+        login(client)
+
+        report = client.get("/api/v1/security/audit").json()
+        assert 0 <= report["score"] <= 100
+        assert report["counts"]["total"] == len(report["findings"])
+        # Every unresolved finding says what to do about it.
+        assert all(item["remedy"] for item in report["findings"] if not item["ok"])
+        assert "scrypt" not in str(report)
+
+
+def test_exported_configuration_carries_the_access_rules() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        csrf = login(client)
+        client.post(
+            "/api/v1/devices/access",
+            json={
+                "mac": "3c:07:54:2a:91:8f",
+                "alias": "Tablette",
+                "schedule": {"enabled": True, "days": [5, 6], "start": "09:00", "end": "20:00"},
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        document = client.get("/api/v1/system/config").json()
+        assert document["device_access"][0]["alias"] == "Tablette"
+
+        client.post(
+            "/api/v1/devices/access/remove",
+            json={"mac": "3c:07:54:2a:91:8f"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        restored = client.post(
+            "/api/v1/system/config",
+            json={"document": document},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert restored.status_code == 200
+        assert any("règle" in item for item in restored.json()["applied"])
+        assert client.get("/api/v1/devices/access").json()["rules"][0]["alias"] == "Tablette"

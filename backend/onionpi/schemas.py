@@ -104,4 +104,7 @@ class ConfigurationDocument(BaseModel):
     tor_policy: dict[str, Any]
     dns_filter: dict[str, Any]
     blocked_devices: list[dict[str, Any]]
+    # Added in 0.4.0. Optional so a backup taken by an older release still
+    # restores instead of being rejected as malformed.
+    device_access: list[dict[str, Any]] = []
     circumvention: dict[str, Any]

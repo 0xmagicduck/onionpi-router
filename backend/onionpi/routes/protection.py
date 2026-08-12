@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from ..agent import AgentError
 from ..auth import PasswordHashingBusy, hashing_slot
+from ..hardening import security_audit
 from ..protection import protection_snapshot
 from ..schemas import StatusResponse
 from ..system import system_snapshot
@@ -66,6 +67,25 @@ def create_router(context: RouteContext) -> APIRouter:
             "protection": protection,
             "activities": database.activities(6),
         }
+
+    @router.get("/api/v1/security/audit")
+    async def security_report(
+        _: dict[str, Any] = Depends(current_session),
+    ) -> dict[str, Any]:
+        """Hardening review: exposure, freshness and secrets hygiene.
+
+        Deliberately not part of /status: it queries systemd, the certificate
+        and the update client, and nothing on a dashboard needs that every ten
+        seconds.
+        """
+        system_data, tor_data = await asyncio.gather(
+            asyncio.to_thread(system_snapshot, settings.shared_dir, settings.demo_mode),
+            asyncio.to_thread(services.tor.status),
+        )
+        protection = protection_snapshot(
+            tor_data, system_data.get("services", []), settings.demo_mode
+        )
+        return await asyncio.to_thread(security_audit, services, protection)
 
     @router.get("/api/v1/onboarding")
     def onboarding_state(

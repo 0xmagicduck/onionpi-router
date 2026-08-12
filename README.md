@@ -42,9 +42,15 @@ raccourcis.
 - filtrage DNS des publicités, traqueurs et domaines choisis, listes
   téléchargées à travers Tor ;
 - blocage d’un appareil par adresse MAC, appliqué par nftables ;
+- accès des appareils : nom donné par le foyer, pause de 15 min à 8 h et plage
+  horaire quotidienne par jour de la semaine, appliqués par le même
+  coupe-circuit ;
+- audit de sécurité : treize contrôles de durcissement notés, classés par
+  urgence, avec le geste qui corrige chacun ;
 - pays du relais de sortie et rotation d’identité programmée ;
 - mesure du débit réel à travers le circuit courant ;
-- service onion optionnel pour joindre l’interface depuis l’extérieur ;
+- service onion optionnel pour joindre l’interface depuis l’extérieur, avec
+  autorisation client v3 pour que l’adresse seule ne suffise plus ;
 - redémarrage des services, redémarrage/extinction de la Pi et sauvegarde
   chiffrée/restauration avec aperçu depuis l’interface ;
 - diagnostic local de santé (SQLite, stockage, services, Tor, horloge et
@@ -265,6 +271,51 @@ sudo nft list set inet onionpi blocked_clients
 grep -c '^0\.0\.0\.0 ' /etc/onionpi/dns/block.hosts
 ```
 
+## Accès des appareils
+
+La page **Appareils** ajoute au blocage définitif deux réglages qui répondent
+aux vraies demandes d’un foyer : « coupe la tablette une heure » et « plus
+d’Internet sur la console après 21 h ».
+
+- **Nom.** Le nom donné ici remplace partout celui annoncé par le fabricant.
+- **Pause.** De 15 minutes à 8 heures. Elle expire toute seule, y compris après
+  un redémarrage de la Pi : c’est l’échéance qui est stockée, pas un minuteur.
+- **Plage horaire.** Une plage autorisée par jour de la semaine. En dehors,
+  l’appareil est coupé exactement comme s’il était bloqué. Une plage dont la fin
+  précède le début — 22:00 – 06:00 — appartient à la nuit du jour choisi.
+
+Le calcul reste dans l’application : un fil recalcule toutes les 20 secondes
+l’ensemble des adresses MAC à couper (blocages manuels ∪ pauses ∪ hors plage) et
+le remet à `DeviceGuard`, qui reste le seul écrivain de `blocked-macs.txt` et le
+seul appelant de l’agent privilégié. **Aucun verbe root n’a été ajouté pour
+cette fonctionnalité** : côté pare-feu, une plage horaire est un blocage
+ordinaire qui arrive et repart tout seul.
+
+Les règles font partie de l’export de configuration et des sauvegardes
+chiffrées. Une pause n’y est jamais restaurée : c’est une intention de quelques
+minutes, pas un réglage.
+
+## Audit de sécurité
+
+La page **Audit** répond à une question que le diagnostic ne pose pas. Le
+diagnostic dit « est-ce que ça marche encore » ; l’audit dit « est-ce que ça
+mérite encore d’être approuvé ». Un service peut être en parfaite santé et
+pourtant exposer SSH à tous les invités du Wi-Fi, tourner avec un mot de passe
+posé il y a deux ans, ou publier une adresse onion que toute personne l’ayant
+lue une fois peut encore joindre.
+
+Treize contrôles sont notés, du plus grave au plus anodin : mode démonstration
+sur une installation réelle, coupe-circuit, canal d’actions privilégiées, SSH
+depuis le Wi-Fi, âge du mot de passe, durée des sessions, mises à jour
+automatiques et version installée, service onion sans autorisation client,
+filtrage DNS, pays de sortie imposé, rotation d’identité, horloge, stockage et
+certificat local. Chaque point à corriger porte le geste qui le règle et, quand
+l’action existe déjà comme verbe privilégié, le bouton qui l’exécute.
+
+Le rapport ne contient **aucun secret, aucun domaine visité et aucune adresse de
+client** : il décrit la configuration, jamais l’usage. C’est ce qui permet de
+l’exporter en JSON et de le montrer à quelqu’un pour obtenir de l’aide.
+
 ## Réglages Tor avancés
 
 La page **Tor** ajoute, sous l’état du circuit :
@@ -293,11 +344,32 @@ nécessaire. Tor oublie les services détachés quand il redémarre : l’applic
 republie la même clé à son démarrage. Le bouton « Générer une nouvelle adresse »
 jette la clé et en crée une autre — l’ancienne adresse devient inutilisable.
 
-Ouvrez l’adresse dans le navigateur Tor. **Elle vaut un mot de passe** : qui la
-connaît atteint la page de connexion. Sur `.onion`, le cookie de session est
-posé sans l’attribut `Secure`, car tous les navigateurs ne traitent pas encore
-`http://…onion` comme une origine sûre ; le chiffrement de bout en bout est
-assuré par Tor lui-même.
+Ouvrez l’adresse dans le navigateur Tor. Sans autorisation client, **elle vaut
+un mot de passe** : qui la connaît atteint la page de connexion. Sur `.onion`,
+le cookie de session est posé sans l’attribut `Secure`, car tous les navigateurs
+ne traitent pas encore `http://…onion` comme une origine sûre ; le chiffrement
+de bout en bout est assuré par Tor lui-même.
+
+### Autorisation client (v3)
+
+Une adresse voyage : historique, marque-pages, capture d’écran, message envoyé
+à la mauvaise personne. L’autorisation client supprime ce risque. Pour chaque
+appareil autorisé, l’interface tire une paire de clés x25519, ne garde que la
+moitié publique et republie le service avec `ClientAuthV3`. Tor chiffre alors le
+descripteur pour ces clés seules : sans la sienne, un visiteur ne peut même pas
+**résoudre** l’adresse, encore moins voir la page de connexion.
+
+La clé privée est affichée **une seule fois**, dans la ligne exacte que le
+navigateur Tor attend :
+
+```
+<adresse-sans-.onion>:descriptor:x25519:<clé privée base32>
+```
+
+Enregistrez-la dans `<profil>/tor/onion-auth/<nom>.auth_private`, puis relancez
+le navigateur. Perdre la clé ne coûte qu’un accès à recréer ; révoquer un
+appareil est immédiat et n’affecte pas les autres. L’administration depuis le
+Wi-Fi local n’est jamais concernée : elle ne passe pas par l’adresse onion.
 
 ## Mises à jour automatiques
 

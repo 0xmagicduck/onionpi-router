@@ -4,12 +4,16 @@ import type {
   BackupPreview,
   CircumventionPayload,
   ConnectionMode,
+  DeviceAccessState,
+  DeviceSchedule,
   DevicesPayload,
   DiagnosticsPayload,
   DnsFilterState,
   FilesPayload,
+  OnionClientCreated,
   OnionState,
   OnboardingState,
+  SecurityAudit,
   Session,
   SpeedTestResult,
   StatusPayload,
@@ -103,6 +107,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mac, blocked, label }),
     }),
+  deviceAccess: () => request<DeviceAccessState>('/api/v1/devices/access'),
+  setDeviceAccess: (body: { mac: string; alias: string; schedule: DeviceSchedule | null }) =>
+    request<DeviceAccessState>('/api/v1/devices/access', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  pauseDevice: (mac: string, minutes: number) =>
+    request<DeviceAccessState>('/api/v1/devices/access/pause', {
+      method: 'POST',
+      body: JSON.stringify({ mac, minutes }),
+    }),
+  removeDeviceAccess: (mac: string) =>
+    request<DeviceAccessState>('/api/v1/devices/access/remove', {
+      method: 'POST',
+      body: JSON.stringify({ mac }),
+    }),
+  securityAudit: () => request<SecurityAudit>('/api/v1/security/audit'),
   dnsFilter: () => request<DnsFilterState>('/api/v1/dns-filter'),
   setDnsFilter: (body: { profiles: string[]; custom_blocked: string[]; allowed: string[] }) =>
     request<DnsFilterState>('/api/v1/dns-filter', { method: 'POST', body: JSON.stringify(body) }),
@@ -114,6 +135,16 @@ export const api = {
   setOnion: (enabled: boolean) =>
     request<OnionState>('/api/v1/onion', { method: 'POST', body: JSON.stringify({ enabled }) }),
   rotateOnion: () => request<OnionState>('/api/v1/onion/rotate', { method: 'POST' }),
+  addOnionClient: (name: string) =>
+    request<OnionClientCreated>('/api/v1/onion/clients', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  removeOnionClient: (name: string) =>
+    request<OnionState>('/api/v1/onion/clients/remove', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
   systemActions: () => request<SystemActionsPayload>('/api/v1/system/actions'),
   diagnostics: () => request<DiagnosticsPayload>('/api/v1/system/diagnostics'),
   runSystemAction: (action: string) =>

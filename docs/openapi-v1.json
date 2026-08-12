@@ -163,6 +163,15 @@
             "title": "Circumvention",
             "type": "object"
           },
+          "device_access": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Device Access",
+            "type": "array"
+          },
           "device_name": {
             "title": "Device Name",
             "type": "string"
@@ -199,6 +208,37 @@
         "title": "ConfigurationDocument",
         "type": "object"
       },
+      "DeviceAccessRequest": {
+        "properties": {
+          "alias": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Alias",
+            "type": "string"
+          },
+          "mac": {
+            "maxLength": 17,
+            "minLength": 11,
+            "title": "Mac",
+            "type": "string"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceScheduleRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mac"
+        ],
+        "title": "DeviceAccessRequest",
+        "type": "object"
+      },
       "DeviceBlockRequest": {
         "properties": {
           "blocked": {
@@ -223,6 +263,74 @@
           "blocked"
         ],
         "title": "DeviceBlockRequest",
+        "type": "object"
+      },
+      "DeviceMacRequest": {
+        "properties": {
+          "mac": {
+            "maxLength": 17,
+            "minLength": 11,
+            "title": "Mac",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mac"
+        ],
+        "title": "DeviceMacRequest",
+        "type": "object"
+      },
+      "DevicePauseRequest": {
+        "properties": {
+          "mac": {
+            "maxLength": 17,
+            "minLength": 11,
+            "title": "Mac",
+            "type": "string"
+          },
+          "minutes": {
+            "maximum": 1440.0,
+            "minimum": 0.0,
+            "title": "Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mac",
+          "minutes"
+        ],
+        "title": "DevicePauseRequest",
+        "type": "object"
+      },
+      "DeviceScheduleRequest": {
+        "properties": {
+          "days": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 7,
+            "title": "Days",
+            "type": "array"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "end": {
+            "default": "",
+            "maxLength": 5,
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "default": "",
+            "maxLength": 5,
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "title": "DeviceScheduleRequest",
         "type": "object"
       },
       "DnsFilterRequest": {
@@ -364,6 +472,21 @@
           "channel"
         ],
         "title": "NetworkStatus",
+        "type": "object"
+      },
+      "OnionClientRequest": {
+        "properties": {
+          "name": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OnionClientRequest",
         "type": "object"
       },
       "OnionRequest": {
@@ -868,7 +991,7 @@
   },
   "info": {
     "title": "OnionPi API",
-    "version": "0.3.2"
+    "version": "0.4.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1212,6 +1335,198 @@
           }
         },
         "summary": "Devices"
+      }
+    },
+    "/api/v1/devices/access": {
+      "get": {
+        "operationId": "device_access_api_v1_devices_access_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Device Access Api V1 Devices Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Device Access"
+      },
+      "post": {
+        "operationId": "update_device_access_api_v1_devices_access_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Device Access Api V1 Devices Access Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Device Access"
+      }
+    },
+    "/api/v1/devices/access/pause": {
+      "post": {
+        "operationId": "pause_device_api_v1_devices_access_pause_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevicePauseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Pause Device Api V1 Devices Access Pause Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Device"
+      }
+    },
+    "/api/v1/devices/access/remove": {
+      "post": {
+        "operationId": "remove_device_access_api_v1_devices_access_remove_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceMacRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Device Access Api V1 Devices Access Remove Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Device Access"
       }
     },
     "/api/v1/devices/block": {
@@ -2023,6 +2338,123 @@
         "summary": "Set Onion"
       }
     },
+    "/api/v1/onion/clients": {
+      "post": {
+        "description": "Authorises one device. The returned key is never stored in clear.",
+        "operationId": "add_onion_client_api_v1_onion_clients_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnionClientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Onion Client Api V1 Onion Clients Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Onion Client"
+      }
+    },
+    "/api/v1/onion/clients/remove": {
+      "post": {
+        "operationId": "remove_onion_client_api_v1_onion_clients_remove_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnionClientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Onion Client Api V1 Onion Clients Remove Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Onion Client"
+      }
+    },
     "/api/v1/onion/rotate": {
       "post": {
         "operationId": "rotate_onion_api_v1_onion_rotate_post",
@@ -2127,6 +2559,27 @@
           }
         },
         "summary": "Set Snowflake Relay"
+      }
+    },
+    "/api/v1/security/audit": {
+      "get": {
+        "description": "Hardening review: exposure, freshness and secrets hygiene.\n\nDeliberately not part of /status: it queries systemd, the certificate\nand the update client, and nothing on a dashboard needs that every ten\nseconds.",
+        "operationId": "security_report_api_v1_security_audit_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Security Report Api V1 Security Audit Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Security Report"
       }
     },
     "/api/v1/status": {

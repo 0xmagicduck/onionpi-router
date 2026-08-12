@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ..access import MAX_PAUSE_MINUTES, AccessError
 from ..circumvention import CircumventionError
 from ..netcontrol import NetControlError
 from ..onion import OnionError
@@ -31,6 +32,32 @@ class DeviceBlockRequest(BaseModel):
     mac: str = Field(min_length=11, max_length=17)
     label: str = Field(default="", max_length=64)
     blocked: bool
+
+
+class DeviceScheduleRequest(BaseModel):
+    enabled: bool = False
+    days: list[int] = Field(default_factory=list, max_length=7)
+    start: str = Field(default="", max_length=5)
+    end: str = Field(default="", max_length=5)
+
+
+class DeviceAccessRequest(BaseModel):
+    mac: str = Field(min_length=11, max_length=17)
+    alias: str = Field(default="", max_length=64)
+    schedule: DeviceScheduleRequest | None = None
+
+
+class DevicePauseRequest(BaseModel):
+    mac: str = Field(min_length=11, max_length=17)
+    minutes: int = Field(ge=0, le=MAX_PAUSE_MINUTES)
+
+
+class DeviceMacRequest(BaseModel):
+    mac: str = Field(min_length=11, max_length=17)
+
+
+class OnionClientRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=32)
 
 
 class DnsFilterRequest(BaseModel):
@@ -64,26 +91,48 @@ def create_router(context: RouteContext) -> APIRouter:
             connected_devices, settings.wifi_interface, settings.demo_mode
         )
         blocked = services.device_guard.entries()
+        access = services.access.snapshot()
+        rules = {rule["mac"]: rule for rule in access["rules"]}
         blocked_macs = {entry["mac"] for entry in blocked}
+
+        def describe(device: dict[str, Any]) -> dict[str, Any]:
+            rule = rules.get(device["mac"])
+            alias = str(rule["alias"]) if rule else ""
+            return {
+                **device,
+                # The name a household gives a device is more useful than the
+                # hostname its manufacturer chose, so it wins on every screen.
+                "name": alias or device["name"],
+                "alias": alias,
+                "access_state": str(rule["state"])
+                if rule
+                else ("blocked" if device["blocked"] else "allowed"),
+                "paused_until": int(rule["paused_until"]) if rule else 0,
+                "schedule": rule["schedule"] if rule else None,
+            }
+
         seen = set()
         for device in values:
             device["blocked"] = device["mac"] in blocked_macs
             seen.add(device["mac"])
+        devices = [describe(device) for device in values]
         for entry in blocked:
             if entry["mac"] in seen:
                 continue
-            values.append(
-                {
-                    "name": entry["label"] or "Appareil bloqué",
-                    "ip": "—",
-                    "mac": entry["mac"],
-                    "download": 0,
-                    "upload": 0,
-                    "online": False,
-                    "blocked": True,
-                }
+            devices.append(
+                describe(
+                    {
+                        "name": entry["label"] or "Appareil bloqué",
+                        "ip": "—",
+                        "mac": entry["mac"],
+                        "download": 0,
+                        "upload": 0,
+                        "online": False,
+                        "blocked": True,
+                    }
+                )
             )
-        return {"devices": values, "blocked": blocked}
+        return {"devices": devices, "blocked": blocked, "access": access}
 
     @router.post("/api/v1/devices/block")
     async def block_device(
@@ -102,6 +151,50 @@ def create_router(context: RouteContext) -> APIRouter:
         except NetControlError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         return {"blocked": entries}
+
+    @router.get("/api/v1/devices/access")
+    async def device_access(
+        _: dict[str, Any] = Depends(current_session),
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(services.access.snapshot)
+
+    @router.post("/api/v1/devices/access")
+    async def update_device_access(
+        payload: DeviceAccessRequest,
+        _: dict[str, Any] = Depends(csrf_session),
+    ) -> dict[str, Any]:
+        try:
+            return await asyncio.to_thread(
+                services.access.update,
+                payload.mac,
+                payload.alias,
+                None,
+                payload.schedule.model_dump() if payload.schedule else None,
+            )
+        except AccessError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @router.post("/api/v1/devices/access/pause")
+    async def pause_device(
+        payload: DevicePauseRequest,
+        _: dict[str, Any] = Depends(csrf_session),
+    ) -> dict[str, Any]:
+        try:
+            return await asyncio.to_thread(
+                services.access.pause, payload.mac, payload.minutes
+            )
+        except AccessError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @router.post("/api/v1/devices/access/remove")
+    async def remove_device_access(
+        payload: DeviceMacRequest,
+        _: dict[str, Any] = Depends(csrf_session),
+    ) -> dict[str, Any]:
+        try:
+            return await asyncio.to_thread(services.access.remove, payload.mac)
+        except AccessError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
 
     @router.post("/api/v1/tor/new-identity")
     async def new_identity(
@@ -281,5 +374,26 @@ def create_router(context: RouteContext) -> APIRouter:
             return await asyncio.to_thread(services.onion.rotate_address)
         except OnionError as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
+
+    @router.post("/api/v1/onion/clients")
+    async def add_onion_client(
+        payload: OnionClientRequest,
+        _: dict[str, Any] = Depends(csrf_session),
+    ) -> dict[str, Any]:
+        """Authorises one device. The returned key is never stored in clear."""
+        try:
+            return await asyncio.to_thread(services.onion.add_client, payload.name)
+        except OnionError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @router.post("/api/v1/onion/clients/remove")
+    async def remove_onion_client(
+        payload: OnionClientRequest,
+        _: dict[str, Any] = Depends(csrf_session),
+    ) -> dict[str, Any]:
+        try:
+            return await asyncio.to_thread(services.onion.remove_client, payload.name)
+        except OnionError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
 
     return router

@@ -76,6 +76,18 @@ export type TrafficSample = {
   upload_mbps: number
 }
 
+/** `allowed` and `blocked` come from the firewall, the two others from the
+ *  access schedule: a device can be reachable and still be outside its hours. */
+export type AccessState = 'allowed' | 'paused' | 'outside' | 'blocked'
+
+export type DeviceSchedule = {
+  enabled: boolean
+  /** 0 = lundi, 6 = dimanche, as the backend counts weekdays. */
+  days: number[]
+  start: string
+  end: string
+}
+
 export type Device = {
   name: string
   ip: string
@@ -84,6 +96,10 @@ export type Device = {
   upload: number
   online: boolean
   blocked?: boolean
+  alias?: string
+  access_state?: AccessState
+  paused_until?: number
+  schedule?: DeviceSchedule | null
 }
 
 export type BlockedDevice = {
@@ -92,9 +108,26 @@ export type BlockedDevice = {
   blocked_at: number
 }
 
+export type DeviceAccessRule = {
+  mac: string
+  alias: string
+  paused_until: number
+  schedule: DeviceSchedule | null
+  state: AccessState
+  manually_blocked: boolean
+}
+
+export type DeviceAccessState = {
+  rules: DeviceAccessRule[]
+  weekdays: string[]
+  pause_choices: number[]
+  now: number
+}
+
 export type DevicesPayload = {
   devices: Device[]
   blocked: BlockedDevice[]
+  access: DeviceAccessState
 }
 
 export type DnsProfile = {
@@ -130,12 +163,28 @@ export type TorCircuit = {
   nodes: TorNode[]
 }
 
+export type OnionClient = {
+  name: string
+  added_at: number
+}
+
 export type OnionState = {
   enabled: boolean
   published: boolean
   address: string
   has_key: boolean
   target: string
+  client_auth: boolean
+  clients: OnionClient[]
+  max_clients: number
+}
+
+/** Returned once, when the access is created. The key is never stored in clear
+ *  and no endpoint hands it out a second time. */
+export type OnionClientCreated = {
+  onion: OnionState
+  name: string
+  private_key: string
 }
 
 export type TorAdvancedPayload = {
@@ -183,6 +232,31 @@ export type DiagnosticsPayload = {
     settings: number
     bytes: number
   }
+}
+
+export type AuditSeverity = 'critical' | 'high' | 'medium' | 'low'
+
+export type AuditFinding = {
+  id: string
+  title: string
+  severity: AuditSeverity
+  ok: boolean
+  detail: string
+  remedy: string
+  /** Page of the interface that owns the setting, when there is one. */
+  page: string
+  /** Privileged verb that repairs the finding without leaving the report. */
+  action: string
+}
+
+export type SecurityAudit = {
+  generated_at: number
+  score: number
+  level: 'excellent' | 'solide' | 'renforcer' | 'faible'
+  label: string
+  summary: string
+  counts: Record<AuditSeverity | 'total' | 'pending', number>
+  findings: AuditFinding[]
 }
 
 export type UpdateChannel = 'stable' | 'edge'

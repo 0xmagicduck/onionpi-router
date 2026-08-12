@@ -13,5 +13,7 @@ grep -Fqx 'MAX_ACTIVITIES = 4_000' "$PROJECT_ROOT/backend/onionpi/database.py"
 grep -Fq 'deque(maxlen=180)' "$PROJECT_ROOT/backend/onionpi/system.py"
 grep -Fqx 'ONIONPI_UPDATE_MAX_ARCHIVE_BYTES=268435456' \
   "$PROJECT_ROOT/packaging/templates/update.conf"
+grep -Fqx 'MAX_RULES = 128' "$PROJECT_ROOT/backend/onionpi/access.py"
+grep -Fqx 'MAX_CLIENTS = 8' "$PROJECT_ROOT/backend/onionpi/onion.py"
 
-printf 'Budget de ressources v0.3 respecté.\n'
+printf 'Budget de ressources v0.4 respecté.\n'

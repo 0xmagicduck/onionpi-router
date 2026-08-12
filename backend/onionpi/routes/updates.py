@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from ..access import AccessError
 from ..agent import ACTIONS, AgentError
 from ..backup import (
     BackupError,
@@ -84,6 +85,7 @@ def create_router(context: RouteContext) -> APIRouter:
                 for key in ("profiles", "custom_blocked", "allowed")
             },
             "blocked_devices": services.device_guard.entries(),
+            "device_access": services.access.rules(),
             "circumvention": {
                 key: circumvention_state[key]
                 for key in ("mode", "transport", "country", "custom_bridges")
@@ -146,6 +148,13 @@ def create_router(context: RouteContext) -> APIRouter:
                             applied.append(f"{len(entries)} appareil(s) bloqué(s)")
                     except NetControlError as error:
                         failures.append(f"Appareils bloqués: {error}")
+            rules = document.get("device_access")
+            if isinstance(rules, list) and rules:
+                try:
+                    imported = services.access.restore(rules)
+                    applied.append(f"{imported} règle(s) d’accès")
+                except AccessError as error:
+                    failures.append(f"Règles d’accès: {error}")
             dns = document.get("dns_filter")
             if isinstance(dns, dict) and dns:
                 try:

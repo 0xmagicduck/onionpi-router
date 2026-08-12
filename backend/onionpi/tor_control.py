@@ -345,12 +345,23 @@ class TorController:
 
     # ------------------------------------------------------- onion service --
 
-    def add_onion(self, private_key: str | None, target: str) -> dict[str, str]:
+    CLIENT_KEY_PATTERN = re.compile(r"^[A-Z2-7]{52}$")
+
+    def add_onion(
+        self,
+        private_key: str | None,
+        target: str,
+        client_keys: list[str] | None = None,
+    ) -> dict[str, str]:
         """Publishes a v3 onion service pointing at `target` (host:port).
 
         `Flags=Detach` keeps the service alive once this short-lived control
         connection closes; it still disappears when Tor itself restarts, which
         is why the caller stores the key and re-publishes at startup.
+
+        `client_keys` holds base32 x25519 public keys. When at least one is
+        given, Tor encrypts the descriptor for those clients only: an address
+        that leaks no longer grants access on its own.
         """
         if self.demo_mode:
             return {
@@ -361,9 +372,16 @@ class TorController:
             raise TorControlError("Cible du service onion invalide")
         if private_key is not None and not re.fullmatch(r"ED25519-V3:[A-Za-z0-9+/=]{1,200}", private_key):
             raise TorControlError("Clé de service onion invalide")
+        authorised = list(client_keys or [])
+        if any(not self.CLIENT_KEY_PATTERN.fullmatch(key) for key in authorised):
+            raise TorControlError("Clé d’autorisation client invalide")
         specification = private_key or "NEW:ED25519-V3"
+        flags = "Detach,V3Auth" if authorised else "Detach"
+        authorisation = "".join(f" ClientAuthV3={key}" for key in authorised)
         with self._lock:
-            lines = self._command(f"ADD_ONION {specification} Flags=Detach Port=80,{target}")
+            lines = self._command(
+                f"ADD_ONION {specification} Flags={flags} Port=80,{target}{authorisation}"
+            )
         service_id = ""
         stored_key = private_key or ""
         for line in lines:
