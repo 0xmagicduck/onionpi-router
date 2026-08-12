@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .access import DeviceAccessManager
 from .agent import PrivilegedAgent
 from .auth import LoginLimiter, RateLimiter
 from .backends import (
@@ -39,6 +40,7 @@ class AppServices:
     relay: SnowflakeRelay
     agent: PrivilegedAgent
     device_guard: DeviceGuard
+    access: DeviceAccessManager
     dns_filter: DnsFilter
     tor_policy: TorPolicy
     onion: OnionService
@@ -78,6 +80,11 @@ def build_app_services(settings: Settings) -> AppServices:
         settings.blocked_macs_path,
         agent,
         settings.demo_mode,
+        on_event=lambda kind, message: database.add_activity(kind, message),
+    )
+    access = DeviceAccessManager(
+        database,
+        device_guard,
         on_event=lambda kind, message: database.add_activity(kind, message),
     )
     dns_filter = DnsFilter(
@@ -133,6 +140,7 @@ def build_app_services(settings: Settings) -> AppServices:
         relay=relay,
         agent=agent,
         device_guard=device_guard,
+        access=access,
         dns_filter=dns_filter,
         tor_policy=tor_policy,
         onion=onion,

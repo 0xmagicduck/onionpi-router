@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
     display_name TEXT NOT NULL,
     password_hash TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    password_changed_at INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -102,7 +103,27 @@ class Database:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._migrate(connection)
             self._maintain(connection)
+
+    @staticmethod
+    def _migrate(connection: sqlite3.Connection) -> None:
+        """Brings a database created by an older release up to this schema.
+
+        `CREATE TABLE IF NOT EXISTS` leaves an existing table untouched, so a
+        column added after an appliance was installed has to be added here too.
+        """
+        columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "password_changed_at" not in columns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN password_changed_at INTEGER NOT NULL DEFAULT 0"
+            )
+            # The account was created with its password: that date is the best
+            # estimate available for an appliance upgraded in place.
+            connection.execute("UPDATE users SET password_changed_at = created_at")
 
     @staticmethod
     def _trim(connection: sqlite3.Connection, table: str, limit: int) -> None:
@@ -150,10 +171,12 @@ class Database:
         now = int(time.time())
         with self.connect() as connection:
             cursor = connection.execute(
-                "INSERT INTO users(username, display_name, password_hash, created_at) VALUES(?,?,?,?) "
+                "INSERT INTO users(username, display_name, password_hash, created_at, "
+                "password_changed_at) VALUES(?,?,?,?,?) "
                 "ON CONFLICT(username) DO UPDATE SET display_name=excluded.display_name, "
-                "password_hash=excluded.password_hash",
-                (username, display_name, password_hash, now),
+                "password_hash=excluded.password_hash, "
+                "password_changed_at=excluded.password_changed_at",
+                (username, display_name, password_hash, now, now),
             )
             row = connection.execute(
                 "SELECT id FROM users WHERE username = ? COLLATE NOCASE", (username,)
@@ -170,6 +193,15 @@ class Database:
                 "SELECT * FROM users WHERE username = ? COLLATE NOCASE", (username,)
             ).fetchone()
             return dict(row) if row else None
+
+    def oldest_password_age(self) -> int:
+        """Seconds since the least recently changed administrator password."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT min(password_changed_at) AS changed_at FROM users"
+            ).fetchone()
+        changed_at = int(row["changed_at"] or 0) if row else 0
+        return max(0, int(time.time()) - changed_at) if changed_at else 0
 
     def create_session(
         self, token_hash: str, csrf_token: str, user_id: int, ttl_seconds: int

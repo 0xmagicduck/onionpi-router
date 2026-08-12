@@ -37,6 +37,7 @@ circumvention = services.circumvention
 relay = services.relay
 agent = services.agent
 device_guard = services.device_guard
+access = services.access
 dns_filter = services.dns_filter
 tor_policy = services.tor_policy
 onion = services.onion
@@ -90,10 +91,14 @@ async def lifespan(_: FastAPI):
     circumvention.start()
     tor_policy.start()
     await asyncio.to_thread(device_guard.resync)
+    # The scheduler owns the time-based half of the block list: it has to run
+    # before the first tick so a device paused before a reboot stays paused.
+    access.start()
     await asyncio.to_thread(onion.ensure_published)
     if not database.activities(1):
         database.add_activity("secure", "OnionPi est prêt")
     yield
+    access.stop()
     tor_policy.stop()
     circumvention.stop()
     metrics.stop()

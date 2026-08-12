@@ -158,6 +158,21 @@ class Settings:
         ).resolve()
 
     @property
+    def firewall_rules_path(self) -> Path:
+        """Rendered nftables ruleset, read to report what it still allows.
+
+        install.sh owns this file; the audit only ever reads it.
+        """
+        return Path(os.getenv("ONIONPI_FIREWALL_RULES", "/etc/onionpi/firewall.nft"))
+
+    @property
+    def tls_certificate_path(self) -> Path:
+        """Self-signed certificate nginx serves on the local network."""
+        return Path(
+            os.getenv("ONIONPI_TLS_CERTIFICATE", "/etc/onionpi/tls/onionpi.crt")
+        )
+
+    @property
     def dns_block_path(self) -> Path:
         """Hosts file dnsmasq reads through addn-hosts.
 

@@ -97,6 +97,56 @@ Les métriques suivent désormais le temps et la proportion passés en
 Cette frontière permet de remplacer un backend ou d’ajouter un transport Tor
 sans changer le modèle de protection ni les contrats HTTP publics.
 
+## Version 0.4.0 — routeur utile, confidentialité avancée
+
+La 0.3.0 a rendu l’appliance sûre et réparable. La 0.4.0 répond à la question
+suivante : une fois qu’elle est sûre, à quoi sert-elle au quotidien ? Trois
+ajouts, choisis parce qu’ils tiennent tous dans le modèle de privilèges
+existant.
+
+### Accès des appareils
+
+Bloquer un appareil pour toujours est rarement ce qu’on veut. Ce qu’on veut,
+c’est « coupe la tablette une heure » et « plus rien après 21 h ». Les deux sont
+stockés comme intention dans la base et traduits, toutes les 20 secondes, en un
+ensemble d’adresses MAC à couper.
+
+Le point d’architecture est le refus d’ajouter un verbe root. `DeviceGuard`
+reste le seul écrivain de `blocked-macs.txt` et le seul appelant de l’agent :
+l’ordonnanceur lui remet un ensemble, `DeviceGuard` écrit l’union avec les
+blocages manuels. Une plage horaire est donc, pour nftables, un blocage
+ordinaire — et l’échec de l’agent est rejoué au tic suivant au lieu d’être
+silencieusement considéré comme appliqué.
+
+### Audit de sécurité
+
+`diagnostics.py` répond à « est-ce que ça marche ». `hardening.py` répond à
+« est-ce que ça mérite d’être approuvé » : exposition (SSH côté Wi-Fi, adresse
+onion sans autorisation), fraîcheur (mises à jour, listes DNS, certificat) et
+hygiène des secrets (âge du mot de passe, durée des sessions). Chaque point
+porte le geste qui le corrige, et le verbe privilégié quand il existe déjà.
+
+Le rapport est conçu pour être exporté : ni secret, ni domaine visité, ni
+identifiant de client. Un rapport qu’on ne peut pas montrer à quelqu’un ne sert
+qu’à celui qui l’a déjà lu.
+
+### Autorisation client du service onion
+
+Un service onion sans autorisation client fait de son adresse un mot de passe
+unique, partagé, jamais révocable individuellement et qui voyage dans les
+historiques. La v3 `ClientAuthV3` remplace cela par une clé x25519 par appareil,
+révocable séparément. OnionPi ne conserve que la moitié publique ; la privée est
+affichée une fois, dans le format que le navigateur Tor attend.
+
+### Ce que 0.4.0 n’a pas fait
+
+- La comptabilité du trafic par appareil reste à zéro sur matériel réel : elle
+  demanderait des compteurs nftables, donc une lecture privilégiée du pare-feu.
+  C’est le premier candidat pour la 0.5.0.
+- Aucune visibilité sur les domaines réellement demandés : un journal DNS
+  raconterait le foyer, et il faudrait d’abord décider ce qui n’est jamais
+  écrit sur disque.
+
 ## Garde-fous de livraison
 
 Chaque version doit conserver les tests actuels et ajouter :

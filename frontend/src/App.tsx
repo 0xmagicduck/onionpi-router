@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import { api, setCsrf } from './api'
 import { CommandPalette, type Command } from './components/CommandPalette'
-import { DeviceTable } from './components/DeviceTable'
 import { Modal } from './components/Modal'
 import { Sidebar } from './components/Sidebar'
 import { Toaster } from './components/Toaster'
@@ -21,11 +20,13 @@ import { useToasts } from './hooks/useToasts'
 import { PAGE_IDS, pageTitle, type Page } from './navigation'
 import { CircumventionPage } from './pages/CircumventionPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { DevicesPage } from './pages/DevicesPage'
 import { FilesPage } from './pages/FilesPage'
 import { LoginPage } from './pages/LoginPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { ChatPage, LogsPage, NetworkPage, SettingsPage, TorPage } from './pages/OperationalPages'
 import { ProtectionPage } from './pages/ProtectionPage'
+import { SecurityPage } from './pages/SecurityPage'
 import { useTheme, type ThemePreference } from './theme'
 import type { Session } from './types'
 
@@ -92,7 +93,9 @@ function AuthenticatedApp({ session, theme, onThemeChange, onSignedOut }: ShellP
   const { toasts, notify, dismiss } = useToasts()
   const status = usePolling(api.status, 10_000)
   const onboarding = usePolling(api.onboarding, 15_000)
-  const devices = usePolling(api.devices, 12_000)
+  // The whole payload, not only the list: the access rules travel with it so
+  // the devices page never needs a second poll to know who is paused.
+  const devices = usePolling(api.devicesPayload, 12_000)
   const traffic = usePolling(api.traffic, 5_000)
   const chat = useChat(true)
 
@@ -276,14 +279,14 @@ function AuthenticatedApp({ session, theme, onThemeChange, onSignedOut }: ShellP
             <DashboardPage
               user={session.user}
               status={status.data}
-              devices={devices.data ?? []}
+              devices={devices.data?.devices ?? []}
               traffic={traffic.data ?? []}
               onNewIdentity={newIdentity}
               identityBusy={identityBusy}
               onOpenPage={setPage}
             />
           )}
-          {page === 'network' && <NetworkPage status={status.data} devices={devices.data ?? []} />}
+          {page === 'network' && <NetworkPage status={status.data} devices={devices.data?.devices ?? []} />}
           {page === 'tor' && (
             <TorPage
               status={status.data}
@@ -297,22 +300,22 @@ function AuthenticatedApp({ session, theme, onThemeChange, onSignedOut }: ShellP
             <CircumventionPage status={status.data} notify={notify} onStatusRefresh={() => void status.refresh()} />
           )}
           {page === 'devices' && (
-            <div className="page operational-page">
-              <div className="page-title">
-                <h1>Appareils</h1>
-                <p>Clients actuellement visibles sur le point d’accès OnionPi.</p>
-              </div>
-              <DeviceTable devices={devices.data ?? []} searchable />
-            </div>
+            <DevicesPage
+              devices={devices.data?.devices ?? []}
+              access={devices.data?.access}
+              notify={notify}
+              onRefresh={() => void devices.refresh()}
+            />
           )}
           {page === 'protection' && (
             <ProtectionPage
               status={status.data}
-              devices={devices.data ?? []}
+              devices={devices.data?.devices ?? []}
               notify={notify}
               onDevicesRefresh={() => void devices.refresh()}
             />
           )}
+          {page === 'security' && <SecurityPage notify={notify} onOpenPage={setPage} />}
           {page === 'files' && <FilesPage activities={status.data?.activities ?? []} chat={chat} notify={notify} />}
           {page === 'chat' && <ChatPage {...chat} />}
           {page === 'logs' && <LogsPage />}

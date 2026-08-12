@@ -95,6 +95,9 @@ class DeviceGuard:
         self.demo_mode = demo_mode
         self.on_event = on_event
         self._lock = threading.Lock()
+        # Time-based blocks computed by the access scheduler. They are merged
+        # into the same file so nftables keeps a single source of truth.
+        self._policy_blocks: set[str] = set()
 
     def entries(self) -> list[dict[str, Any]]:
         stored = self.database.setting(BLOCKED_DEVICES_KEY, []) or []
@@ -116,10 +119,42 @@ class DeviceGuard:
         return entries
 
     def blocked_macs(self) -> set[str]:
+        """Devices blocked on purpose, without the time-based ones."""
         return {entry["mac"] for entry in self.entries()}
 
+    @property
+    def policy_blocks(self) -> set[str]:
+        """Devices currently outside their allowed window, or paused."""
+        return set(self._policy_blocks)
+
+    def set_policy_blocks(self, macs: set[str]) -> None:
+        """Publishes the access scheduler's decision for the current minute.
+
+        Nothing else may write `blocked-macs.txt`: two writers would race and
+        the loser's entries would silently stop being enforced.
+        """
+        cleaned: set[str] = set()
+        for mac in macs:
+            try:
+                cleaned.add(normalize_mac(mac))
+            except ValueError:
+                continue
+        with self._lock:
+            if cleaned == self._policy_blocks:
+                return
+            previous = self._policy_blocks
+            self._policy_blocks = cleaned
+            try:
+                self._apply(self.entries())
+            except NetControlError:
+                # Keep the old set so the next tick tries the change again
+                # instead of believing it is already applied.
+                self._policy_blocks = previous
+                raise
+
     def _write_state(self, entries: list[dict[str, Any]]) -> None:
-        body = "".join(f"{entry['mac']}\n" for entry in entries)
+        addresses = sorted({entry["mac"] for entry in entries} | self._policy_blocks)
+        body = "".join(f"{mac}\n" for mac in addresses)
         atomic_write_text(
             self.state_path,
             "# Généré par OnionPi. Une adresse MAC par ligne.\n" + body,
@@ -203,7 +238,7 @@ class DeviceGuard:
     def resync(self) -> None:
         """Re-pushes the list after a restart, so nftables cannot drift."""
         entries = self.entries()
-        if self.demo_mode or not entries:
+        if self.demo_mode or not (entries or self._policy_blocks):
             return
         try:
             self._apply(entries)

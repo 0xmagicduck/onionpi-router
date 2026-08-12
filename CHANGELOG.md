@@ -5,7 +5,47 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [0.4.0] — 2026-08-12
+
+Version « routeur utile » : chaque appareil du foyer reçoit ses propres règles
+d’accès, l’adresse onion cesse d’être un mot de passe partagé, et l’appliance
+sait dire elle-même ce que sa configuration expose.
+
 ### Ajouté
+
+- **Accès des appareils.** Chaque client du Wi-Fi peut recevoir un nom, une
+  pause de 15 minutes à 8 heures, et une plage horaire quotidienne par jour de
+  la semaine (les plages qui franchissent minuit appartiennent à la nuit du
+  jour choisi). Un ordonnanceur interne recalcule toutes les 20 secondes qui
+  doit être coupé et confie le résultat à `DeviceGuard`, seul écrivain de
+  `blocked-macs.txt` : aucun nouveau verbe privilégié n’a été ajouté.
+- **Audit de sécurité** (`GET /api/v1/security/audit`, page « Audit »). Treize
+  contrôles de durcissement — mode démonstration, coupe-circuit, SSH ouvert aux
+  clients Wi-Fi, âge du mot de passe, durée des sessions, mises à jour, service
+  onion sans autorisation client, filtrage DNS, pays de sortie imposé, rotation
+  d’identité, horloge, stockage, certificat local — avec un score, un classement
+  par urgence, le geste qui corrige chaque point et, quand c’est possible, le
+  bouton qui l’exécute. Le rapport ne contient ni secret, ni domaine visité, ni
+  identifiant de client : il est exportable tel quel.
+- **Autorisation client du service onion (v3).** L’interface génère une paire de
+  clés x25519 par appareil autorisé ; Tor chiffre alors le descripteur pour ces
+  clés seules et une adresse qui fuite ne suffit plus à joindre la page de
+  connexion. La clé privée est affichée une fois, dans le format exact attendu
+  par le navigateur Tor ; OnionPi n’en conserve que la moitié publique.
+- Les règles d’accès voyagent dans l’export de configuration et dans les
+  sauvegardes chiffrées. Une sauvegarde antérieure à 0.4.0 reste restaurable.
+- La colonne « Appareils » affiche le nom donné par le foyer plutôt que celui
+  choisi par le fabricant, ainsi que l’état d’accès réel de chaque client.
+
+### Modifié
+
+- `users.password_changed_at` est ajouté au schéma SQLite et renseigné à chaque
+  changement de mot de passe. Les bases existantes sont migrées au démarrage.
+- `POST /api/v1/onion` republie le service avec la liste d’accès du moment ; la
+  publication est retirée puis recréée, seule façon de changer cette liste par
+  le port de contrôle.
+
+### Ajouté — interface (travail préparé pour 0.3.2, jamais publié seul)
 
 - Système de design complet pour l’interface web : jetons de couleur,
   d’espacement, de typographie et de mouvement dans `frontend/src/styles/`,
@@ -32,7 +72,7 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 - Notifications empilables et menu de compte regroupant thème, raccourcis et
   déconnexion.
 
-### Modifié
+### Modifié — interface
 
 - Refonte visuelle de toute l’interface web : barre latérale groupée par
   domaine et repliable de façon persistante, en-têtes de page, panneaux,

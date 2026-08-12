@@ -41,13 +41,36 @@ export type ConfigurationDocument = {
   "tor_policy": Record<string, unknown>
   "dns_filter": Record<string, unknown>
   "blocked_devices": Array<Record<string, unknown>>
+  "device_access"?: Array<Record<string, unknown>>
   "circumvention": Record<string, unknown>
+}
+
+export type DeviceAccessRequest = {
+  "mac": string
+  "alias"?: string
+  "schedule"?: DeviceScheduleRequest | null
 }
 
 export type DeviceBlockRequest = {
   "mac": string
   "label"?: string
   "blocked": boolean
+}
+
+export type DeviceMacRequest = {
+  "mac": string
+}
+
+export type DevicePauseRequest = {
+  "mac": string
+  "minutes": number
+}
+
+export type DeviceScheduleRequest = {
+  "enabled"?: boolean
+  "days"?: Array<number>
+  "start"?: string
+  "end"?: string
 }
 
 export type DnsFilterRequest = {
@@ -81,6 +104,10 @@ export type NetworkStatus = {
   "upstream_interface": string
   "gateway_ip": string
   "channel": string
+}
+
+export type OnionClientRequest = {
+  "name": string
 }
 
 export type OnionRequest = {

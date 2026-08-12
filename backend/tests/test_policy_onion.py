@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from onionpi.database import Database
-from onionpi.onion import OnionError, OnionService
+from onionpi.onion import CLIENT_KEY_PATTERN, OnionError, OnionService
 from onionpi.policy import PolicyError, TorPolicy
 from onionpi.tor_control import TorControlError
 
@@ -16,6 +16,7 @@ class FakeController:
         self.reloads = 0
         self.identities = 0
         self.added: list[str | None] = []
+        self.authorised: list[list[str]] = []
         self.removed: list[str] = []
         self.published: set[str] = set()
         self.fail = fail
@@ -29,10 +30,16 @@ class FakeController:
     def new_identity(self) -> None:
         self.identities += 1
 
-    def add_onion(self, private_key: str | None, target: str) -> dict[str, str]:
+    def add_onion(
+        self,
+        private_key: str | None,
+        target: str,
+        client_keys: list[str] | None = None,
+    ) -> dict[str, str]:
         if self.fail:
             raise TorControlError("ADD_ONION refusé")
         self.added.append(private_key)
+        self.authorised.append(list(client_keys or []))
         service_id = "a" * 56
         self.published.add(service_id)
         return {"service_id": service_id, "private_key": private_key or "ED25519-V3:AAAA"}
@@ -137,3 +144,55 @@ def test_onion_reports_a_refused_publication(database: Database, tmp_path: Path)
     service = OnionService(database, tmp_path / "onion.key", FakeController(fail=True), "127.0.0.1:8080")  # type: ignore[arg-type]
     with pytest.raises(OnionError):
         service.set_enabled(True)
+
+
+def test_onion_client_authorisation_republishes_with_the_key(
+    database: Database, tmp_path: Path
+) -> None:
+    controller = FakeController()
+    service = OnionService(database, tmp_path / "onion.key", controller, "127.0.0.1:8080")  # type: ignore[arg-type]
+    service.set_enabled(True)
+    assert controller.authorised == [[]]
+
+    result = service.add_client("Portable de Camille")
+    address = "a" * 56
+    private = result["private_key"]
+    assert private.startswith(f"{address}:descriptor:x25519:")
+    # Tor spells the key in unpadded base32; 32 raw bytes make 52 characters.
+    assert CLIENT_KEY_PATTERN.fullmatch(private.rsplit(":", 1)[1])
+    # The service was withdrawn and published again with the new client list.
+    assert controller.removed == [address]
+    assert len(controller.authorised[-1]) == 1
+    assert result["onion"]["client_auth"] is True
+    assert result["onion"]["clients"] == [
+        {"name": "Portable de Camille", "added_at": result["onion"]["clients"][0]["added_at"]}
+    ]
+
+    # Only the public half is ever stored.
+    stored = str(database.setting("onion_service"))
+    assert private.rsplit(":", 1)[1] not in stored
+
+    state = service.remove_client("Portable de Camille")
+    assert state["client_auth"] is False
+    assert controller.authorised[-1] == []
+
+
+def test_onion_client_list_refuses_duplicates_and_unknown_names(
+    database: Database, tmp_path: Path
+) -> None:
+    controller = FakeController()
+    service = OnionService(database, tmp_path / "onion.key", controller, "127.0.0.1:8080")  # type: ignore[arg-type]
+
+    # Nothing to hand out before the address exists.
+    with pytest.raises(OnionError):
+        service.add_client("Portable")
+
+    service.set_enabled(True)
+    service.add_client("Portable")
+    with pytest.raises(OnionError):
+        service.add_client("portable")
+    with pytest.raises(OnionError):
+        service.add_client("nom/invalide")
+    with pytest.raises(OnionError):
+        service.remove_client("Inconnu")
+    assert len(service.snapshot()["clients"]) == 1

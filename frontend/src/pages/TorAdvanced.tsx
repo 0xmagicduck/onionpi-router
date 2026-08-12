@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { Copy, Gauge, Globe2, Link2, RefreshCw, Route, Timer } from 'lucide-react'
+import { Copy, Gauge, Globe2, KeyRound, Link2, RefreshCw, Route, Timer, Trash2 } from 'lucide-react'
 import { api } from '../api'
+import { Modal } from '../components/Modal'
 import { Panel } from '../components/Panel'
 import { EmptyState } from '../components/ui'
 import { relativeTime } from '../lib'
@@ -211,21 +212,135 @@ function OnionPanel({
         </div>
       )}
       <p className="prose">
-        Ouvrez cette adresse dans le navigateur Tor. Toute personne qui la connaît peut atteindre la
-        page de connexion: elle vaut un mot de passe, ne la publiez pas.
+        {onion.client_auth
+          ? 'Seuls les appareils dont la clé figure ci-dessous peuvent résoudre cette adresse. Elle ne suffit plus à elle seule.'
+          : 'Ouvrez cette adresse dans le navigateur Tor. Toute personne qui la connaît peut atteindre la page de connexion: elle vaut un mot de passe, ne la publiez pas.'}
       </p>
       {onion.enabled && (
-        <div className="action-grid">
-          <button
-            className="button button-danger"
-            disabled={busy}
-            onClick={() => void call(api.rotateOnion, 'Nouvelle adresse onion générée')}
-          >
-            <RefreshCw size={15} /> Générer une nouvelle adresse
-          </button>
-        </div>
+        <>
+          <OnionClients onion={onion} notify={notify} onChanged={onChanged} />
+          <div className="action-grid">
+            <button
+              className="button button-danger"
+              disabled={busy}
+              onClick={() => void call(api.rotateOnion, 'Nouvelle adresse onion générée')}
+            >
+              <RefreshCw size={15} /> Générer une nouvelle adresse
+            </button>
+          </div>
+        </>
       )}
     </Panel>
+  )
+}
+
+function OnionClients({
+  onion,
+  notify,
+  onChanged,
+}: {
+  onion: OnionState
+  notify: Notify
+  onChanged: (onion: OnionState) => void
+}) {
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [issued, setIssued] = useState<{ name: string; key: string }>()
+
+  const add = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      const created = await api.addOnionClient(name.trim())
+      onChanged(created.onion)
+      setIssued({ name: created.name, key: created.private_key })
+      setName('')
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Accès refusé', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const revoke = async (clientName: string) => {
+    setBusy(true)
+    try {
+      onChanged(await api.removeOnionClient(clientName))
+      notify(`Accès « ${clientName} » révoqué`)
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Révocation refusée', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="onion-clients">
+      <h3 className="section-label"><KeyRound size={14} /> Appareils autorisés</h3>
+      <p className="prose">
+        Chaque accès crée une clé que le navigateur Tor installe une fois. Sans elle, l’adresse
+        reste introuvable — même pour qui la connaît par cœur.
+      </p>
+      <ul className="rule-list">
+        {onion.clients.map((client) => (
+          <li key={client.name}>
+            <div>
+              <strong>{client.name}</strong>
+              <span className="muted">Autorisé {relativeTime(client.added_at)}</span>
+            </div>
+            <button className="button button-small button-ghost" disabled={busy} onClick={() => void revoke(client.name)}>
+              <Trash2 size={14} /> Révoquer
+            </button>
+          </li>
+        ))}
+        {!onion.clients.length && <li className="muted">Aucun accès restreint pour le moment.</li>}
+      </ul>
+      <form className="inline-form" onSubmit={add}>
+        <label className="sr-only" htmlFor="onion-client-name">Nom de l’accès</label>
+        <input
+          id="onion-client-name"
+          value={name}
+          maxLength={32}
+          placeholder="Portable de Camille"
+          onChange={(event) => setName(event.target.value)}
+        />
+        <button className="button button-primary" disabled={busy || !name.trim() || onion.clients.length >= onion.max_clients}>
+          <KeyRound size={15} /> Autoriser
+        </button>
+      </form>
+      {issued && (
+        <Modal
+          title={`Clé de ${issued.name}`}
+          description="Elle n’est affichée qu’une fois: OnionPi n’en garde que la moitié publique."
+          icon={<KeyRound size={22} />}
+          onClose={() => setIssued(undefined)}
+          actions={
+            <>
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(issued.key)
+                  notify('Clé copiée')
+                }}
+              >
+                <Copy size={15} /> Copier
+              </button>
+              <button type="button" className="button button-primary" onClick={() => setIssued(undefined)}>
+                J’ai enregistré la clé
+              </button>
+            </>
+          }
+        >
+          <pre className="mono key-block">{issued.key}</pre>
+          <p className="prose">
+            Enregistrez cette ligne dans le navigateur Tor, fichier
+            {' '}<code>&lt;profil&gt;/tor/onion-auth/{issued.name.replace(/[^\w.-]/g, '-')}.auth_private</code>,
+            puis redémarrez-le. Perdre la clé ne coûte qu’un nouvel accès à créer.
+          </p>
+        </Modal>
+      )}
+    </div>
   )
 }
 

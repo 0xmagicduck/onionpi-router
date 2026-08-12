@@ -7,6 +7,7 @@ import {
   Settings,
   Shield,
   ShieldBan,
+  ShieldCheck,
   Waypoints,
   Wifi,
   type LucideIcon,
@@ -19,6 +20,7 @@ export type Page =
   | 'bridges'
   | 'devices'
   | 'protection'
+  | 'security'
   | 'files'
   | 'chat'
   | 'logs'
@@ -42,6 +44,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'dashboard', label: 'Vue d’ensemble', icon: Gauge, hint: 'État Tor, trafic et appareils', keywords: 'accueil tableau de bord resume' },
       { id: 'protection', label: 'Protection', icon: ShieldBan, hint: 'Contrôles de sécurité et filtrage DNS', keywords: 'pare-feu firewall dns blocage bloquer' },
+      { id: 'security', label: 'Audit', icon: ShieldCheck, hint: 'Points faibles de la configuration et correctifs', keywords: 'audit durcissement score securite exposition ssh mise a jour' },
     ],
   },
   {
@@ -50,7 +53,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'network', label: 'Réseau', icon: Wifi, hint: 'Point d’accès Wi-Fi et lien amont', keywords: 'wifi ssid passerelle dhcp' },
       { id: 'tor', label: 'Tor', icon: Shield, hint: 'Circuits, identité de sortie, service onion', keywords: 'circuit identite oignon onion relais' },
       { id: 'bridges', label: 'Contournement', icon: Waypoints, hint: 'Ponts, transports enfichables, Snowflake', keywords: 'pont bridge obfs4 snowflake censure' },
-      { id: 'devices', label: 'Appareils', icon: HardDrive, hint: 'Clients connectés au point d’accès', keywords: 'clients mac ip telephone ordinateur' },
+      { id: 'devices', label: 'Appareils', icon: HardDrive, hint: 'Clients connectés, pauses et plages horaires', keywords: 'clients mac ip telephone ordinateur pause horaire plage couvre-feu' },
     ],
   },
   {
