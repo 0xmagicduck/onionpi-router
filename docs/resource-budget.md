@@ -16,6 +16,7 @@ mesure faite sur Pi et adapter `scripts/check-resource-budget.sh`.
 | Historique trafic | 180 points | `deque(maxlen=180)` |
 | Messages / événements | 2 000 / 4 000 | purge SQLite à chaque maintenance |
 | Règles d’accès par appareil | 128 | `MAX_RULES`, pauses échues effacées à chaque tic |
+| Compteurs de trafic | 512 par ensemble nftables, 256 appareils cumulés | `size 512` dans `onionpi.nft`, `MAX_TRACKED_DEVICES` |
 | Accès onion autorisés | 8 | `MAX_CLIENTS` |
 | Vérifications de connexion | quotas par adresse et global | réservation atomique avant scrypt |
 

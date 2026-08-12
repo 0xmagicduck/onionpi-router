@@ -1,0 +1,15 @@
+[Unit]
+Description=Samples the OnionPi per-device traffic counters
+Documentation=file:/opt/onionpi/current/README.md
+After=onionpi-firewall.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/onionpi-accounting
+RemainAfterExit=no
+TimeoutStartSec=30s
+Nice=10
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes

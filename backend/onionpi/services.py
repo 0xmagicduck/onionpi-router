@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .access import DeviceAccessManager
+from .accounting import TrafficAccountant
 from .agent import PrivilegedAgent
 from .auth import LoginLimiter, RateLimiter
 from .backends import (
@@ -41,6 +42,7 @@ class AppServices:
     agent: PrivilegedAgent
     device_guard: DeviceGuard
     access: DeviceAccessManager
+    traffic: TrafficAccountant
     dns_filter: DnsFilter
     tor_policy: TorPolicy
     onion: OnionService
@@ -86,6 +88,11 @@ def build_app_services(settings: Settings) -> AppServices:
         database,
         device_guard,
         on_event=lambda kind, message: database.add_activity(kind, message),
+    )
+    traffic = TrafficAccountant(
+        database,
+        settings.traffic_state_path,
+        settings.demo_mode,
     )
     dns_filter = DnsFilter(
         database,
@@ -141,6 +148,7 @@ def build_app_services(settings: Settings) -> AppServices:
         agent=agent,
         device_guard=device_guard,
         access=access,
+        traffic=traffic,
         dns_filter=dns_filter,
         tor_policy=tor_policy,
         onion=onion,

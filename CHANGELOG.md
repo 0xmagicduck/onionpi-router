@@ -5,6 +5,22 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+
+- **Trafic par appareil.** Le pare-feu compte désormais les octets de chaque
+  client dans deux ensembles nftables dynamiques, et une minuterie root
+  (`onionpi-accounting.timer`, toutes les 15 s) publie ces compteurs dans
+  `/var/lib/onionpi-privileged/traffic.json`. L’interface, qui n’a pas le droit
+  d’interroger nftables, se contente de lire ce fichier : aucun verbe
+  privilégié n’a été ajouté. Les colonnes « Trafic » des pages Tableau de bord,
+  Réseau et Protection cessent d’afficher zéro sur matériel réel.
+- **Cumul qui survit aux rechargements.** Un ensemble nftables repart vide à
+  chaque chargement des règles ; l’application conserve le relevé précédent et
+  n’ajoute que la différence, de sorte qu’un redémarrage du pare-feu, de la Pi
+  ou du service web ne remet pas les totaux à zéro. Le bouton « Remettre les
+  compteurs à zéro » de la page Protection
+  (`POST /api/v1/devices/traffic/reset`) est le seul geste qui les efface.
+
 ## [0.4.0] — 2026-08-12
 
 Version « routeur utile » : chaque appareil du foyer reçoit ses propres règles

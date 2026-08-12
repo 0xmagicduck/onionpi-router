@@ -11,11 +11,44 @@ table inet onionpi {
     type ether_addr
   }
 
+  # Per-client byte counters, sampled by onionpi-accounting. An element is
+  # created the first time a client is seen, and the whole set is recreated
+  # empty by every rule reload: these are the bytes since the last load, never
+  # a lifetime total. The web interface accumulates them on its side.
+  set client_upload {
+    type ether_addr
+    size 512
+    flags dynamic
+    counter
+  }
+
+  # Traffic the Pi sends back to a client is generated locally, and the
+  # destination MAC is only resolved after postrouting. Keying the download
+  # counter on the address the DHCP server handed out is the only reading
+  # available there; the interface maps it back to a MAC.
+  set client_download {
+    type ipv4_addr
+    size 512
+    flags dynamic
+    counter
+  }
+
   chain client_guard {
     type filter hook prerouting priority raw; policy accept;
     # A blocked device loses everything, DHCP included: it simply stops
     # existing for this router.
     iifname $onionpi_lan_if ether saddr @blocked_clients counter drop
+  }
+
+  chain client_upload_accounting {
+    # Just after client_guard, so a blocked device is never accounted for.
+    type filter hook prerouting priority raw + 10; policy accept;
+    iifname $onionpi_lan_if update @client_upload { ether saddr counter }
+  }
+
+  chain client_download_accounting {
+    type filter hook postrouting priority srcnat + 10; policy accept;
+    oifname $onionpi_lan_if update @client_download { ip daddr counter }
   }
 
   chain tor_prerouting {

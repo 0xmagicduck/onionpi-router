@@ -267,6 +267,22 @@ def test_chat_persists_messages() -> None:
             assert message["message"]["body"] == "Bonjour le réseau"
 
 
+def test_device_listing_reports_the_state_of_the_traffic_counters() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        csrf = login(client)
+
+        traffic = client.get("/api/v1/devices").json()["traffic"]
+        assert traffic["supported"] is True
+
+        assert client.post("/api/v1/devices/traffic/reset").status_code == 403
+        response = client.post(
+            "/api/v1/devices/traffic/reset", headers={"X-CSRF-Token": csrf}
+        )
+        assert response.status_code == 200
+        assert response.json()["traffic"]["since"] > 0
+
+
 def test_device_blocking_round_trip() -> None:
     with TestClient(app) as client:
         database.create_user("admin", "Camille", hash_password(PASSWORD))

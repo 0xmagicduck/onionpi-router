@@ -151,6 +151,13 @@ class Settings:
         return self.data_dir / "update.settings.json"
 
     @property
+    def traffic_state_path(self) -> Path:
+        """Per-client nftables counters, sampled as root and only read here."""
+        return Path(
+            os.getenv("ONIONPI_TRAFFIC_STATE", self.data_dir / "traffic.json")
+        ).resolve()
+
+    @property
     def maintenance_state_path(self) -> Path:
         """Root-owned proof that a local operator opened maintenance mode."""
         return Path(

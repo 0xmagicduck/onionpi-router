@@ -5,6 +5,7 @@ import {
   Ban,
   ChevronsUpDown,
   Laptop,
+  RotateCcw,
   Search,
   ShieldCheck,
   ShieldOff,
@@ -12,8 +13,8 @@ import {
   Undo2,
   Wifi,
 } from 'lucide-react'
-import { formatBytes } from '../lib'
-import type { Device } from '../types'
+import { formatBytes, relativeTime } from '../lib'
+import type { Device, DeviceTraffic } from '../types'
 import { Panel } from './Panel'
 import { Badge, EmptyState } from './ui'
 
@@ -26,6 +27,10 @@ type Props = {
   busyMac?: string
   /** Adds the search field; pointless on the dashboard extract. */
   searchable?: boolean
+  /** State of the counters, to say what period the figures cover. */
+  traffic?: DeviceTraffic
+  /** Given, the panel gains a control that restarts the accounting. */
+  onResetTraffic?: () => void
 }
 
 /** Sorts an IP so 10.42.0.9 comes before 10.42.0.10. */
@@ -33,7 +38,15 @@ function ipOrder(ip: string): number {
   return ip.split('.').reduce((total, part) => total * 256 + (Number(part) || 0), 0)
 }
 
-export function DeviceTable({ devices, limit, onToggleBlock, busyMac, searchable = false }: Props) {
+export function DeviceTable({
+  devices,
+  limit,
+  onToggleBlock,
+  busyMac,
+  searchable = false,
+  traffic,
+  onResetTraffic,
+}: Props) {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'traffic', desc: true })
 
@@ -68,23 +81,40 @@ export function DeviceTable({ devices, limit, onToggleBlock, busyMac, searchable
   }
 
   const blocked = devices.filter((device) => device.blocked).length
+  const notes = [
+    blocked ? `${blocked} bloqué${blocked > 1 ? 's' : ''} par le pare-feu` : '',
+    traffic
+      ? traffic.supported
+        ? `Trafic compté depuis ${relativeTime(traffic.since)}`
+        : 'Trafic non mesuré sur cette installation'
+      : '',
+  ].filter(Boolean)
   return (
     <Panel
       title={`Appareils connectés (${devices.length})`}
-      subtitle={blocked ? `${blocked} bloqué${blocked > 1 ? 's' : ''} par le pare-feu` : undefined}
+      subtitle={notes.join(' · ') || undefined}
       className="device-panel"
       action={
-        searchable ? (
-          <label className="search-field">
-            <Search size={16} />
-            <span className="sr-only">Rechercher un appareil</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Nom, IP ou adresse MAC"
-            />
-          </label>
+        searchable || onResetTraffic ? (
+          <>
+            {searchable && (
+              <label className="search-field">
+                <Search size={16} />
+                <span className="sr-only">Rechercher un appareil</span>
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Nom, IP ou adresse MAC"
+                />
+              </label>
+            )}
+            {onResetTraffic && (
+              <button className="button button-small button-ghost" onClick={onResetTraffic}>
+                <RotateCcw size={14} /> Remettre les compteurs à zéro
+              </button>
+            )}
+          </>
         ) : undefined
       }
     >

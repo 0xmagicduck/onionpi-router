@@ -15,5 +15,9 @@ grep -Fqx 'ONIONPI_UPDATE_MAX_ARCHIVE_BYTES=268435456' \
   "$PROJECT_ROOT/packaging/templates/update.conf"
 grep -Fqx 'MAX_RULES = 128' "$PROJECT_ROOT/backend/onionpi/access.py"
 grep -Fqx 'MAX_CLIENTS = 8' "$PROJECT_ROOT/backend/onionpi/onion.py"
+grep -Fqx 'MAX_TRACKED_DEVICES = 256' "$PROJECT_ROOT/backend/onionpi/accounting.py"
+# Two counter sets, each bounded on the kernel side as well: a full set stops
+# accepting elements instead of growing.
+[[ "$(grep -c '^    size 512$' "$PROJECT_ROOT/packaging/templates/onionpi.nft")" == 2 ]]
 
 printf 'Budget de ressources v0.4 respecté.\n'

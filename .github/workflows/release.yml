@@ -64,8 +64,9 @@ jobs:
       - name: Fail-closed network VM
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends nftables iproute2
+          sudo apt-get install -y --no-install-recommends nftables iproute2 iputils-ping
           sudo packaging/tests/fail-closed-vm.sh
+          sudo packaging/tests/traffic-accounting-netns.sh
 
       - name: Build the interface
         run: |

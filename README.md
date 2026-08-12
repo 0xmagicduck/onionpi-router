@@ -45,6 +45,7 @@ raccourcis.
 - accès des appareils : nom donné par le foyer, pause de 15 min à 8 h et plage
   horaire quotidienne par jour de la semaine, appliqués par le même
   coupe-circuit ;
+- trafic compté par appareil, cumulé à partir des compteurs nftables ;
 - audit de sécurité : treize contrôles de durcissement notés, classés par
   urgence, avec le geste qui corrige chacun ;
 - pays du relais de sortie et rotation d’identité programmée ;
@@ -269,6 +270,25 @@ démarrage du service.
 ```bash
 sudo nft list set inet onionpi blocked_clients
 grep -c '^0\.0\.0\.0 ' /etc/onionpi/dns/block.hosts
+```
+
+**Trafic par appareil.** Le pare-feu compte les octets de chaque client dans
+deux jeux nftables dynamiques, `client_upload` (par adresse MAC) et
+`client_download` (par adresse IP, la MAC de destination n’étant pas encore
+connue en `postrouting`). Lire ces compteurs demande `CAP_NET_ADMIN`, que
+l’application n’a pas : `onionpi-accounting.timer` en publie un relevé toutes
+les 15 secondes dans `/var/lib/onionpi-privileged/traffic.json`, que
+l’interface se contente de lire. **Aucun verbe privilégié n’a été ajouté** —
+une lecture n’est pas une action.
+
+Un rechargement des règles recrée les jeux vides. L’interface conserve donc le
+relevé précédent et n’ajoute que la différence : les totaux affichés survivent
+à un redémarrage du pare-feu, de la Pi ou du service. Le bouton « Remettre les
+compteurs à zéro » de la page **Protection** est le seul geste qui les efface.
+
+```bash
+sudo nft list set inet onionpi client_upload
+systemctl list-timers onionpi-accounting.timer
 ```
 
 ## Accès des appareils

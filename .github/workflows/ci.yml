@@ -70,6 +70,13 @@ jobs:
         run: |
           packaging/tests/upgrade-noninteractive.sh
           packaging/tests/update-interruption-matrix.sh
+      - name: The firewall template loads and counts per device
+        run: |
+          # The counter sets are part of the same ruleset as the kill switch:
+          # a syntax error here would fail the whole load on an appliance.
+          sudo apt-get install -y --no-install-recommends nftables iproute2 iputils-ping
+          sudo packaging/tests/traffic-accounting-netns.sh
+
       - name: systemd units are parseable
         run: |
           # A typo in a unit only shows up when the Pi refuses to boot the

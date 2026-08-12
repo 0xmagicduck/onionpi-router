@@ -1587,6 +1587,54 @@
         "summary": "Block Device"
       }
     },
+    "/api/v1/devices/traffic/reset": {
+      "post": {
+        "operationId": "reset_traffic_api_v1_devices_traffic_reset_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Traffic Api V1 Devices Traffic Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Traffic"
+      }
+    },
     "/api/v1/dns-filter": {
       "get": {
         "operationId": "dns_filter_state_api_v1_dns_filter_get",

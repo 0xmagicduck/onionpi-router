@@ -48,6 +48,15 @@ if rules="$(nft list table inet onionpi 2>/dev/null)"; then
   else
     fail 'jeu blocked_clients absent: le blocage d’appareils ne fonctionnera pas'
   fi
+  if grep -q 'set client_upload' <<<"$rules" && grep -q 'set client_download' <<<"$rules"; then
+    if systemctl is-active --quiet onionpi-accounting.timer; then
+      ok 'trafic par appareil compté'
+    else
+      warn 'minuterie onionpi-accounting arrêtée: le trafic par appareil restera à zéro'
+    fi
+  else
+    warn 'compteurs par appareil absents des règles: le trafic affiché restera à zéro'
+  fi
 else
   fail 'table nftables absente'
 fi

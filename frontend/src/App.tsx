@@ -311,6 +311,7 @@ function AuthenticatedApp({ session, theme, onThemeChange, onSignedOut }: ShellP
             <ProtectionPage
               status={status.data}
               devices={devices.data?.devices ?? []}
+              traffic={devices.data?.traffic}
               notify={notify}
               onDevicesRefresh={() => void devices.refresh()}
             />
