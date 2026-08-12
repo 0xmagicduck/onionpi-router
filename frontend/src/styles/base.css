@@ -1,0 +1,106 @@
+/* Reset, document rhythm and the handful of utilities the app leans on. */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html,
+body,
+#root { min-height: 100%; margin: 0; }
+
+html {
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-width: 320px;
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  /* The page paints its own ground: the shell scrolls behind a sticky bar. */
+  overflow-wrap: break-word;
+}
+
+button,
+input,
+select,
+textarea { font: inherit; color: inherit; }
+
+button,
+a { -webkit-tap-highlight-color: transparent; }
+
+a { color: var(--accent-text); }
+
+h1, h2, h3, h4 { margin: 0; font-weight: 620; letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
+p { margin: 0; }
+
+::selection { background: var(--accent-soft); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: var(--radius-pill); background: var(--border-strong); background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--n-400); background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* One focus treatment, applied to everything that can hold focus. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-xs);
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: var(--z-toast);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+  transition: transform var(--dur) var(--ease-out);
+}
+.skip-link:focus-visible { transform: translateY(0); }
+
+.muted { color: var(--text-secondary); }
+.mono { font-family: var(--font-mono); font-size: .95em; letter-spacing: -.01em; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+.spin { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pulse-soft { 50% { opacity: .45; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

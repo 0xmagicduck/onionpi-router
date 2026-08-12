@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import { Copy, Gauge, Globe2, Link2, RefreshCw, Route, Timer } from 'lucide-react'
 import { api } from '../api'
 import { Panel } from '../components/Panel'
+import { EmptyState } from '../components/ui'
 import { relativeTime } from '../lib'
 import type { OnionState, SpeedTestResult, TorAdvancedPayload, TorPolicyState } from '../types'
 
@@ -214,14 +215,15 @@ function OnionPanel({
         page de connexion: elle vaut un mot de passe, ne la publiez pas.
       </p>
       {onion.enabled && (
-        <button
-          className="button button-danger"
-          style={{ margin: '0 19px 18px' }}
-          disabled={busy}
-          onClick={() => void call(api.rotateOnion, 'Nouvelle adresse onion générée')}
-        >
-          <RefreshCw size={15} /> Générer une nouvelle adresse
-        </button>
+        <div className="action-grid">
+          <button
+            className="button button-danger"
+            disabled={busy}
+            onClick={() => void call(api.rotateOnion, 'Nouvelle adresse onion générée')}
+          >
+            <RefreshCw size={15} /> Générer une nouvelle adresse
+          </button>
+        </div>
       )}
     </Panel>
   )
@@ -248,7 +250,11 @@ function CircuitsPanel({
             </span>
           </div>
         ))}
-        {!circuits.length && <p className="muted" style={{ padding: '0 19px 18px' }}>Aucun circuit établi pour le moment.</p>}
+        {!circuits.length && (
+          <EmptyState icon={Route} title="Aucun circuit établi">
+            Tor ouvre un circuit dès qu’un appareil du réseau demande une connexion.
+          </EmptyState>
+        )}
       </div>
     </Panel>
   )

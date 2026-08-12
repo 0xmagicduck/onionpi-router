@@ -1,0 +1,320 @@
+/* Design tokens.
+ *
+ * Components never reference a raw ramp value: they read the semantic tokens
+ * below, so a theme swap is a single block of overrides rather than a search
+ * through the stylesheet. The dark palette is the default because the
+ * appliance is usually consulted from a phone at night, next to the Pi.
+ *
+ * Colours stay in hex/rgba rather than oklch/color-mix: the interface has to
+ * render on whatever browser the household already has. */
+
+:root {
+  /* Neutral navy ramp — dark theme reads it low to high. */
+  --n-950: #04101a;
+  --n-900: #071827;
+  --n-850: #0a2030;
+  --n-800: #0e2739;
+  --n-750: #123049;
+  --n-700: #17384f;
+  --n-600: #1f4763;
+  --n-500: #2c5a79;
+  --n-400: #497895;
+  --n-300: #7fa0b7;
+  --n-200: #b4c7d6;
+  --n-100: #dde7ef;
+  --n-050: #f3f8fb;
+
+  /* Brand and state hues. */
+  --amber-400: #ffc247;
+  --amber-500: #ffb020;
+  --amber-600: #d98c00;
+  --amber-700: #8f5c00;
+  --mint-400: #7bf0a8;
+  --mint-500: #4ed687;
+  --mint-600: #1f9d5b;
+  --mint-700: #14663d;
+  --sky-400: #8cc2ff;
+  --sky-500: #5c9dfa;
+  --sky-600: #2f6fc4;
+  --rose-400: #ff9b9b;
+  --rose-500: #ff6b6b;
+  --rose-600: #d33f3f;
+
+  /* Surfaces */
+  --surface-page: var(--n-950);
+  --surface-nav: #061421;
+  --surface-raised: #09202f;
+  --surface-inset: #071a28;
+  --surface-hover: #0f2b3d;
+  --surface-active: #143349;
+  --surface-overlay: #0a2130;
+  --scrim: rgba(2, 9, 16, .74);
+
+  /* Lines */
+  --border: #1b384e;
+  --border-soft: #14293a;
+  --border-strong: #29536f;
+
+  /* Text */
+  --text-primary: #eef4f8;
+  --text-secondary: #a8bccd;
+  --text-tertiary: #7794a9;
+  --text-inverse: #071827;
+
+  /* Accents */
+  --accent: var(--amber-500);
+  --accent-hover: var(--amber-400);
+  --accent-text: var(--amber-400);
+  --accent-contrast: #1b1200;
+  --accent-soft: rgba(255, 176, 32, .12);
+  --accent-line: rgba(255, 176, 32, .38);
+
+  --success: var(--mint-500);
+  --success-text: var(--mint-400);
+  --success-soft: rgba(78, 214, 135, .12);
+  --success-line: rgba(78, 214, 135, .34);
+
+  --warning: var(--amber-500);
+  --warning-text: var(--amber-400);
+  --warning-soft: rgba(255, 176, 32, .12);
+  --warning-line: rgba(255, 176, 32, .34);
+
+  --danger: var(--rose-500);
+  --danger-text: var(--rose-400);
+  --danger-soft: rgba(255, 107, 107, .13);
+  --danger-line: rgba(255, 107, 107, .38);
+
+  --info: var(--sky-500);
+  --info-text: var(--sky-400);
+  --info-soft: rgba(92, 157, 250, .13);
+
+  /* Elevation — a dark UI needs a lit edge as much as a shadow. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-2: 0 6px 18px -6px rgba(0, 0, 0, .5);
+  --shadow-3: 0 24px 60px -18px rgba(0, 0, 0, .68);
+  --panel-sheen: inset 0 1px 0 rgba(255, 255, 255, .035);
+
+  /* Type scale */
+  --font-sans: Inter, "Inter var", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+  --text-2xs: .6875rem;
+  --text-xs: .75rem;
+  --text-sm: .8125rem;
+  --text-base: .875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.3125rem;
+  --text-2xl: 1.625rem;
+  --text-3xl: clamp(1.75rem, 1.2rem + 1.6vw, 2.25rem);
+  --leading-tight: 1.2;
+  --leading-snug: 1.4;
+  --leading-normal: 1.6;
+  --tracking-tight: -.02em;
+  --tracking-caps: .08em;
+
+  /* Spacing — 4px grid, no in-between values anywhere in the app. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+
+  /* Radii */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(.22, .8, .3, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .5, 1);
+  --dur-fast: 110ms;
+  --dur: 180ms;
+  --dur-slow: 300ms;
+
+  /* Layout */
+  --sidebar-width: 246px;
+  --sidebar-collapsed: 76px;
+  --topbar-height: 60px;
+  --page-max: 1680px;
+  --focus-ring: 0 0 0 2px var(--surface-page), 0 0 0 4px var(--accent);
+
+  /* Layers. The drawer backdrop sits under the drawer it dims, otherwise the
+   * menu is visible but not clickable on a phone. */
+  --z-backdrop: 35;
+  --z-sidebar: 40;
+  --z-topbar: 30;
+  --z-menu: 60;
+  --z-modal: 80;
+  --z-toast: 90;
+
+  color-scheme: dark;
+}
+
+/* Light palette. Applied when the visitor asks for it, and by default when the
+ * system asks for it — the explicit `data-theme` selectors carry a higher
+ * specificity, so a manual choice always wins over the media query, whatever
+ * the source order. */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --surface-page: #eef3f7;
+    --surface-nav: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-inset: #f4f7fa;
+    --surface-hover: #eaf1f6;
+    --surface-active: #dfeaf2;
+    --surface-overlay: #ffffff;
+    --scrim: rgba(11, 32, 48, .38);
+
+    --border: #d6e2ec;
+    --border-soft: #e5edf3;
+    --border-strong: #b4c8d8;
+
+    --text-primary: #0a1d2b;
+    --text-secondary: #47606f;
+    --text-tertiary: #6b8395;
+    --text-inverse: #ffffff;
+
+    --accent: var(--amber-500);
+    --accent-hover: var(--amber-600);
+    --accent-text: #8a5600;
+    --accent-contrast: #1b1200;
+    --accent-soft: rgba(255, 176, 32, .16);
+    --accent-line: rgba(217, 140, 0, .45);
+
+    --success: var(--mint-600);
+    --success-text: #14724a;
+    --success-soft: rgba(31, 157, 91, .12);
+    --success-line: rgba(31, 157, 91, .3);
+
+    --warning: var(--amber-600);
+    --warning-text: #8a5600;
+    --warning-soft: rgba(217, 140, 0, .14);
+    --warning-line: rgba(217, 140, 0, .32);
+
+    --danger: var(--rose-600);
+    --danger-text: #b52d2d;
+    --danger-soft: rgba(211, 63, 63, .1);
+    --danger-line: rgba(211, 63, 63, .32);
+
+    --info: var(--sky-600);
+    --info-text: #23568f;
+    --info-soft: rgba(47, 111, 196, .1);
+
+    --shadow-1: 0 1px 2px rgba(16, 42, 62, .08);
+    --shadow-2: 0 8px 20px -10px rgba(16, 42, 62, .3);
+    --shadow-3: 0 26px 60px -22px rgba(16, 42, 62, .38);
+    --panel-sheen: none;
+  }
+}
+
+/* Explicit choices. Duplicated rather than factored so that neither block
+ * depends on the other's source order. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-page: #eef3f7;
+  --surface-nav: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-inset: #f4f7fa;
+  --surface-hover: #eaf1f6;
+  --surface-active: #dfeaf2;
+  --surface-overlay: #ffffff;
+  --scrim: rgba(11, 32, 48, .38);
+
+  --border: #d6e2ec;
+  --border-soft: #e5edf3;
+  --border-strong: #b4c8d8;
+
+  --text-primary: #0a1d2b;
+  --text-secondary: #47606f;
+  --text-tertiary: #6b8395;
+  --text-inverse: #ffffff;
+
+  --accent-text: #8a5600;
+  --accent-soft: rgba(255, 176, 32, .16);
+  --accent-line: rgba(217, 140, 0, .45);
+
+  --success: var(--mint-600);
+  --success-text: #14724a;
+  --success-soft: rgba(31, 157, 91, .12);
+  --success-line: rgba(31, 157, 91, .3);
+
+  --warning: var(--amber-600);
+  --warning-text: #8a5600;
+  --warning-soft: rgba(217, 140, 0, .14);
+  --warning-line: rgba(217, 140, 0, .32);
+
+  --danger: var(--rose-600);
+  --danger-text: #b52d2d;
+  --danger-soft: rgba(211, 63, 63, .1);
+  --danger-line: rgba(211, 63, 63, .32);
+
+  --info: var(--sky-600);
+  --info-text: #23568f;
+  --info-soft: rgba(47, 111, 196, .1);
+
+  --shadow-1: 0 1px 2px rgba(16, 42, 62, .08);
+  --shadow-2: 0 8px 20px -10px rgba(16, 42, 62, .3);
+  --shadow-3: 0 26px 60px -22px rgba(16, 42, 62, .38);
+  --panel-sheen: none;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-page: var(--n-950);
+  --surface-nav: #061421;
+  --surface-raised: #09202f;
+  --surface-inset: #071a28;
+  --surface-hover: #0f2b3d;
+  --surface-active: #143349;
+  --surface-overlay: #0a2130;
+  --scrim: rgba(2, 9, 16, .74);
+
+  --border: #1b384e;
+  --border-soft: #14293a;
+  --border-strong: #29536f;
+
+  --text-primary: #eef4f8;
+  --text-secondary: #a8bccd;
+  --text-tertiary: #7794a9;
+  --text-inverse: #071827;
+
+  --accent-text: var(--amber-400);
+  --accent-soft: rgba(255, 176, 32, .12);
+  --accent-line: rgba(255, 176, 32, .38);
+
+  --success: var(--mint-500);
+  --success-text: var(--mint-400);
+  --success-soft: rgba(78, 214, 135, .12);
+  --success-line: rgba(78, 214, 135, .34);
+
+  --warning: var(--amber-500);
+  --warning-text: var(--amber-400);
+  --warning-soft: rgba(255, 176, 32, .12);
+  --warning-line: rgba(255, 176, 32, .34);
+
+  --danger: var(--rose-500);
+  --danger-text: var(--rose-400);
+  --danger-soft: rgba(255, 107, 107, .13);
+  --danger-line: rgba(255, 107, 107, .38);
+
+  --info: var(--sky-500);
+  --info-text: var(--sky-400);
+  --info-soft: rgba(92, 157, 250, .13);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-2: 0 6px 18px -6px rgba(0, 0, 0, .5);
+  --shadow-3: 0 24px 60px -18px rgba(0, 0, 0, .68);
+  --panel-sheen: inset 0 1px 0 rgba(255, 255, 255, .035);
+}

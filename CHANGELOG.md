@@ -5,6 +5,50 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+
+- Système de design complet pour l’interface web : jetons de couleur,
+  d’espacement, de typographie et de mouvement dans `frontend/src/styles/`,
+  partagés par tous les écrans.
+- Thème clair et thème sombre, avec suivi du réglage du système par défaut et
+  choix manuel conservé d’une visite à l’autre.
+- Palette de commandes (`Ctrl`/`Cmd` + `K`) pour rejoindre une page ou lancer
+  une action, avec recherche insensible aux accents et classement par
+  pertinence.
+- Raccourcis clavier globaux : `Ctrl K` la palette, `R` l’actualisation, `?`
+  leur mémo, `Échap` la fermeture.
+- Lien d’évitement vers le contenu, piège de focus et fermeture par `Échap`
+  dans les fenêtres modales, libellés ARIA sur les jauges et les tableaux.
+- Vue d’ensemble : quatre indicateurs de tête (appareils, débit, temps protégé,
+  disponibilité) et jauge circulaire de démarrage de Tor.
+- Graphique de trafic avec aires dégradées, échelle lisible et infobulle au
+  survol donnant la valeur exacte de chaque échantillon.
+- Tableaux triables et recherche des appareils par nom, adresse IP ou MAC.
+- Fichiers : importation multiple, sélection groupée avec téléchargement et
+  suppression en lot, copie du lien de téléchargement, tri des colonnes et
+  confirmation de suppression dans une fenêtre dédiée.
+- Journaux : actualisation manuelle, suivi en direct, filtrage des lignes et
+  export du service affiché.
+- Notifications empilables et menu de compte regroupant thème, raccourcis et
+  déconnexion.
+
+### Modifié
+
+- Refonte visuelle de toute l’interface web : barre latérale groupée par
+  domaine et repliable de façon persistante, en-têtes de page, panneaux,
+  boutons, champs et badges uniformisés.
+- États vides et états de chargement explicites sur chaque écran, à la place
+  des lignes vides et du message de chargement unique.
+- Les tableaux deviennent des cartes empilées sur téléphone au lieu d’un
+  défilement horizontal.
+
+### Corrigé
+
+- La déconnexion n’est plus déclenchée par un clic sur le nom d’utilisateur :
+  elle est devenue une entrée explicite du menu de compte.
+- Le bouton « plus d’actions » des fichiers, qui n’était relié à rien, est
+  remplacé par des actions réelles.
+
 ## [0.3.1] — 2026-08-12
 
 ### Corrigé
