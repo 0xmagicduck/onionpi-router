@@ -9,7 +9,13 @@ et les requêtes DNS passent par Tor. L’administration se fait depuis une
 interface web locale avec état Tor, circuit courant, trafic, appareils,
 partage de fichiers, chat et journaux système.
 
-![Tableau de bord OnionPi](design/dashboard-concept.png)
+![Tableau de bord OnionPi](design/dashboard-render.png)
+
+L’interface suit un système de design unique (jetons de couleur, d’espacement
+et de typographie dans `frontend/src/styles/`), s’affiche en thème clair ou
+sombre selon le réglage du système ou votre choix, et se pilote entièrement au
+clavier — `Ctrl`/`Cmd` + `K` ouvre la palette de commandes, `?` liste les
+raccourcis.
 
 ## Ce qui fonctionne
 
@@ -524,9 +530,10 @@ Ce script enchaîne ce que la CI vérifie : ruff, pytest, `tsc`, la construction
 de l’interface, shellcheck, la cohérence des trois fichiers qui portent le
 numéro de version, et l’absence d’identifiants dans les fichiers suivis.
 
-Les maquettes de référence sont conservées dans [`design/`](design/). Les
-contrôles et le texte visibles sont du HTML/React réel, jamais une capture
-d’écran utilisée comme interface.
+Les maquettes de référence sont conservées dans [`design/`](design/), à côté
+des captures `*-render.png` produites depuis l’interface réelle en mode
+démonstration. Les contrôles et le texte visibles sont du HTML/React réel,
+jamais une capture d’écran utilisée comme interface.
 
 Pour publier une version, voir [`CONTRIBUTING.md`](CONTRIBUTING.md) et
 [`docs/updates.md`](docs/updates.md).

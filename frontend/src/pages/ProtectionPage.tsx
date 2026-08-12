@@ -6,6 +6,13 @@ import { Panel } from '../components/Panel'
 import { relativeTime } from '../lib'
 import type { Device, DnsFilterState, StatusPayload } from '../types'
 
+const STATUS_LABELS: Record<StatusPayload['protection']['status'], string> = {
+  protected: 'Réseau protégé',
+  contained: 'Confinement actif',
+  degraded: 'Intervention requise',
+  demo: 'Mode démonstration',
+}
+
 type Props = {
   status?: StatusPayload
   devices: Device[]
@@ -76,7 +83,7 @@ export function ProtectionPage({ status, devices, notify, onDevicesRefresh }: Pr
         <section className={`protection-hero protection-${status.protection.status}`}>
           {status.protection.safe ? <ShieldCheck /> : <AlertTriangle />}
           <div>
-            <span>{status.protection.status}</span>
+            <span className="section-label">{STATUS_LABELS[status.protection.status]}</span>
             <h2>{status.protection.label}</h2>
             <p>{status.protection.summary}</p>
             <small>Temps protégé : {Math.round(status.protection.metrics.protected_ratio * 100)} % · entrées en confinement : {status.protection.metrics.contained_entries}</small>
@@ -214,7 +221,7 @@ function DnsFilterPanel({ notify }: { notify: (message: string, error?: boolean)
           )}
         </div>
         {state?.last_error && (
-          <div className="privacy-note"><ShieldOff size={20} /><p><strong>Dernier téléchargement en échec</strong>{state.last_error}</p></div>
+          <div className="callout callout-danger"><ShieldOff size={20} /><p><strong>Dernier téléchargement en échec</strong>{state.last_error}</p></div>
         )}
       </form>
     </Panel>

@@ -6,9 +6,11 @@ import {
   Database,
   Download,
   ExternalLink,
+  Logs,
   Power,
   RefreshCw,
   RotateCw,
+  Search,
   ShieldCheck,
   Upload,
   Wifi,
@@ -18,6 +20,7 @@ import { relativeTime } from '../lib'
 import { ChatPanel } from '../components/ChatPanel'
 import { DeviceTable } from '../components/DeviceTable'
 import { Panel } from '../components/Panel'
+import { Badge, EmptyState } from '../components/ui'
 import { TorStatus } from '../components/TorStatus'
 import { TorAdvanced } from './TorAdvanced'
 import type {
@@ -77,9 +80,9 @@ function DiagnosticsPanel() {
           <p>Contrôle local, sans transmettre d’information hors de l’OnionPi.</p>
         </div>
         {report && (
-          <span className={`diagnostic-summary diagnostic-summary-${report.status}`}>
-            <i /> {label}
-          </span>
+          <Badge tone={report.status === 'ok' ? 'success' : report.status === 'warning' ? 'warning' : 'danger'} dot>
+            {label}
+          </Badge>
         )}
       </div>
       {error && <p className="form-error diagnostic-error" role="alert">{error}</p>}
@@ -129,10 +132,10 @@ function DiagnosticsPanel() {
 }
 
 function ServiceBadge({ active, upLabel, downLabel }: { active?: boolean; upLabel: string; downLabel: string }) {
-  if (active === undefined) return <span className="muted">—</span>
+  if (active === undefined) return <Badge tone="neutral">Inconnu</Badge>
   return active
-    ? <span className="healthy"><i /> {upLabel}</span>
-    : <span className="unhealthy"><i /> {downLabel}</span>
+    ? <Badge tone="success" dot>{upLabel}</Badge>
+    : <Badge tone="danger" dot>{downLabel}</Badge>
 }
 
 export function NetworkPage({ status, devices }: { status?: StatusPayload; devices: Device[] }) {
@@ -148,7 +151,7 @@ export function NetworkPage({ status, devices }: { status?: StatusPayload; devic
         </Panel>
         <Panel title="Connexion amont">
           <div className="feature-status"><span className="feature-icon"><Cable /></span><div><strong>{status?.network.upstream_interface ?? 'eth0'}</strong><p>Accès Internet de la Raspberry Pi</p></div><ServiceBadge active={serviceActive(status, 'tor')} upLabel="Tor connecté" downLabel="Tor arrêté" /></div>
-          <div className="privacy-note"><ShieldCheck size={20} /><p><strong>{firewall === false ? 'Coupe-circuit arrêté' : 'Coupe-circuit actif'}</strong>{firewall === false ? 'Le service onionpi-firewall ne tourne pas: vérifiez-le avant de laisser des appareils se connecter.' : 'Le trafic client non redirigé vers Tor est bloqué par nftables.'}</p></div>
+          <div className={`callout ${firewall === false ? 'callout-danger' : ''}`}><ShieldCheck size={20} /><p><strong>{firewall === false ? 'Coupe-circuit arrêté' : 'Coupe-circuit actif'}</strong>{firewall === false ? 'Le service onionpi-firewall ne tourne pas : vérifiez-le avant de laisser des appareils se connecter.' : 'Le trafic client non redirigé vers Tor est bloqué par nftables.'}</p></div>
         </Panel>
       </div>
       <DeviceTable devices={devices} />
@@ -166,7 +169,7 @@ export function TorPage({ status, busy, onNewIdentity, onOpenBridges, notify }: 
       {blocked && (
         <Panel title="Tor n’a pas fini de démarrer">
           <p className="prose">Un démarrage qui reste bloqué en dessous de 100 % est le symptôme habituel d’un réseau qui filtre Tor. Les ponts et les transports enfichables contournent ce filtrage.</p>
-          <button className="button button-primary" style={{ margin: '12px 19px 18px' }} onClick={onOpenBridges}>Configurer un pont</button>
+          <div className="action-grid"><button className="button button-primary" onClick={onOpenBridges}>Configurer un pont</button></div>
         </Panel>
       )}
       <div className="two-column">
@@ -188,21 +191,128 @@ export function TorPage({ status, busy, onNewIdentity, onOpenBridges, notify }: 
 }
 
 export function ChatPage({ messages, online, connected, send }: { messages: ChatMessage[]; online: number; connected: boolean; send: (body: string) => boolean }) {
-  return <div className="page chat-page"><div className="page-title"><h1>Chat du réseau</h1><p>Échangez entre les personnes connectées au Wi-Fi OnionPi.</p></div><ChatPanel messages={messages} online={online} connected={connected} send={send} /></div>
+  return (
+    <div className="page chat-page">
+      <div className="page-title title-with-action">
+        <div>
+          <h1>Chat du réseau</h1>
+          <p>Échangez entre les personnes connectées au Wi-Fi OnionPi. Rien ne quitte la Raspberry Pi.</p>
+        </div>
+        <div className="title-actions">
+          {connected
+            ? <Badge tone="success" live>{online} en ligne</Badge>
+            : <Badge tone="warning" dot>Reconnexion…</Badge>}
+        </div>
+      </div>
+      <ChatPanel messages={messages} online={online} connected={connected} send={send} withHeading={false} />
+    </div>
+  )
 }
+
+const LOG_SERVICES: Array<{ id: string; label: string }> = [
+  { id: 'tor', label: 'Tor' },
+  { id: 'onionpi', label: 'OnionPi' },
+  { id: 'NetworkManager', label: 'Wi-Fi' },
+  { id: 'dnsmasq', label: 'DHCP' },
+  { id: 'onionpi-firewall', label: 'Pare-feu OnionPi' },
+  { id: 'nftables', label: 'Moteur nftables' },
+  { id: 'snowflake-proxy', label: 'Proxy Snowflake' },
+]
 
 export function LogsPage() {
   const [service, setService] = useState('tor')
   const [lines, setLines] = useState<string[]>([])
+  const [filter, setFilter] = useState('')
+  const [follow, setFollow] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => {
-    let active = true
-    api.logs(service).then((payload) => active && setLines(payload.lines)).catch((reason) => active && setError(reason.message))
-    return () => { active = false }
+  const terminalRef = useRef<HTMLElement>(null)
+
+  const load = useCallback(async () => {
+    setBusy(true)
+    try {
+      const payload = await api.logs(service)
+      setLines(payload.lines)
+      setError('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Journal indisponible')
+    } finally {
+      setBusy(false)
+    }
   }, [service])
+
+  useEffect(() => { void load() }, [load])
+
+  useEffect(() => {
+    if (!follow) return
+    const timer = window.setInterval(() => void load(), 5000)
+    return () => window.clearInterval(timer)
+  }, [follow, load])
+
+  // Following a journal means looking at its end, not at its beginning.
+  useEffect(() => {
+    if (follow && terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight
+  }, [lines, follow])
+
+  const visible = filter.trim()
+    ? lines.filter((line) => line.toLocaleLowerCase('fr').includes(filter.trim().toLocaleLowerCase('fr')))
+    : lines
+
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/plain' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `onionpi-${service}.log`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
-    <div className="page logs-page"><div className="page-title title-with-action"><div><h1>Journaux</h1><p>Événements récents des services OnionPi.</p></div><label className="select-control">Service<select value={service} onChange={(event) => setService(event.target.value)}><option value="tor">Tor</option><option value="onionpi">OnionPi</option><option value="NetworkManager">Wi-Fi</option><option value="dnsmasq">DHCP</option><option value="onionpi-firewall">Pare-feu OnionPi</option><option value="nftables">Moteur nftables</option><option value="snowflake-proxy">Proxy Snowflake</option></select></label></div>
-      <section className="panel terminal" aria-live="polite">{error ? <p className="form-error">{error}</p> : lines.length ? lines.map((line, index) => <code key={`${line}-${index}`}>{line}</code>) : <p className="muted">Aucune entrée disponible. Le compte OnionPi doit appartenir au groupe systemd-journal.</p>}</section>
+    <div className="page logs-page operational-page">
+      <div className="page-title title-with-action">
+        <div>
+          <h1>Journaux</h1>
+          <p>Événements récents des services OnionPi, lus localement dans le journal systemd.</p>
+        </div>
+        <div className="title-actions">
+          <button className="button button-secondary" onClick={() => void load()} disabled={busy}>
+            <RefreshCw size={15} className={busy ? 'spin' : undefined} /> Actualiser
+          </button>
+          <button className="button button-secondary" onClick={download} disabled={!lines.length}>
+            <Download size={15} /> Exporter
+          </button>
+        </div>
+      </div>
+      <Panel title={LOG_SERVICES.find((item) => item.id === service)?.label ?? service} subtitle={`${visible.length} ligne${visible.length > 1 ? 's' : ''}`}>
+        <div className="logs-toolbar">
+          <label className="select-control">
+            Service
+            <select value={service} onChange={(event) => setService(event.target.value)}>
+              {LOG_SERVICES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
+          <label className="search-field search-field-grow">
+            <Search size={16} />
+            <span className="sr-only">Filtrer les lignes</span>
+            <input type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filtrer les lignes" />
+          </label>
+          <label className="checkbox-row">
+            <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
+            Suivre en direct
+          </label>
+        </div>
+        <section className="terminal" aria-live="polite" ref={terminalRef}>
+          {error && <p className="form-error">{error}</p>}
+          {!error && visible.map((line, index) => <code key={`${line}-${index}`}>{line}</code>)}
+          {!error && !visible.length && (
+            <EmptyState icon={Logs} title={filter ? 'Aucune ligne ne correspond' : 'Aucune entrée disponible'}>
+              {filter
+                ? 'Essayez un autre terme de recherche.'
+                : 'Le compte OnionPi doit appartenir au groupe systemd-journal pour lire ce service.'}
+            </EmptyState>
+          )}
+        </section>
+      </Panel>
     </div>
   )
 }
@@ -280,7 +390,7 @@ function MaintenancePanel({ notify }: { notify: (message: string, error?: boolea
   return (
     <Panel title="Maintenance">
       {actions && !actions.available && (
-        <div className="privacy-note"><ShieldCheck size={20} /><p><strong>Service privilégié absent</strong>onionpi-agent.path n’écoute pas: relancez l’installateur pour rétablir les redémarrages depuis l’interface.</p></div>
+        <div className="callout callout-warning"><AlertTriangle size={20} /><p><strong>Service privilégié absent</strong>onionpi-agent.path n’écoute pas : relancez l’installateur pour rétablir les redémarrages depuis l’interface.</p></div>
       )}
       <div className="action-grid">
         {RESTART_ACTIONS.map((action) => (
@@ -314,13 +424,13 @@ function MaintenancePanel({ notify }: { notify: (message: string, error?: boolea
 
 const UPDATE_HOURS = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`)
 
-function updateStatusLabel(state: UpdateState): { text: string; tone: 'healthy' | 'unhealthy' | 'muted' } {
-  if (!state.supported) return { text: 'Client de mise à jour absent', tone: 'unhealthy' }
-  if (state.running) return { text: 'Installation en cours', tone: 'muted' }
-  if (state.update_pending) return { text: `Version ${state.available} disponible`, tone: 'unhealthy' }
-  if (state.last_check_status === 'error') return { text: 'Dernière vérification en échec', tone: 'unhealthy' }
-  if (!state.enabled) return { text: 'Vérifications désactivées', tone: 'muted' }
-  return { text: 'À jour', tone: 'healthy' }
+function updateStatusLabel(state: UpdateState): { text: string; tone: 'success' | 'warning' | 'danger' | 'neutral' } {
+  if (!state.supported) return { text: 'Client de mise à jour absent', tone: 'danger' }
+  if (state.running) return { text: 'Installation en cours', tone: 'neutral' }
+  if (state.update_pending) return { text: `Version ${state.available} disponible`, tone: 'warning' }
+  if (state.last_check_status === 'error') return { text: 'Dernière vérification en échec', tone: 'danger' }
+  if (!state.enabled) return { text: 'Vérifications désactivées', tone: 'neutral' }
+  return { text: 'À jour', tone: 'success' }
 }
 
 function UpdatePanel({ notify }: { notify: (message: string, error?: boolean) => void }) {
@@ -407,9 +517,7 @@ function UpdatePanel({ notify }: { notify: (message: string, error?: boolean) =>
             {state.over_tor ? ' · téléchargement par Tor' : ' · téléchargement direct'}
           </p>
         </div>
-        <span className={badge.tone === 'muted' ? 'muted' : badge.tone}>
-          {badge.tone !== 'muted' && <i />} {badge.text}
-        </span>
+        <Badge tone={badge.tone} dot={badge.tone !== 'neutral'}>{badge.text}</Badge>
       </div>
 
       <form className="settings-form" onSubmit={(event) => event.preventDefault()}>
@@ -612,11 +720,10 @@ export function SettingsPage({ status, onPasswordChanged, notify }: { status?: S
   return (
     <div className="page operational-page"><div className="page-title"><h1>Paramètres</h1><p>Informations d’installation, maintenance et règles de sécurité.</p></div>
       <div className="two-column"><Panel title="Cette OnionPi"><dl className="details-list"><div><dt>Nom</dt><dd>{status?.device_name ?? 'OnionPi'}</dd></div><div><dt>Hôte</dt><dd className="mono">{status?.system.hostname ?? '—'}</dd></div><div><dt>Mode démonstration</dt><dd>{status?.demo_mode ? 'Oui' : 'Non'}</dd></div><div><dt>Version</dt><dd className="mono">{status?.version ?? '—'}</dd></div></dl></Panel>
-      <Panel title="Administration"><div className="privacy-note"><ShieldCheck size={20} /><p><strong>Accès local uniquement</strong>L’interface n’est pas publiée sur Internet et chaque mutation exige une session et un jeton CSRF.</p></div><p className="prose">Pour modifier le SSID ou le mot de passe Wi-Fi, relancez l’installateur depuis un terminal local. Cela évite de couper accidentellement la session web en cours.</p></Panel></div>
+      <Panel title="Administration"><div className="callout"><ShieldCheck size={20} /><p><strong>Accès local uniquement</strong>L’interface n’est pas publiée sur Internet et chaque mutation exige une session et un jeton CSRF.</p></div><p className="prose">Pour modifier le SSID ou le mot de passe Wi-Fi, relancez l’installateur depuis un terminal local. Cela évite de couper accidentellement la session web en cours.</p></Panel></div>
       <div className="two-column"><UpdatePanel notify={notify} /><MaintenancePanel notify={notify} /></div>
       <DiagnosticsPanel />
-      <div className="two-column"><ConfigPanel notify={notify} /></div>
-      <div className="two-column"><PasswordPanel onChanged={onPasswordChanged} /></div>
+      <div className="two-column"><ConfigPanel notify={notify} /><PasswordPanel onChanged={onPasswordChanged} /></div>
     </div>
   )
 }

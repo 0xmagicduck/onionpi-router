@@ -21,6 +21,16 @@ export function formatDuration(seconds: number): string {
   return [hours, minutes, rest].map((part) => String(part).padStart(2, '0')).join(':')
 }
 
+/** Human reading of an uptime, where `formatDuration` gives a stopwatch. */
+export function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (days) return `${days} j ${hours} h`
+  if (hours) return `${hours} h ${String(minutes).padStart(2, '0')}`
+  return `${minutes} min`
+}
+
 export function initials(name: string): string {
   return name
     .split(/\s+/)

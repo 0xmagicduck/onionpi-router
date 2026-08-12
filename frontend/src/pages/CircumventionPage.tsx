@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Globe, RefreshCw, Snowflake, Zap } from 'lucide-react'
 import { api } from '../api'
 import { Panel } from '../components/Panel'
+import { Badge } from '../components/ui'
 import { formatBytes, relativeTime } from '../lib'
 import type { CircumventionPayload, ConnectionMode, StatusPayload } from '../types'
 
@@ -150,9 +151,9 @@ export function CircumventionPage({
               </p>
             </div>
             {status?.tor.connected ? (
-              <span className="healthy"><i /> Bootstrap 100 %</span>
+              <Badge tone="success" dot>Bootstrap 100 %</Badge>
             ) : (
-              <span className="unhealthy"><i /> {status?.tor.bootstrap ?? 0} %</span>
+              <Badge tone="warning" dot>{status?.tor.bootstrap ?? 0} %</Badge>
             )}
           </div>
           <dl className="details-list">
@@ -169,14 +170,16 @@ export function CircumventionPage({
               </dd>
             </div>
           </dl>
-          <button className="button button-secondary" style={{ margin: '0 18px 18px' }} disabled={refreshing} onClick={() => void refresh()}>
-            <RefreshCw size={15} className={refreshing ? 'spin' : undefined} />
-            {refreshing ? 'Mise à jour…' : 'Actualiser la liste de ponts'}
-          </button>
+          <div className="action-grid">
+            <button className="button button-secondary" disabled={refreshing} onClick={() => void refresh()}>
+              <RefreshCw size={15} className={refreshing ? 'spin' : undefined} />
+              {refreshing ? 'Mise à jour…' : 'Actualiser la liste de ponts'}
+            </button>
+          </div>
         </Panel>
 
         <Panel title="Pays et censure">
-          <div className="privacy-note">
+          <div className={`callout ${state?.censored_country ? 'callout-warning' : ''}`}>
             {state?.censored_country ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}
             <p>
               <strong>
@@ -250,7 +253,7 @@ export function CircumventionPage({
           </label>
           <p className="prose">
             Laissez vide pour utiliser les ponts intégrés. Pour obtenir des ponts privés: {' '}
-            <a className="text-link" style={{ margin: 0 }} href="https://bridges.torproject.org" target="_blank" rel="noreferrer">
+            <a className="text-link" href="https://bridges.torproject.org" target="_blank" rel="noreferrer">
               bridges.torproject.org
             </a>{' '}
             ou un courriel à bridges@torproject.org depuis Gmail ou Riseup.
@@ -289,7 +292,7 @@ export function CircumventionPage({
             <div><dt>Relayé depuis les clients</dt><dd>{formatBytes(stats.uploaded)}</dd></div>
           </dl>
         )}
-        <div className="privacy-note">
+        <div className="callout">
           <CheckCircle2 size={20} />
           <p>
             <strong>Ce que fait ce proxy, et ce qu’il ne fait pas</strong>
