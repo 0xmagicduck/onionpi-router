@@ -4,7 +4,7 @@ import { api } from '../api'
 import { DeviceTable } from '../components/DeviceTable'
 import { Panel } from '../components/Panel'
 import { relativeTime } from '../lib'
-import type { Device, DnsFilterState, StatusPayload } from '../types'
+import type { Device, DeviceTraffic, DnsFilterState, StatusPayload } from '../types'
 
 const STATUS_LABELS: Record<StatusPayload['protection']['status'], string> = {
   protected: 'Réseau protégé',
@@ -16,13 +16,24 @@ const STATUS_LABELS: Record<StatusPayload['protection']['status'], string> = {
 type Props = {
   status?: StatusPayload
   devices: Device[]
+  traffic?: DeviceTraffic
   notify: (message: string, error?: boolean) => void
   onDevicesRefresh: () => void
 }
 
-export function ProtectionPage({ status, devices, notify, onDevicesRefresh }: Props) {
+export function ProtectionPage({ status, devices, traffic, notify, onDevicesRefresh }: Props) {
   const [busyMac, setBusyMac] = useState('')
   const [repairBusy, setRepairBusy] = useState(false)
+
+  const resetTraffic = async () => {
+    try {
+      await api.resetDeviceTraffic()
+      notify('Compteurs de trafic remis à zéro')
+      onDevicesRefresh()
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Action refusée', true)
+    }
+  }
 
   const toggleBlock = async (device: Device) => {
     setBusyMac(device.mac)
@@ -96,7 +107,13 @@ export function ProtectionPage({ status, devices, notify, onDevicesRefresh }: Pr
       )}
       {status && <ul className="protection-check-grid">{status.protection.checks.map((check) => <li className={check.ok ? 'check-ok' : 'check-failed'} key={check.id}>{check.ok ? <ShieldCheck /> : <AlertTriangle />}<div><strong>{check.label}</strong><span>{check.detail}</span></div></li>)}</ul>}
       <DnsFilterPanel notify={notify} />
-      <DeviceTable devices={devices} onToggleBlock={toggleBlock} busyMac={busyMac} />
+      <DeviceTable
+        devices={devices}
+        onToggleBlock={toggleBlock}
+        busyMac={busyMac}
+        traffic={traffic}
+        onResetTraffic={() => void resetTraffic()}
+      />
     </div>
   )
 }

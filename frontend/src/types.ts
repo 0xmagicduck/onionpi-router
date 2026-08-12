@@ -124,10 +124,22 @@ export type DeviceAccessState = {
   now: number
 }
 
+/** State of the per-device byte counters, not of any one device. */
+export type DeviceTraffic = {
+  /** False while the firewall counters have never been sampled. */
+  supported: boolean
+  /** When the totals started being accumulated. */
+  since: number
+  /** Last sampling of the counters by the privileged timer. */
+  updated_at: number
+  devices: number
+}
+
 export type DevicesPayload = {
   devices: Device[]
   blocked: BlockedDevice[]
   access: DeviceAccessState
+  traffic?: DeviceTraffic
 }
 
 export type DnsProfile = {

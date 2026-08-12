@@ -6,6 +6,7 @@ import type {
   ConnectionMode,
   DeviceAccessState,
   DeviceSchedule,
+  DeviceTraffic,
   DevicesPayload,
   DiagnosticsPayload,
   DnsFilterState,
@@ -107,6 +108,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mac, blocked, label }),
     }),
+  resetDeviceTraffic: () =>
+    request<{ traffic: DeviceTraffic }>('/api/v1/devices/traffic/reset', { method: 'POST' }),
   deviceAccess: () => request<DeviceAccessState>('/api/v1/devices/access'),
   setDeviceAccess: (body: { mac: string; alias: string; schedule: DeviceSchedule | null }) =>
     request<DeviceAccessState>('/api/v1/devices/access', {

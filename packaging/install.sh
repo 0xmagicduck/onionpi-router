@@ -463,6 +463,7 @@ ONIONPI_DNS_FILTER_DIR=/etc/onionpi/dns
 ONIONPI_AGENT_RESULT=/var/lib/onionpi-privileged/agent.result
 ONIONPI_UPDATE_STATE=/var/lib/onionpi-privileged/update.state
 ONIONPI_MAINTENANCE_STATE=/var/lib/onionpi-privileged/maintenance.state
+ONIONPI_TRAFFIC_STATE=/var/lib/onionpi-privileged/traffic.json
 ONIONPI_COUNTRY=$COUNTRY
 EOF
 chown root:onionpi /etc/onionpi/onionpi.env
@@ -620,9 +621,12 @@ install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-boot-banner.service" /e
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-update.service" /etc/systemd/system/onionpi-update.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-update.timer" /etc/systemd/system/onionpi-update.timer
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-update-recover.service" /etc/systemd/system/onionpi-update-recover.service
+install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-accounting.service" /etc/systemd/system/onionpi-accounting.service
+install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-accounting.timer" /etc/systemd/system/onionpi-accounting.timer
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-relay-apply.sh" /usr/local/sbin/onionpi-relay-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-firewall-apply.sh" /usr/local/sbin/onionpi-firewall-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-devices-apply.sh" /usr/local/sbin/onionpi-devices-apply
+install -m 0755 "$PROJECT_ROOT/packaging/onionpi-accounting.sh" /usr/local/sbin/onionpi-accounting
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-agent-apply.sh" /usr/local/sbin/onionpi-agent-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-update.sh" /usr/local/sbin/onionpi-update
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-maintenance.sh" /usr/local/sbin/onionpi-maintenance
@@ -748,6 +752,9 @@ systemctl enable onionpi-boot-banner.service
 systemctl enable onionpi-update-recover.service
 systemctl enable --now onionpi-relay.path
 systemctl enable --now onionpi-agent.path
+# Per-device traffic: reading an nftables counter needs root, so a timer
+# publishes them and the application only ever reads the result.
+systemctl enable --now onionpi-accounting.timer
 # Writes /etc/systemd/system/onionpi-update.timer.d/schedule.conf from the
 # policy above, then enables or disables the timer accordingly.
 /usr/local/sbin/onionpi-update --write-timer --quiet || \

@@ -94,12 +94,21 @@ def create_router(context: RouteContext) -> APIRouter:
         access = services.access.snapshot()
         rules = {rule["mac"]: rule for rule in access["rules"]}
         blocked_macs = {entry["mac"] for entry in blocked}
+        # Folds the firewall counters into the stored totals before reading
+        # them: on real hardware this is the only source of per-device traffic.
+        totals = await asyncio.to_thread(services.traffic.update, values)
 
         def describe(device: dict[str, Any]) -> dict[str, Any]:
             rule = rules.get(device["mac"])
             alias = str(rule["alias"]) if rule else ""
+            # Demonstration mode keeps its invented figures; on hardware the
+            # counters are the only source, and a device the firewall has not
+            # seen yet stays at zero.
+            measured = totals.get(device["mac"], {})
             return {
                 **device,
+                "download": measured.get("download", device["download"]),
+                "upload": measured.get("upload", device["upload"]),
                 # The name a household gives a device is more useful than the
                 # hostname its manufacturer chose, so it wins on every screen.
                 "name": alias or device["name"],
@@ -132,7 +141,20 @@ def create_router(context: RouteContext) -> APIRouter:
                     }
                 )
             )
-        return {"devices": devices, "blocked": blocked, "access": access}
+        return {
+            "devices": devices,
+            "blocked": blocked,
+            "access": access,
+            "traffic": services.traffic.snapshot(),
+        }
+
+    @router.post("/api/v1/devices/traffic/reset")
+    async def reset_traffic(
+        _: dict[str, Any] = Depends(csrf_session),
+    ) -> dict[str, Any]:
+        snapshot = await asyncio.to_thread(services.traffic.reset)
+        database.add_activity("device", "Compteurs de trafic remis à zéro")
+        return {"traffic": snapshot}
 
     @router.post("/api/v1/devices/block")
     async def block_device(

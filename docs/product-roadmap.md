@@ -140,12 +140,28 @@ affichée une fois, dans le format que le navigateur Tor attend.
 
 ### Ce que 0.4.0 n’a pas fait
 
-- La comptabilité du trafic par appareil reste à zéro sur matériel réel : elle
-  demanderait des compteurs nftables, donc une lecture privilégiée du pare-feu.
-  C’est le premier candidat pour la 0.5.0.
 - Aucune visibilité sur les domaines réellement demandés : un journal DNS
   raconterait le foyer, et il faudrait d’abord décider ce qui n’est jamais
   écrit sur disque.
+
+## Version 0.5.0 — en cours
+
+### Comptabilité du trafic par appareil
+
+Premier candidat annoncé de la 0.5.0, et fait. Le pare-feu compte les octets
+par client dans deux ensembles nftables dynamiques. Lire un compteur nftables
+demande `CAP_NET_ADMIN` : une minuterie root publie donc un instantané JSON
+dans `/var/lib/onionpi-privileged/traffic.json`, que l’application se contente
+de lire. Aucun verbe privilégié n’a été ajouté — une lecture n’est pas une
+action, elle n’a pas besoin de l’agent.
+
+Un ensemble nftables repart vide à chaque rechargement des règles : un relevé
+brut ne vaut que depuis le dernier chargement. L’application conserve le relevé
+précédent et n’ajoute que la différence ; c’est ce cumul, et non le compteur du
+noyau, qui est affiché. Les téléversements sont comptés par adresse MAC ; les
+téléchargements le sont par adresse IP — la MAC de destination n’est pas encore
+résolue en `postrouting` — et restent en attente tant que le bail qui les
+explique est inconnu, plutôt que d’être imputés au mauvais appareil.
 
 ## Garde-fous de livraison
 

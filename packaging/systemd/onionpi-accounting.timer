@@ -1,0 +1,14 @@
+[Unit]
+Description=OnionPi per-device traffic sampling
+
+[Timer]
+# Fifteen seconds is short enough that the figures on screen follow a download,
+# and long enough that the Pi spends no measurable time on it. Nothing is lost
+# between two samples: the kernel counters only grow.
+OnBootSec=30s
+OnUnitActiveSec=15s
+AccuracySec=5s
+Unit=onionpi-accounting.service
+
+[Install]
+WantedBy=timers.target

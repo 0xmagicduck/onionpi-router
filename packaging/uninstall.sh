@@ -45,6 +45,7 @@ systemctl disable --now onionpi onionpi-ap onionpi-firewall onionpi-relay.path 2
 systemctl disable --now onionpi-agent.path onionpi-boot-banner.service 2>/dev/null || true
 systemctl disable --now onionpi-update.timer 2>/dev/null || true
 systemctl disable --now onionpi-update-recover.service 2>/dev/null || true
+systemctl disable --now onionpi-accounting.timer 2>/dev/null || true
 # Hosting a Snowflake proxy was opt-in; leaving it running after an uninstall
 # would keep lending the uplink without any interface to stop it.
 systemctl disable --now snowflake-proxy.service 2>/dev/null || true
@@ -59,10 +60,12 @@ rm -f /etc/systemd/system/onionpi-agent.service /etc/systemd/system/onionpi-agen
 rm -f /etc/systemd/system/onionpi-boot-banner.service
 rm -f /etc/systemd/system/onionpi-update.service /etc/systemd/system/onionpi-update.timer
 rm -f /etc/systemd/system/onionpi-update-recover.service
+rm -f /etc/systemd/system/onionpi-accounting.service /etc/systemd/system/onionpi-accounting.timer
 rm -rf /etc/systemd/system/onionpi-update.timer.d
 rm -f /usr/local/sbin/onionpi-firewall-apply /usr/local/sbin/onionpi-verify
 rm -f /usr/local/sbin/onionpi-relay-apply /usr/local/sbin/onionpi-devices-apply
 rm -f /usr/local/sbin/onionpi-agent-apply /usr/local/sbin/onionpi-update
+rm -f /usr/local/sbin/onionpi-accounting
 rm -f /usr/local/sbin/onionpi-maintenance
 rm -f /etc/dnsmasq.d/onionpi.conf /etc/sysctl.d/70-onionpi.conf
 rm -f /etc/tor/torrc.d/onionpi.conf /etc/onionpi/firewall.nft

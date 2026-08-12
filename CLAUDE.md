@@ -106,6 +106,10 @@ header — read endpoints depend on `current_session`, every mutation depends on
   bootstrap stalls; bundled catalog in `onionpi/data/circumvention.json`.
 - `netcontrol.py` — `DeviceGuard` (MAC blocking) and `DnsFilter` (hosts-file
   blocklists fetched through Tor's SOCKS port with `httpx[socks]`).
+- `accounting.py` — per-device byte totals. The counters live in two dynamic
+  nftables sets and only root may read them, so `onionpi-accounting.timer`
+  publishes a JSON snapshot and this module folds it into totals that survive a
+  rule reload. Read-only: no new privileged verb.
 - `policy.py` / `onion.py` / `relay.py` / `updates.py` / `system.py` — exit
   country and scheduled `NEWNYM`, onion service, Snowflake proxy switch,
   read-only view of the root updater plus the three preferences it accepts,
