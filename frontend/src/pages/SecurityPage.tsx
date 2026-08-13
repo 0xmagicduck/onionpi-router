@@ -95,7 +95,7 @@ export function SecurityPage({ notify, onOpenPage }: Props) {
   const passed = report.findings.filter((finding) => finding.ok)
 
   return (
-    <div className="page operational-page">
+    <div className="page operational-page status-page audit-page">
       <div className="page-title">
         <h1>Audit de sécurité</h1>
         <p>Ce que cette configuration expose aujourd’hui, et le geste qui le corrige.</p>

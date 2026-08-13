@@ -16,12 +16,21 @@ l’interface puisse vous le remettre.
 | `render-policy.py` | Traduit la politique reçue en règles nftables, après revalidation. Exécuté sous root. |
 | `onionpi-node-apply.sh` | Exécutant privilégié. Revalide le verbe, n’accepte aucun argument depuis le fichier de requête. |
 | `systemd/` | Les trois unités: l’agent, l’unité `.path` qui surveille la file, le service root qu’elle déclenche. |
-| `install-node-agent.sh` | Installe l’ensemble et publie le service onion. |
+| `bootstrap-node.sh` / `.ps1` | Télécharge la source depuis GitHub sans placer les identifiants dans l’URL. |
+| `install-node-agent.sh` | Installation Linux (Debian, Ubuntu, Raspberry Pi OS). |
+| `install-node-agent-macos.sh` | Installation macOS avec Homebrew, launchd et PF. |
+| `install-node-agent-windows.ps1` | Installation Windows avec tâches système et coupe-circuit sortant. |
 
 ## Installation
 
-Dans l’interface OnionPi : **Baie virtuelle → Ajouter un nœud → distant**.
-Téléchargez l’archive proposée, copiez-la sur la machine, puis :
+Dans l’interface OnionPi : **Baie virtuelle → Ajouter un nœud → distant**,
+ouvrez la fiche, choisissez Linux, macOS ou Windows, puis copiez la commande
+proposée. Elle télécharge le bootstrap depuis GitHub, récupère le dépôt et
+installe Tor, Python, le service onion et l’agent.
+
+Les identifiants restent des arguments de la commande locale : ils ne sont
+jamais ajoutés à l’URL GitHub. Pour examiner chaque fichier avant exécution,
+utilisez **Archive hors ligne**, puis sous Linux :
 
 ```bash
 tar xzf onionpi-node-agent.tar.gz
@@ -31,6 +40,16 @@ sudo ./install-node-agent.sh --node <id> --token <jeton> --client-key <clé>
 
 Le script affiche l’adresse `.onion` du nœud à la fin. Recopiez-la dans la
 fiche du nœud : la baie ne peut pas la deviner, et c’est voulu.
+
+### Différences selon le système
+
+- **Linux** applique la politique complète avec nftables et systemd.
+- **macOS** installe Tor et Python avec Homebrew, lance les services avec
+  launchd et applique le coupe-circuit avec une ancre PF dédiée.
+- **Windows** installe Python avec winget et le Tor Expert Bundle officiel. Le
+  coupe-circuit suspend les autorisations de sortie existantes, bloque les
+  sorties directes et autorise Tor. Ces autorisations sont restaurées en mode
+  `direct` ; les règles entrantes déjà administrées sont conservées.
 
 ## Comment la baie le joint
 
@@ -64,6 +83,11 @@ n’aboutissent plus sans passer par Tor. Réglez la sortie sur **directe** le
 temps d’une maintenance, ou configurez `apt` sur le proxy SOCKS local.
 
 ## Désinstallation
+
+La commande ci-dessous concerne Linux. Sur macOS, retirez les trois services
+`com.onionpi.node.*`, l’ancre PF et `/Library/Application Support/OnionPi Node`.
+Sur Windows, retirez les trois tâches `OnionPi Node *`, le groupe de règles de
+pare-feu `OnionPi Node` et `%ProgramData%\OnionPi Node`.
 
 ```bash
 sudo systemctl disable --now onionpi-node-agent.service onionpi-node-apply.path

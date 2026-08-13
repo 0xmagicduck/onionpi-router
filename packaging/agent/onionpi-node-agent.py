@@ -12,8 +12,8 @@ une requête capturée ne peut pas être rejouée.
 
 Ce programme ne dispose d'aucun privilège. Les trois actions qui en demandent
 — appliquer le pare-feu, redémarrer Tor, redémarrer la machine — passent par un
-fichier de requête qu'un service root déclenché par une unité `.path` relit et
-revalide. La frontière de sécurité est `onionpi-node-apply.sh`, pas ce fichier.
+fichier de requête qu'un service privilégié natif relit et revalide. La
+frontière de sécurité est l'exécutant `onionpi-node-apply-*`, pas ce fichier.
 
 Dépendances: la bibliothèque standard uniquement.
 """
@@ -25,6 +25,7 @@ import hmac
 import json
 import logging
 import os
+import platform
 import re
 import secrets
 import shutil
@@ -53,6 +54,9 @@ MAX_BODY_BYTES = 64 * 1024
 MAX_CLOCK_SKEW = 120
 NONCE_MEMORY = 512
 MAX_JOURNAL_LINES = 200
+PLATFORM = platform.system().lower()
+LOG_DIR_VALUE = os.environ.get("ONIONPI_NODE_LOG_DIR", "")
+LOG_DIR = Path(LOG_DIR_VALUE) if LOG_DIR_VALUE else None
 
 #: Le même vocabulaire que côté baie. Un verbe absent d'ici n'existe pas, quelle
 #: que soit la signature qui l'accompagne.
@@ -115,7 +119,7 @@ class PrivilegedRequest:
 
     ACTIONS = ("policy", "restart-tor", "reboot")
 
-    def submit(self, action: str, timeout: float = 25.0) -> dict[str, object]:
+    def submit(self, action: str, timeout: float | None = None) -> dict[str, object]:
         if action not in self.ACTIONS:
             raise ValueError(f"Action privilégiée inconnue: {action}")
         nonce = secrets.token_hex(8)
@@ -125,7 +129,10 @@ class PrivilegedRequest:
         os.replace(temporary, REQUEST_PATH)
         if action == "reboot":
             return {"status": "pending", "message": "Redémarrage demandé"}
-        deadline = time.monotonic() + timeout
+        wait = timeout if timeout is not None else float(
+            os.environ.get("ONIONPI_NODE_APPLY_TIMEOUT", "25")
+        )
+        deadline = time.monotonic() + max(5.0, min(wait, 120.0))
         while time.monotonic() < deadline:
             answer = self._result(nonce)
             if answer is not None:
@@ -209,7 +216,7 @@ def read_status(tor: TorControl) -> dict[str, object]:
         "agent_version": VERSION,
         "hostname": socket.gethostname()[:64],
         "uptime_seconds": int(read_uptime()),
-        "load": round(os.getloadavg()[0], 2),
+        "load": load_average(),
         "memory_percent": memory_percent(),
         "storage_percent": round(usage.used / usage.total * 100, 1) if usage.total else 0.0,
         "tor": tor.bootstrap(),
@@ -222,10 +229,41 @@ def read_status(tor: TorControl) -> dict[str, object]:
             {"id": unit, "label": unit, "active": unit_active(unit)}
             for unit in ("tor", "onionpi-node-agent")
         ],
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release()[:64],
+            "machine": platform.machine()[:32],
+            "policy_mode": (
+                "complet" if PLATFORM == "linux" else
+                "pf" if PLATFORM == "darwin" else
+                "sortie uniquement" if PLATFORM == "windows" else
+                "non pris en charge"
+            ),
+        },
     }
 
 
 def read_uptime() -> float:
+    if PLATFORM == "windows":
+        try:
+            import ctypes
+
+            return float(ctypes.windll.kernel32.GetTickCount64()) / 1000
+        except (AttributeError, OSError):
+            return 0.0
+    if PLATFORM == "darwin":
+        try:
+            result = subprocess.run(
+                ["/usr/sbin/sysctl", "-n", "kern.boottime"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            match = re.search(r"sec\s*=\s*(\d+)", result.stdout)
+            return max(0.0, time.time() - int(match.group(1))) if match else 0.0
+        except (OSError, subprocess.SubprocessError):
+            return 0.0
     try:
         return float(Path("/proc/uptime").read_text(encoding="utf-8").split()[0])
     except (OSError, ValueError, IndexError):
@@ -233,6 +271,47 @@ def read_uptime() -> float:
 
 
 def memory_percent() -> float:
+    if PLATFORM == "windows":
+        try:
+            import ctypes
+
+            class MemoryStatus(ctypes.Structure):
+                _fields_ = [
+                    ("length", ctypes.c_ulong),
+                    ("memory_load", ctypes.c_ulong),
+                    ("total_physical", ctypes.c_ulonglong),
+                    ("available_physical", ctypes.c_ulonglong),
+                    ("total_page_file", ctypes.c_ulonglong),
+                    ("available_page_file", ctypes.c_ulonglong),
+                    ("total_virtual", ctypes.c_ulonglong),
+                    ("available_virtual", ctypes.c_ulonglong),
+                    ("available_extended_virtual", ctypes.c_ulonglong),
+                ]
+
+            status = MemoryStatus()
+            status.length = ctypes.sizeof(MemoryStatus)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return float(status.memory_load)
+        except (AttributeError, OSError):
+            return 0.0
+    if PLATFORM == "darwin":
+        try:
+            total = int(
+                subprocess.check_output(
+                    ["/usr/sbin/sysctl", "-n", "hw.memsize"], text=True, timeout=5
+                ).strip()
+            )
+            output = subprocess.check_output(["/usr/bin/vm_stat"], text=True, timeout=5)
+            page_match = re.search(r"page size of (\d+) bytes", output)
+            page_size = int(page_match.group(1)) if page_match else 4096
+            free_pages = 0
+            for label in ("Pages free", "Pages inactive", "Pages speculative"):
+                match = re.search(rf"^{label}:\s+(\d+)\.", output, re.MULTILINE)
+                free_pages += int(match.group(1)) if match else 0
+            available = free_pages * page_size
+            return round((total - available) / total * 100, 1) if total else 0.0
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return 0.0
     try:
         fields = {}
         for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
@@ -245,15 +324,34 @@ def memory_percent() -> float:
     return round((total - available) / total * 100, 1) if total else 0.0
 
 
+def load_average() -> float:
+    try:
+        return round(os.getloadavg()[0], 2)
+    except (AttributeError, OSError):
+        return 0.0
+
+
 def unit_active(unit: str) -> bool:
+    if PLATFORM == "darwin":
+        label = "com.onionpi.node.tor" if unit == "tor" else "com.onionpi.node.agent"
+        command = ["/bin/launchctl", "print", f"system/{label}"]
+    elif PLATFORM == "windows":
+        image = "tor.exe" if unit == "tor" else "python.exe"
+        command = ["tasklist.exe", "/FI", f"IMAGENAME eq {image}"]
+    else:
+        command = ["systemctl", "is-active", "--quiet", unit]
     try:
         result = subprocess.run(  # noqa: S603
-            ["systemctl", "is-active", "--quiet", unit],  # noqa: S607
+            command,  # noqa: S607
+            capture_output=True,
+            text=True,
             timeout=5,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return False
+    if PLATFORM == "windows":
+        return result.returncode == 0 and image.lower() in result.stdout.lower()
     return result.returncode == 0
 
 
@@ -261,6 +359,17 @@ def read_journal(unit: str, lines: int) -> list[str]:
     if unit not in JOURNAL_UNITS:
         raise ValueError("Service non autorisé")
     count = max(1, min(int(lines), MAX_JOURNAL_LINES))
+    if PLATFORM in {"darwin", "windows"} and LOG_DIR is not None:
+        filenames = {
+            "tor": "tor.log",
+            "onionpi-node-agent": "agent.log",
+            "onionpi-node-apply": "apply.log",
+        }
+        path = LOG_DIR / filenames.get(unit, "agent.log")
+        try:
+            return path.read_text(encoding="utf-8", errors="replace").splitlines()[-count:]
+        except OSError as error:
+            raise RuntimeError(f"Journal illisible: {error}") from error
     try:
         result = subprocess.run(  # noqa: S603
             ["journalctl", "-u", unit, "-n", str(count), "--no-pager", "--output=short"],  # noqa: S607

@@ -46,15 +46,16 @@ interface web ──► RackManager ──► NodeClient ──► SOCKS Tor ─
                                                                     │
                                                         agent (non privilégié)
                                                                     │
-                                                     fichier de requête + .path
+                                          fichier de requête + service natif
                                                                     │
-                                              onionpi-node-apply.sh (root)
+                                           exécutant privilégié revalidateur
 ```
 
 La forme est celle qui existe déjà sur la Pi : un agent sans privilège dépose
-une requête, une unité `.path` réveille un service root qui **revalide le
-verbe contre sa propre liste** et n’extrait aucun argument du fichier. Sur le
-nœud comme ici, la frontière de sécurité est le script root, pas l’agent.
+une requête, puis systemd, launchd ou une tâche Windows réveille un service
+privilégié qui **revalide le verbe contre sa propre liste** et n’extrait aucun
+argument du fichier. Sur le nœud comme ici, la frontière de sécurité est
+l’exécutant privilégié, pas l’agent.
 
 ## Deux verrous indépendants
 
@@ -177,10 +178,11 @@ sortie directe. Rien n’y est mesuré une seconde fois.
 
 1. **Baie virtuelle → Ajouter un nœud → Machine distante.** Le nœud est créé
    sans adresse : il est « en attente », et rien ne lui est encore demandé.
-2. **Télécharger l’agent** depuis sa fiche, et copier l’archive sur la machine.
-3. Lancer la commande affichée par « Afficher la commande ». Elle installe Tor,
-   publie le service onion avec autorisation client, installe l’agent et les
-   unités, puis affiche l’adresse `.onion`.
+2. Ouvrir **Préparer l’installation**, choisir Linux, macOS ou Windows et
+   copier la commande GitHub. L’archive hors ligne reste disponible.
+3. Lancer la commande sur la machine. Elle installe Tor et Python, publie le
+   service onion avec autorisation client, puis crée les services natifs
+   (systemd, launchd ou tâches Windows) et affiche l’adresse `.onion`.
 4. Recopier cette adresse dans la fiche, puis « Interroger ».
 
 L’adresse remonte à la main, et c’est voulu : la baie ne va pas la chercher

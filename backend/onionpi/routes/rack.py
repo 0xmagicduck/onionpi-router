@@ -317,11 +317,10 @@ def create_router(context: RouteContext) -> APIRouter:
 
     @router.get("/api/v1/rack/agent-bundle")
     async def agent_bundle(_: dict[str, Any] = Depends(current_session)) -> Response:
-        """The installer to run on the node, as a tar.gz built on the fly.
+        """Offline fallback matching the appliance's installed version.
 
-        Handing out an archive rather than a `curl … | sh` one-liner is
-        deliberate: the operator reads four short files before running them as
-        root on a machine this appliance is about to control.
+        The normal enrollment commands bootstrap from GitHub. This archive is
+        kept for reviewed, disconnected or exactly reproducible installs.
         """
         archive = await asyncio.to_thread(_build_bundle, context.settings.node_agent_dir)
         if not archive:

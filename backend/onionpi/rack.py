@@ -110,6 +110,14 @@ CABLE_SPEEDS = ("100-mbps", "1-gbps", "10-gbps")
 
 POLICY_VERSION = 1
 
+# The bootstrap is deliberately fetched from GitHub while the credentials stay
+# in local command arguments. They never become query parameters, referrers or
+# server logs on the download host.
+NODE_BOOTSTRAP_ROOT = (
+    "https://raw.githubusercontent.com/0xmagicduck/onionpi-router/"
+    "main/packaging/agent"
+)
+
 #: Left open on the node's own INPUT chain whatever else the policy says.
 #: Locking an operator out of a machine on the other side of the planet, with
 #: no console, is a worse outcome than the port being reachable.
@@ -1255,21 +1263,46 @@ class RackManager:
             raise RackError("Seuls les nœuds distants ont un agent à installer.")
         epoch = int(row["token_epoch"] or 1)
         _, public = self.client_keypair(node_id, epoch)
+        port = int(row["agent_port"] or 9080)
+        token = self.token_for(node_id, epoch)
+        arguments = (
+            f"--node {node_id}"
+            f" --port {port}"
+            f" --token {token}"
+            f" --client-key {public}"
+            " --yes"
+        )
+        posix_bootstrap = f"{NODE_BOOTSTRAP_ROOT}/bootstrap-node.sh"
+        windows_bootstrap = f"{NODE_BOOTSTRAP_ROOT}/bootstrap-node.ps1"
+        commands = {
+            "linux": (
+                f"curl --proto '=https' --tlsv1.2 -fsSL {posix_bootstrap} | "
+                f"bash -s -- --platform linux {arguments}"
+            ),
+            "macos": (
+                f"curl --proto '=https' --tlsv1.2 -fsSL {posix_bootstrap} | "
+                f"bash -s -- --platform macos {arguments}"
+            ),
+            "windows": (
+                "$p=Join-Path $env:TEMP 'onionpi-node.ps1'; "
+                "curl.exe --proto '=https' --tlsv1.2 -fsSL "
+                f"{windows_bootstrap} -o $p; "
+                "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p"
+                f" -Node {node_id} -Port {port} -Token {token}"
+                f" -ClientKey {public} -Yes"
+            ),
+        }
         return {
             "node_id": node_id,
             "name": str(row["name"]),
-            "token": self.token_for(node_id, epoch),
+            "token": token,
             "token_epoch": epoch,
-            "agent_port": int(row["agent_port"] or 9080),
+            "agent_port": port,
             "client_public_key": public,
             "onion": str(row["onion"] or ""),
-            "command": (
-                "sudo ./install-node-agent.sh"
-                f" --node {node_id}"
-                f" --port {int(row['agent_port'] or 9080)}"
-                f" --token {self.token_for(node_id, epoch)}"
-                f" --client-key {public}"
-            ),
+            # Kept for clients predating the multi-platform installer.
+            "command": commands["linux"],
+            "commands": commands,
         }
 
     def rotate_token(self, node_id: str) -> dict[str, Any]:

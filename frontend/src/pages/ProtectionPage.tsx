@@ -85,14 +85,16 @@ export function ProtectionPage({ status, devices, traffic, notify, onDevicesRefr
   }
 
   return (
-    <div className="page operational-page">
+    <div className="page operational-page status-page protection-page">
       <div className="page-title">
         <h1>Protection</h1>
         <p>Un état unique, sa cause et l’action sûre à prendre immédiatement.</p>
       </div>
       {status && (
         <section className={`protection-hero protection-${status.protection.status}`}>
-          {status.protection.safe ? <ShieldCheck /> : <AlertTriangle />}
+          <span className="protection-hero-icon" aria-hidden="true">
+            {status.protection.safe ? <ShieldCheck /> : <AlertTriangle />}
+          </span>
           <div>
             <span className="section-label">{STATUS_LABELS[status.protection.status]}</span>
             <h2>{status.protection.label}</h2>

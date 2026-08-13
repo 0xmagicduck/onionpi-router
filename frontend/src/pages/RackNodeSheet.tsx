@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Apple,
+  Check,
+  Copy,
   Download,
   KeyRound,
   Laptop,
+  Monitor,
   Power,
   RefreshCw,
   Server,
@@ -34,6 +38,19 @@ const JOURNAL_UNITS = [
   { id: 'ssh', label: 'SSH' },
 ]
 
+type InstallPlatform = keyof RackEnrollment['commands']
+
+const INSTALL_PLATFORMS: Array<{
+  id: InstallPlatform
+  label: string
+  detail: string
+  icon: typeof Terminal
+}> = [
+  { id: 'linux', label: 'Linux', detail: 'Debian, Ubuntu et Raspberry Pi OS', icon: Terminal },
+  { id: 'macos', label: 'macOS', detail: 'Apple Silicon et Intel', icon: Apple },
+  { id: 'windows', label: 'Windows', detail: 'PowerShell administrateur', icon: Monitor },
+]
+
 export function RackNodeSheet({
   node,
   racks,
@@ -59,6 +76,8 @@ export function RackNodeSheet({
     notes: node.notes,
   })
   const [enrollment, setEnrollment] = useState<RackEnrollment>()
+  const [installPlatform, setInstallPlatform] = useState<InstallPlatform>('linux')
+  const [commandCopied, setCommandCopied] = useState(false)
   const [journal, setJournal] = useState<string[]>()
   const [journalUnit, setJournalUnit] = useState('tor')
   const [history, setHistory] = useState<RackHistory>()
@@ -182,6 +201,9 @@ export function RackNodeSheet({
         {node.state.agent_version && (
           <dl className="rack-readout">
             <div><dt>Agent</dt><dd>{node.state.agent_version}</dd></div>
+            {node.state.platform?.system && (
+              <div><dt>Système</dt><dd>{node.state.platform.system} · {node.state.platform.machine}</dd></div>
+            )}
             <div><dt>Hôte</dt><dd className="mono">{node.state.hostname ?? '—'}</dd></div>
             <div><dt>Uptime</dt><dd>{formatUptime(node.state.uptime_seconds ?? 0)}</dd></div>
             <div><dt>Charge</dt><dd className="tabular">{node.state.load ?? '—'}</dd></div>
@@ -400,8 +422,8 @@ export function RackNodeSheet({
               <h3>Enrôlement</h3>
               <p className="prose">
                 Le jeton et la clé sont dérivés du secret de la baie : ils ne sont stockés nulle
-                part et peuvent être réaffichés. Le renouvellement invalide immédiatement les
-                anciens, et l’agent doit alors être réinstallé avec les nouveaux.
+                part et peuvent être réaffichés. L’installation récupère l’agent depuis GitHub,
+                installe Tor et crée le service adapté à la machine.
               </p>
               <div className="rack-actions">
                 <button
@@ -418,10 +440,10 @@ export function RackNodeSheet({
                     }
                   }}
                 >
-                  <KeyRound size={14} /> Afficher la commande
+                  <KeyRound size={14} /> Préparer l’installation
                 </button>
                 <a className="button button-small button-ghost" href="/api/v1/rack/agent-bundle" download>
-                  <Download size={14} /> Télécharger l’agent
+                  <Download size={14} /> Archive hors ligne
                 </a>
                 <button
                   className="button button-small button-ghost"
@@ -443,7 +465,62 @@ export function RackNodeSheet({
                 </button>
               </div>
               {enrollment && (
-                <pre className="rack-enrollment" aria-label="Commande d’installation">{enrollment.command}</pre>
+                <div className="rack-installer">
+                  <div className="rack-platforms" role="group" aria-label="Système de la machine distante">
+                    {INSTALL_PLATFORMS.map((platform) => {
+                      const Icon = platform.icon
+                      return (
+                        <button
+                          type="button"
+                          key={platform.id}
+                          className={`rack-platform ${installPlatform === platform.id ? 'rack-platform-active' : ''}`}
+                          aria-pressed={installPlatform === platform.id}
+                          onClick={() => {
+                            setInstallPlatform(platform.id)
+                            setCommandCopied(false)
+                          }}
+                        >
+                          <Icon size={17} />
+                          <span><strong>{platform.label}</strong><small>{platform.detail}</small></span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="rack-command-head">
+                    <span>
+                      <strong>Commande d’installation</strong>
+                      <small>
+                        {installPlatform === 'windows'
+                          ? 'À coller dans PowerShell ouvert en administrateur.'
+                          : 'À coller dans le Terminal de la machine distante.'}
+                      </small>
+                    </span>
+                    <button
+                      type="button"
+                      className="button button-small button-secondary"
+                      onClick={async () => {
+                        const command = enrollment.commands[installPlatform] ?? enrollment.command
+                        try {
+                          await navigator.clipboard.writeText(command)
+                          setCommandCopied(true)
+                          window.setTimeout(() => setCommandCopied(false), 1800)
+                        } catch {
+                          notify('Copie refusée par le navigateur', true)
+                        }
+                      }}
+                    >
+                      {commandCopied ? <Check size={14} /> : <Copy size={14} />}
+                      {commandCopied ? 'Copiée' : 'Copier'}
+                    </button>
+                  </div>
+                  <pre className="rack-enrollment" aria-label="Commande d’installation">
+                    {enrollment.commands[installPlatform] ?? enrollment.command}
+                  </pre>
+                  <p className="rack-installer-note">
+                    Cette commande contient le jeton privé du nœud. Ne la collez que sur la
+                    machine à enrôler et renouvelez le jeton si elle a été partagée ailleurs.
+                  </p>
+                </div>
               )}
             </section>
           </>

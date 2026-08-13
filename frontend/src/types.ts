@@ -369,6 +369,7 @@ export type RackNodeState = {
   tor?: { connected: boolean; bootstrap: number; summary?: string; exit_country?: string }
   policy?: { digest: string; egress: string; applied_at: number }
   services?: Array<{ id: string; label: string; active: boolean }>
+  platform?: { system: string; release: string; machine: string; policy_mode: string }
 }
 
 export type RackAlert = { level: 'info' | 'warning' | 'danger'; message: string }
@@ -502,6 +503,11 @@ export type RackEnrollment = {
   client_public_key: string
   onion: string
   command: string
+  commands: {
+    linux: string
+    macos: string
+    windows: string
+  }
 }
 
 export type RackJournal = { unit: string; lines: string[] }

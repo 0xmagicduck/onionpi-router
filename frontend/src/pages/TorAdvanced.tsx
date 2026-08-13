@@ -36,7 +36,7 @@ export function TorAdvanced({ notify }: { notify: Notify }) {
 
   return (
     <>
-      <div className="two-column">
+      <div className="two-column tor-advanced-grid tor-utility-grid">
         <PolicyPanel
           policy={payload.policy}
           notify={notify}
@@ -44,7 +44,7 @@ export function TorAdvanced({ notify }: { notify: Notify }) {
         />
         <SpeedTestPanel notify={notify} />
       </div>
-      <div className="two-column">
+      <div className="two-column tor-advanced-grid tor-detail-grid">
         <OnionPanel
           onion={payload.onion}
           notify={notify}

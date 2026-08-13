@@ -3094,7 +3094,7 @@
     },
     "/api/v1/rack/agent-bundle": {
       "get": {
-        "description": "The installer to run on the node, as a tar.gz built on the fly.\n\nHanding out an archive rather than a `curl … | sh` one-liner is\ndeliberate: the operator reads four short files before running them as\nroot on a machine this appliance is about to control.",
+        "description": "Offline fallback matching the appliance's installed version.\n\nThe normal enrollment commands bootstrap from GitHub. This archive is\nkept for reviewed, disconnected or exactly reproducible installs.",
         "operationId": "agent_bundle_api_v1_rack_agent_bundle_get",
         "responses": {
           "200": {
