@@ -319,8 +319,11 @@ export function MeshOverview({
 
   return (
     <div className="rack-mesh">
-      <dl className="rack-readout">
-        <div><dt>Coordinateur</dt><dd className="mono">{mesh.coordinator.slice(0, 28)}…</dd></div>
+      <dl className="rack-readout rack-mesh-readout">
+        <div className="rack-mesh-coordinator">
+          <dt>Coordinateur</dt>
+          <dd className="mono" title={mesh.coordinator}>{mesh.coordinator}</dd>
+        </div>
         <div><dt>Port du plan de données</dt><dd className="tabular">{mesh.mesh_port}</dd></div>
         <div><dt>Membres</dt><dd className="tabular">{mesh.members.filter((member) => member.in_map).length}</dd></div>
         <div><dt>Clés révoquées</dt><dd className="tabular">{mesh.revoked.length}</dd></div>
@@ -333,47 +336,59 @@ export function MeshOverview({
         veut rien dire.
       </p>
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Nœud</th>
-            <th>Adresse</th>
-            <th>Ports</th>
-            <th>Chemin direct</th>
-            <th>Carte</th>
-          </tr>
-        </thead>
-        <tbody>
-          {mesh.members.length === 0 && (
-            <tr><td colSpan={5}>Aucun nœud distant dans la baie.</td></tr>
-          )}
-          {mesh.members.map((member) => (
-            <tr key={member.id}>
-              <td>
-                {member.name}{' '}
-                {member.in_map ? (
-                  <Badge tone="success">dans la carte</Badge>
-                ) : (
-                  <Badge tone="neutral">{member.enabled ? 'clé ou adresse manquante' : 'désactivé'}</Badge>
-                )}
-              </td>
-              <td className="mono">{member.address || '—'}</td>
-              <td className="tabular">{member.ports.join(', ') || '—'}</td>
-              <td className="mono">{member.direct || 'relayé'}</td>
-              <td className="tabular">
-                {member.netmap_serial
-                  ? `série ${member.netmap_serial} · ${relativeTime(member.netmap_issued_at)}`
-                  : 'jamais publiée'}
-              </td>
+      <div className="rack-mesh-table-wrap">
+        <table className="rack-mesh-table">
+          <caption className="sr-only">État des membres du réseau OnionMesh</caption>
+          <colgroup>
+            <col className="rack-mesh-col-node" />
+            <col className="rack-mesh-col-address" />
+            <col className="rack-mesh-col-ports" />
+            <col className="rack-mesh-col-path" />
+            <col className="rack-mesh-col-map" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Nœud</th>
+              <th scope="col">Adresse</th>
+              <th scope="col">Ports</th>
+              <th scope="col">Chemin direct</th>
+              <th scope="col">Carte</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {mesh.members.length === 0 && (
+              <tr><td className="rack-mesh-table-empty" colSpan={5}>Aucun nœud distant dans la baie.</td></tr>
+            )}
+            {mesh.members.map((member) => (
+              <tr key={member.id}>
+                <td>
+                  <div className="rack-mesh-member">
+                    <strong>{member.name}</strong>
+                    {member.in_map ? (
+                      <Badge tone="success">dans la carte</Badge>
+                    ) : (
+                      <Badge tone="neutral">{member.enabled ? 'clé ou adresse manquante' : 'désactivé'}</Badge>
+                    )}
+                  </div>
+                </td>
+                <td className="mono">{member.address || '—'}</td>
+                <td className="tabular">{member.ports.join(', ') || '—'}</td>
+                <td className="mono">{member.direct || 'relayé'}</td>
+                <td className="tabular">
+                  {member.netmap_serial
+                    ? `série ${member.netmap_serial} · ${relativeTime(member.netmap_issued_at)}`
+                    : 'jamais publiée'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-      <section className="rack-section">
+      <section className="rack-section rack-mesh-lock">
         <h3>{lock.enabled ? <Lock size={18} /> : <Unlock size={18} />} Verrou de maillage</h3>
-        <div className="settings-form">
-          <p className="prose">
+        <div className="settings-form rack-mesh-lock-form">
+          <p className="prose rack-mesh-lock-intro">
             Sans verrou, une baie compromise inscrit le pair de son choix dans les cartes. Avec,
             une clé de pair <em>nouvelle</em> n’est acceptée par les nœuds que contresignée par K
             garants sur N. Le coût est réel — ajouter une machine demande K opérateurs — donc
@@ -381,7 +396,7 @@ export function MeshOverview({
             <code>onionpi-admin mesh-trustee --out garant.key</code>, sur une autre machine que
             celle-ci.
           </p>
-          <label className="choice-card">
+          <label className="choice-card rack-mesh-lock-choice">
             <input
               type="checkbox"
               checked={lock.enabled}
@@ -393,7 +408,7 @@ export function MeshOverview({
               <p>La baie cesse d’être le point unique dont la compromission ouvre le maillage.</p>
             </div>
           </label>
-          <label>
+          <label className="rack-mesh-lock-threshold">
             Seuil K
             <input
               value={lock.threshold || ''}
@@ -404,7 +419,7 @@ export function MeshOverview({
               }
             />
           </label>
-          <label>
+          <label className="rack-mesh-lock-trustees">
             Garants, une clé publique par ligne
             <textarea
               rows={4}
@@ -414,12 +429,12 @@ export function MeshOverview({
               onChange={(event) => setTrustees(event.target.value)}
             />
           </label>
-          <div className="rack-actions">
+          <div className="rack-actions rack-mesh-lock-actions">
             <button className="button button-primary button-small" disabled={busy} onClick={() => void save()}>
               Enregistrer le verrou
             </button>
           </div>
-          <p className="prose">
+          <p className="prose rack-mesh-lock-note">
             Le verrou est épinglé sur chaque nœud à son installation, dans un fichier que la baie
             n’écrit pas. Le modifier ici ne change rien aux nœuds déjà enrôlés : réinstallez-les
             avec la commande mise à jour pour qu’ils l’appliquent.

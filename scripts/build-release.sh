@@ -19,6 +19,32 @@ if [[ ! "$VERSION" =~ ^[0-9A-Za-z.-]{1,40}$ ]]; then
   exit 1
 fi
 
+# The enrollment command must download the exact node agent carried by this
+# release. VERSION cannot provide that identity: an edge archive deliberately
+# has a version for which no stable tag exists yet. Record the full commit and
+# refuse a build if packaging/agent differs from it.
+SOURCE_REF="${ONIONPI_SOURCE_REF:-}"
+if [[ -z "$SOURCE_REF" ]]; then
+  SOURCE_REF="$(git rev-parse --verify 'HEAD^{commit}' 2>/dev/null || true)"
+fi
+SOURCE_REF="$(printf '%s' "$SOURCE_REF" | tr '[:upper:]' '[:lower:]')"
+if [[ ! "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+  printf 'Référence source invalide ou absente: %s\n' "${SOURCE_REF:-vide}" >&2
+  exit 1
+fi
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  resolved="$(git rev-parse --verify "$SOURCE_REF^{commit}" 2>/dev/null || true)"
+  if [[ "$resolved" != "$SOURCE_REF" ]]; then
+    printf 'Le commit source %s est introuvable dans ce dépôt.\n' "$SOURCE_REF" >&2
+    exit 1
+  fi
+  if ! git diff --quiet "$SOURCE_REF" -- packaging/agent \
+    || [[ -n "$(git ls-files --others --exclude-standard packaging/agent)" ]]; then
+    printf 'packaging/agent diffère du commit source %s; publication refusée.\n' "$SOURCE_REF" >&2
+    exit 1
+  fi
+fi
+
 if [[ ! -s frontend/dist/index.html ]]; then
   printf 'frontend/dist absent: lancez « npm ci && npm run build » dans frontend/.\n' >&2
   exit 1
@@ -55,6 +81,7 @@ install -m 0644 README.md LICENSE "$TREE/"
 # The version travels inside the archive: onionpi-update refuses an archive
 # whose VERSION disagrees with the file name it downloaded.
 printf '%s\n' "$VERSION" >"$TREE/VERSION"
+printf '%s\n' "$SOURCE_REF" >"$TREE/SOURCE_REF"
 chmod 0755 "$TREE"/packaging/*.sh "$TREE"/packaging/assets/*.sh 2>/dev/null || true
 
 # Bookworm uses CPython 3.11 and Trixie uses 3.13. Both arm64 wheelhouses are

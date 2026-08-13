@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import secrets
+import subprocess
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -88,6 +90,7 @@ class Settings:
     session_secret: str
     storage_reserve_bytes: int
     version: str
+    source_ref: str
 
     @property
     def allowed_origins(self) -> set[str]:
@@ -274,6 +277,48 @@ def _installed_version(project_root: Path) -> str:
     return __version__
 
 
+def _installed_source_ref(project_root: Path) -> str:
+    """Return the immutable Git commit carrying this release's node agent.
+
+    Signed release archives carry ``SOURCE_REF`` beside ``VERSION``. A source
+    checkout has no generated file, so development falls back to its current
+    Git commit. Only a full SHA is accepted: this value is interpolated into a
+    command an operator pastes into a shell, and a branch or tag could move
+    after the command was displayed.
+    """
+    candidates: list[tuple[str, str]] = []
+    configured = os.getenv("ONIONPI_SOURCE_REF", "").strip()
+    if configured:
+        candidates.append(("ONIONPI_SOURCE_REF", configured))
+    for candidate in (project_root / "SOURCE_REF", project_root.parent / "SOURCE_REF"):
+        try:
+            value = candidate.read_text(encoding="ascii").splitlines()[0].strip()
+        except (OSError, UnicodeError, IndexError):
+            continue
+        if value:
+            candidates.append((str(candidate), value))
+
+    for origin, value in candidates:
+        cleaned = value.lower()
+        if re.fullmatch(r"[0-9a-f]{40}", cleaned):
+            return cleaned
+        logger.warning("Référence source invalide dans %s: valeur ignorée.", origin)
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(project_root), "rev-parse", "--verify", "HEAD^{commit}"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    checkout_ref = result.stdout.strip().lower()
+    return checkout_ref if re.fullmatch(r"[0-9a-f]{40}", checkout_ref) else ""
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
@@ -352,6 +397,7 @@ def get_settings() -> Settings:
             "ONIONPI_STORAGE_RESERVE_BYTES", 512 * 1024**2, 0, 64 * 1024**3
         ),
         version=_installed_version(project_root),
+        source_ref=_installed_source_ref(project_root),
     )
     settings.ensure_directories()
     if settings.demo_mode and Path("/etc/onionpi/onionpi.env").exists():

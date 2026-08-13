@@ -196,9 +196,11 @@ sortie directe. Rien n’y est mesuré une seconde fois.
    copier la commande GitHub. L’archive hors ligne reste disponible.
 3. Lancer la commande sur la machine. Elle vérifie l’empreinte du bootstrap,
    qui vérifie à son tour que l’agent téléchargé est exactement celui que
-   l’appliance exécute, puis installe Tor et Python, publie le service onion
-   avec autorisation client, crée les services natifs (systemd, launchd ou
-   tâches Windows) et affiche l’adresse `.onion`.
+   l’appliance exécute. Les deux téléchargements ciblent le SHA Git immuable
+   inscrit dans la publication, et non `main` ou un tag supposé. Elle installe
+   ensuite Tor et Python, publie le service onion avec autorisation client,
+   crée les services natifs (systemd, launchd ou tâches Windows) et affiche
+   l’adresse `.onion`.
 4. Coller le jeton à l’invite. Il n’est pas dans la commande : un argument est
    lisible dans `ps` par tout compte de la machine et reste dans l’historique
    du shell, et l’installation est justement le moment où une machine neuve

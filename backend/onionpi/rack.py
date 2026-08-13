@@ -115,6 +115,7 @@ ID_PATTERN = re.compile(r"^[0-9a-f]{16}$")
 RACK_ID_PATTERN = re.compile(r"^[0-9a-f]{8}$")
 CABLE_ID_PATTERN = re.compile(r"^[0-9a-f]{12}$")
 COUNTRY_PATTERN = re.compile(r"^[A-Z]{2}$")
+SOURCE_REF_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 NODE_KINDS = ("local", "remote")
 EGRESS_MODES = ("tor-only", "direct")
@@ -132,10 +133,7 @@ POLICY_VERSION = 2
 # (see `bundle_digest`). Credentials never travel here at all — they are typed
 # into the installer's prompt, so they are not in the URL, in a referrer, in
 # the download host's logs, nor in the node's process list.
-NODE_BOOTSTRAP_ROOT = (
-    "https://raw.githubusercontent.com/0xmagicduck/onionpi-router/"
-    "main/packaging/agent"
-)
+NODE_BOOTSTRAP_REPOSITORY = "https://raw.githubusercontent.com/0xmagicduck/onionpi-router"
 
 #: Left open on the node's own INPUT chain whatever else the policy says.
 #: Locking an operator out of a machine on the other side of the planet, with
@@ -308,14 +306,14 @@ class RackManager:
         on_event: Callable[[str, str], None] | None = None,
         wifi_view: Callable[[], list[dict[str, Any]]] | None = None,
         agent_dir: Path | None = None,
-        release_ref: str = "",
+        source_ref: str = "",
     ) -> None:
         self.database = database
         self.key_path = key_path
         # The reviewed copy of the installer this appliance was released with:
         # what the enrolment command pins the GitHub download to.
         self.agent_dir = agent_dir
-        self.release_ref = release_ref
+        self.source_ref = source_ref if SOURCE_REF_PATTERN.fullmatch(source_ref) else ""
         self.guard = guard
         self.access = access
         self.client = client
@@ -1643,6 +1641,12 @@ class RackManager:
         if lock["enabled"]:
             trustees = ",".join(lock["trustees"])
             lock_argument = f" --mesh-lock {lock['threshold']}:{trustees}"
+        # Generated while the signed appliance archive is assembled. VERSION
+        # may name an edge build whose stable tag does not exist; this full SHA
+        # always names the commit containing the bundled agent.
+        source_ref = (
+            self.source_ref if SOURCE_REF_PATTERN.fullmatch(self.source_ref) else ""
+        )
         # `--token-stdin` is what keeps the shared secret out of the node's
         # process list and shell history: the installer reads it from the
         # terminal. The operator pastes it at the prompt from the field the
@@ -1659,14 +1663,18 @@ class RackManager:
         pins = ""
         if digest:
             pins = f" --bundle-digest {digest}"
-            if self.release_ref:
-                pins += f" --ref {self.release_ref}"
         else:
             # No reviewed copy to compare against — say so in the command
             # rather than let the installer quietly trust the download.
             pins = " --unverified-bundle"
-        posix_bootstrap = f"{NODE_BOOTSTRAP_ROOT}/bootstrap-node.sh"
-        windows_bootstrap = f"{NODE_BOOTSTRAP_ROOT}/bootstrap-node.ps1"
+        if source_ref:
+            pins += f" --ref {source_ref}"
+        bootstrap_ref = source_ref or "main"
+        bootstrap_root = (
+            f"{NODE_BOOTSTRAP_REPOSITORY}/{bootstrap_ref}/packaging/agent"
+        )
+        posix_bootstrap = f"{bootstrap_root}/bootstrap-node.sh"
+        windows_bootstrap = f"{bootstrap_root}/bootstrap-node.ps1"
         # Downloaded to a file rather than piped into a shell, because the
         # bytes have to be weighed before they run. `mktemp` rather than a
         # fixed /tmp name: on a shared machine a predictable path in a
@@ -1692,13 +1700,13 @@ class RackManager:
         windows_pins = ""
         if digest:
             windows_pins = f" -BundleDigest {digest}"
-            if self.release_ref:
-                windows_pins += f" -Ref {self.release_ref}"
         else:
             windows_pins = " -UnverifiedBundle"
         windows_lock = ""
         if lock["enabled"]:
             windows_lock = f" -MeshLock {lock['threshold']}:{','.join(lock['trustees'])}"
+        if source_ref:
+            windows_pins += f" -Ref {source_ref}"
         commands["windows"] = (
             "$p=Join-Path $env:TEMP 'onionpi-node.ps1'; "
             "Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue; "
@@ -1720,6 +1728,7 @@ class RackManager:
             "coordinator_key": coordinator,
             "mesh_lock": lock,
             "bundle_digest": digest,
+            "source_ref": source_ref,
             "onion": str(row["onion"] or ""),
             # Kept for clients predating the multi-platform installer.
             "command": commands["linux"],

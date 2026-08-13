@@ -7,6 +7,17 @@ if [[ ! "$RELEASE_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]{0,39}$ || "$RELEASE_VER
   printf 'Version de publication invalide: %s\n' "$RELEASE_VERSION" >&2
   exit 1
 fi
+SOURCE_REF=""
+if [[ -r "$PROJECT_ROOT/SOURCE_REF" ]]; then
+  SOURCE_REF="$(head -n 1 "$PROJECT_ROOT/SOURCE_REF" | tr -d '[:space:]')"
+elif command -v git >/dev/null 2>&1; then
+  SOURCE_REF="$(git -C "$PROJECT_ROOT" rev-parse --verify 'HEAD^{commit}' 2>/dev/null || true)"
+fi
+SOURCE_REF="$(printf '%s' "$SOURCE_REF" | tr '[:upper:]' '[:lower:]')"
+if [[ -n "$SOURCE_REF" && ! "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+  printf 'Référence source invalide: %s\n' "$SOURCE_REF" >&2
+  exit 1
+fi
 INSTALL_BASE="/opt/onionpi"
 RELEASES_ROOT="$INSTALL_BASE/releases"
 RELEASE_DIR="$RELEASES_ROOT/$RELEASE_VERSION"
@@ -536,6 +547,10 @@ if [[ ! -f "$RELEASE_DIR/.complete" ]]; then
   install -m 0644 "$PROJECT_ROOT/README.md" "$RELEASE_STAGE/README.md"
   install -m 0644 "$PROJECT_ROOT/docs/mesh.md" "$RELEASE_STAGE/docs/mesh.md"
   install -m 0644 "$PROJECT_ROOT/VERSION" "$RELEASE_STAGE/VERSION"
+  if [[ -n "$SOURCE_REF" ]]; then
+    printf '%s\n' "$SOURCE_REF" >"$RELEASE_STAGE/SOURCE_REF"
+    chmod 0644 "$RELEASE_STAGE/SOURCE_REF"
+  fi
   : >"$RELEASE_STAGE/.complete"
   chown -R root:root "$RELEASE_STAGE"
   # mktemp keeps the staging root private (0700). The final release root must
