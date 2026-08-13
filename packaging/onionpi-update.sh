@@ -584,6 +584,8 @@ download_release() {
     || die "Archive incomplète: packaging/install.sh manquant"
   [[ -s "$STAGING_ROOT/$version/frontend/dist/index.html" ]] \
     || die "Archive incomplète: interface web absente"
+  [[ -s "$STAGING_ROOT/$version/docs/mesh.md" ]] \
+    || die "Archive incomplète: documentation du maillage absente"
   [[ -s "$STAGING_ROOT/$version/wheelhouse/SHA256SUMS" ]] \
     || die "Archive incomplète: wheelhouse signé absent"
   [[ -s "$STAGING_ROOT/$version/SBOM.spdx.json" ]] \

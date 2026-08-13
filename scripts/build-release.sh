@@ -37,6 +37,8 @@ rsync -a --exclude '__pycache__' --exclude '.pytest_cache' --exclude 'tests' \
 rsync -a packaging "$TREE/"
 install -d "$TREE/frontend"
 rsync -a frontend/dist "$TREE/frontend/"
+install -d "$TREE/docs"
+install -m 0644 docs/mesh.md "$TREE/docs/mesh.md"
 install -m 0644 README.md LICENSE "$TREE/"
 # The version travels inside the archive: onionpi-update refuses an archive
 # whose VERSION disagrees with the file name it downloaded.
