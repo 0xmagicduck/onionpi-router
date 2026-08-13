@@ -35,9 +35,11 @@ raccourcis.
   coupe-circuit, horloge et code de récupération ;
 - récupération locale limitée dans le temps par `onionpi-maintenance`, sans
   SSH ni porte de secours permanente ;
-- baie virtuelle : clients du Wi-Fi et machines distantes rangés dans des
-  emplacements avec ports et câbles persistants, plus un agent installable qui
-  force la sortie d’un VPS par Tor et n’est joignable que par service onion ;
+- centre de données virtuel : clients du Wi-Fi et machines distantes rangés
+  dans des emplacements avec ports et câbles persistants, plan de contrôle du
+  fabric Tor, inventaire des services, alertes et test groupé des agents ;
+  l’agent installable force la sortie d’un VPS par Tor et n’est joignable que
+  par service onion ;
 - nouvelle identité Tor depuis l’interface ;
 - ponts et transports enfichables (Snowflake, obfs4, meek) avec bascule
   automatique quand Tor est bloqué ;

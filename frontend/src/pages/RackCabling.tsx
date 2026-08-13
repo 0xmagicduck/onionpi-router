@@ -23,7 +23,9 @@ export function RackCableLayer({
     if (!canvas) return
     const measure = () => {
       const frame = canvas.getBoundingClientRect()
-      setSize({ width: Math.max(1, frame.width), height: Math.max(1, frame.height) })
+      const width = Math.max(1, canvas.scrollWidth)
+      const height = Math.max(1, canvas.scrollHeight)
+      setSize({ width, height })
       setLines(
         cables.flatMap((cable) => {
           const source = canvas.querySelector<HTMLElement>(
@@ -35,11 +37,14 @@ export function RackCableLayer({
           if (!source || !target) return []
           const a = source.getBoundingClientRect()
           const b = target.getBoundingClientRect()
-          const x1 = a.left - frame.left + a.width / 2
-          const y1 = a.top - frame.top + a.height / 2
-          const x2 = b.left - frame.left + b.width / 2
-          const y2 = b.top - frame.top + b.height / 2
-          const gutter = Math.min(frame.width - 18, Math.max(x1, x2) + 74)
+          // The elevation scrolls independently from the page. Adding the
+          // current offsets turns viewport coordinates back into stable rack
+          // coordinates, so patch leads do not move away from their ports.
+          const x1 = a.left - frame.left + canvas.scrollLeft + a.width / 2
+          const y1 = a.top - frame.top + canvas.scrollTop + a.height / 2
+          const x2 = b.left - frame.left + canvas.scrollLeft + b.width / 2
+          const y2 = b.top - frame.top + canvas.scrollTop + b.height / 2
+          const gutter = Math.min(width - 18, Math.max(x1, x2) + 74)
           return [{
             ...cable,
             path: `M ${x1} ${y1} C ${gutter} ${y1}, ${gutter} ${y2}, ${x2} ${y2}`,
@@ -62,6 +67,7 @@ export function RackCableLayer({
   return (
     <svg
       className="rack-cable-layer"
+      style={{ width: size.width, height: size.height }}
       viewBox={`0 0 ${size.width} ${size.height}`}
       preserveAspectRatio="none"
       aria-hidden="true"
