@@ -50,6 +50,7 @@ export function RackNodeSheet({
   notify: (message: string, error?: boolean) => void
 }) {
   const [rules, setRules] = useState<RackNodeRules>({ ...DEFAULT_RULES, ...node.rules })
+  const [portsInput, setPortsInput] = useState(node.rules.keep_open_ports.join(', '))
   const [identity, setIdentity] = useState({
     name: node.name,
     role: node.role,
@@ -201,7 +202,11 @@ export function RackNodeSheet({
                   disabled={busy}
                   onChange={(event) => {
                     const profile = profiles.find((item) => item.id === event.target.value)
-                    if (profile) setRules({ ...DEFAULT_RULES, ...profile.rules })
+                    if (profile) {
+                      const next = { ...DEFAULT_RULES, ...profile.rules }
+                      setRules(next)
+                      setPortsInput(next.keep_open_ports.join(', '))
+                    }
                   }}
                 >
                   <option value="">Reprendre un profil…</option>
@@ -247,18 +252,10 @@ export function RackNodeSheet({
                 <label>
                   Ports laissés joignables
                   <input
-                    value={rules.keep_open_ports.join(', ')}
+                    value={portsInput}
                     placeholder="22"
-                    onChange={(event) =>
-                      setRules({
-                        ...rules,
-                        keep_open_ports: event.target.value
-                          .split(/[\s,;]+/)
-                          .map((item) => Number(item))
-                          .filter((item) => Number.isInteger(item) && item > 0 && item <= 65535)
-                          .slice(0, 8),
-                      })
-                    }
+                    inputMode="numeric"
+                    onChange={(event) => setPortsInput(event.target.value)}
                   />
                 </label>
                 <p className="prose">
@@ -272,7 +269,12 @@ export function RackNodeSheet({
               <button
                 className="button button-primary button-small"
                 disabled={busy}
-                onClick={() => void act(() => api.setRackNodeRules(node.id, rules), 'Règles enregistrées')}
+                onClick={() => {
+                  const nextRules = { ...rules, keep_open_ports: parsePorts(portsInput) }
+                  setRules(nextRules)
+                  setPortsInput(nextRules.keep_open_ports.join(', '))
+                  void act(() => api.setRackNodeRules(node.id, nextRules), 'Règles enregistrées')
+                }}
               >
                 Appliquer les règles
               </button>
@@ -498,6 +500,14 @@ export function RackNodeSheet({
       </div>
     </Modal>
   )
+}
+
+function parsePorts(value: string): number[] {
+  return value
+    .split(/[\s,;]+/)
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0 && item <= 65535)
+    .slice(0, 8)
 }
 
 /* Le graphique est tracé dans un espace fixe étiré à la largeur de la fiche :

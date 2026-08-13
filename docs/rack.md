@@ -117,6 +117,22 @@ le nom que leur bail annonce — nettoyé comme un nom saisi à la main. L’ajo
 crée aucun droit : l’appareil était déjà routé par la Pi, il gagne une fiche,
 un emplacement et une feuille de règles qui ne bloque rien.
 
+## Ports et câbles
+
+Chaque façade expose des ports logiques : un client local en a un, une machine
+distante en a quatre. Le mode **Câbler** relie deux ports libres appartenant à
+des nœuds installés dans la même baie. La liaison, sa couleur et sa vitesse
+sont persistées dans SQLite et réapparaissent après un redémarrage.
+
+Une prise ne peut porter qu’un câble. Déplacer un de ses deux appareils hors
+de la baie supprime automatiquement la liaison : l’interface ne laisse donc
+jamais un câble fantôme pointer vers une autre baie. L’état affiché est dérivé
+de celui des deux nœuds (`online`, `warning` ou `offline`).
+
+Ce câblage est un inventaire visuel, pas une nouvelle voie d’application : il
+ne touche ni nftables, ni NetworkManager, ni la politique de l’agent. Les
+règles de chaque fiche restent l’unique source de vérité de l’accès réseau.
+
 ## Disponibilité et alertes
 
 Chaque sondage d’un nœud distant laisse une lecture : horodatage, réponse ou
@@ -164,9 +180,10 @@ Tous sous `/api/v1/rack`, session obligatoire, jeton CSRF pour chaque mutation.
 
 | Méthode | Chemin | Rôle |
 | --- | --- | --- |
-| `GET` | `/rack` | Topologie complète : baies, nœuds, profils, appareils proposés, alertes, limites, verbes |
+| `GET` | `/rack` | Topologie complète : baies, nœuds, câbles, profils, appareils proposés, alertes, limites, verbes |
 | `POST` | `/rack/racks`, `/racks/update`, `/racks/remove` | Cadres |
 | `POST` | `/rack/racks/arrange` | Rangement des U, sans changer l’ordre |
+| `POST` | `/rack/cables`, `/cables/remove` | Création et retrait d’une liaison entre deux ports libres |
 | `POST` | `/rack/nodes`, `/nodes/update`, `/nodes/remove` | Fiches |
 | `POST` | `/rack/nodes/move` | Emplacement, avec échange si le U est pris |
 | `POST` | `/rack/nodes/rules` | Feuille de règles, poussée dans la foulée |

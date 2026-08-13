@@ -18,8 +18,13 @@ type Props = {
 
 export function Modal({ title, description, icon, tone = 'default', onClose, children, actions, onSubmit }: Props) {
   const dialogRef = useRef<HTMLFormElement>(null)
+  const onCloseRef = useRef(onClose)
   const titleId = useId()
   const descriptionId = useId()
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -31,7 +36,7 @@ export function Modal({ title, description, icon, tone = 'default', onClose, chi
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (event.key !== 'Tab') return
@@ -51,7 +56,7 @@ export function Modal({ title, description, icon, tone = 'default', onClose, chi
       document.body.style.overflow = overflow
       previous?.focus?.()
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>

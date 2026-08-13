@@ -131,6 +131,82 @@
         "title": "BulkRequest",
         "type": "object"
       },
+      "CableCreateRequest": {
+        "properties": {
+          "color": {
+            "default": "cyan",
+            "pattern": "^(amber|cyan|violet|green)$",
+            "title": "Color",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "maxLength": 48,
+            "title": "Label",
+            "type": "string"
+          },
+          "rack_id": {
+            "maxLength": 8,
+            "minLength": 8,
+            "title": "Rack Id",
+            "type": "string"
+          },
+          "source_node_id": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Source Node Id",
+            "type": "string"
+          },
+          "source_port": {
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Source Port",
+            "type": "integer"
+          },
+          "speed": {
+            "default": "1-gbps",
+            "pattern": "^(100-mbps|1-gbps|10-gbps)$",
+            "title": "Speed",
+            "type": "string"
+          },
+          "target_node_id": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Target Node Id",
+            "type": "string"
+          },
+          "target_port": {
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Target Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rack_id",
+          "source_node_id",
+          "source_port",
+          "target_node_id",
+          "target_port"
+        ],
+        "title": "CableCreateRequest",
+        "type": "object"
+      },
+      "CableIdRequest": {
+        "properties": {
+          "id": {
+            "maxLength": 12,
+            "minLength": 12,
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CableIdRequest",
+        "type": "object"
+      },
       "CircumventionRequest": {
         "properties": {
           "country": {
@@ -3031,6 +3107,122 @@
           }
         },
         "summary": "Agent Bundle"
+      }
+    },
+    "/api/v1/rack/cables": {
+      "post": {
+        "operationId": "create_cable_api_v1_rack_cables_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CableCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Cable Api V1 Rack Cables Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Cable"
+      }
+    },
+    "/api/v1/rack/cables/remove": {
+      "post": {
+        "operationId": "remove_cable_api_v1_rack_cables_remove_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CableIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Cable Api V1 Rack Cables Remove Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Cable"
       }
     },
     "/api/v1/rack/nodes": {
