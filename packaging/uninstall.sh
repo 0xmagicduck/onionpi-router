@@ -85,6 +85,9 @@ for file in /etc/issue /etc/issue.net /etc/motd; do
 done
 rm -f /etc/nginx/sites-enabled/onionpi /etc/nginx/sites-available/onionpi
 rm -f /etc/modprobe.d/onionpi-regdom.conf
+# Emporte aussi packaging/agent/, recopié dans chaque version par install.sh.
+# L'agent installé sur un nœud distant, lui, se retire depuis ce nœud:
+# packaging/agent/README.md en donne la commande.
 rm -rf /opt/onionpi
 rm -rf /var/cache/onionpi-update /var/lib/onionpi-privileged
 

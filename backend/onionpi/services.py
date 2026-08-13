@@ -21,9 +21,11 @@ from .config import Settings
 from .database import Database
 from .maintenance import MaintenanceWindow
 from .netcontrol import DeviceGuard, DnsFilter
+from .nodeclient import NodeClient
 from .onboarding import OnboardingManager
 from .onion import OnionService
 from .policy import TorPolicy
+from .rack import RackManager
 from .relay import SnowflakeRelay
 from .system import MetricsSampler
 from .tor_control import TorController
@@ -52,6 +54,7 @@ class AppServices:
     access_point: AccessPointBackend
     maintenance: MaintenanceWindow
     onboarding: OnboardingManager
+    rack: RackManager
 
 
 def build_app_services(settings: Settings) -> AppServices:
@@ -98,6 +101,17 @@ def build_app_services(settings: Settings) -> AppServices:
         database,
         settings.dns_block_path,
         agent,
+        socks_port=settings.tor_socks_port,
+        demo_mode=settings.demo_mode,
+        on_event=lambda kind, message: database.add_activity(kind, message),
+    )
+    rack = RackManager(
+        database,
+        settings.rack_key_path,
+        device_guard,
+        access,
+        NodeClient(settings.tor_socks_port, settings.demo_mode),
+        tor,
         demo_mode=settings.demo_mode,
         on_event=lambda kind, message: database.add_activity(kind, message),
     )
@@ -158,4 +172,5 @@ def build_app_services(settings: Settings) -> AppServices:
         access_point=access_point,
         maintenance=maintenance,
         onboarding=onboarding,
+        rack=rack,
     )

@@ -342,6 +342,93 @@ export type FilesPayload = {
   storage: { used: number; total: number; free: number }
 }
 
+/** `pending` = un nœud distant sans adresse onion, donc jamais interrogé.
+ *  `unknown` = une adresse connue mais aucune réponse encore reçue. */
+export type RackNodeStatus = 'online' | 'offline' | 'isolated' | 'pending' | 'unknown'
+
+export type RackEgress = 'tor-only' | 'direct'
+
+export type RackNodeRules = {
+  access: 'allowed' | 'blocked'
+  egress: RackEgress
+  exit_country: string
+  /** Ports laissés joignables en entrée. Le 22 y est par défaut. */
+  keep_open_ports: number[]
+  schedule: DeviceSchedule | null
+}
+
+/** Dernière lecture renvoyée par l’agent du nœud. Vide tant qu’il n’a pas
+ *  répondu: aucun champ n’est garanti. */
+export type RackNodeState = {
+  agent_version?: string
+  hostname?: string
+  uptime_seconds?: number
+  load?: number
+  memory_percent?: number
+  storage_percent?: number
+  tor?: { connected: boolean; bootstrap: number; summary?: string; exit_country?: string }
+  policy?: { digest: string; egress: string; applied_at: number }
+  services?: Array<{ id: string; label: string; active: boolean }>
+}
+
+export type RackNode = {
+  id: string
+  rack_id: string
+  /** 0 = hors baie: le nœud existe et garde ses règles, sans emplacement. */
+  position: number
+  kind: 'local' | 'remote'
+  name: string
+  role: string
+  mac: string
+  onion: string
+  address: string
+  agent_port: number
+  token_epoch: number
+  client_auth: boolean
+  notes: string
+  rules: RackNodeRules
+  state: RackNodeState
+  last_seen: number
+  last_error: string
+  created_at: number
+  updated_at: number
+  /** Empreinte de la politique voulue. Comparée à celle que le nœud applique. */
+  policy_digest: string
+  status: RackNodeStatus
+}
+
+export type RackFrame = {
+  id: string
+  name: string
+  location: string
+  units: number
+  created_at: number
+  occupied: number
+}
+
+export type RackPayload = {
+  racks: RackFrame[]
+  nodes: RackNode[]
+  limits: { max_racks: number; max_nodes: number; max_units: number; default_units: number }
+  verbs: Array<{ id: string; label: string }>
+  egress_modes: RackEgress[]
+  now: number
+}
+
+/** Rendu à la demande, jamais stocké: le jeton est dérivé du secret de baie. */
+export type RackEnrollment = {
+  node_id: string
+  name: string
+  token: string
+  token_epoch: number
+  agent_port: number
+  client_public_key: string
+  onion: string
+  command: string
+}
+
+export type RackJournal = { unit: string; lines: string[] }
+
 export type ChatMessage = {
   id: number
   author: string

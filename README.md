@@ -35,6 +35,9 @@ raccourcis.
   coupe-circuit, horloge et code de récupération ;
 - récupération locale limitée dans le temps par `onionpi-maintenance`, sans
   SSH ni porte de secours permanente ;
+- baie virtuelle : clients du Wi-Fi et machines distantes rangés dans des
+  emplacements, avec un agent installable qui force la sortie d’un VPS par Tor
+  et n’est joignable que par service onion ;
 - nouvelle identité Tor depuis l’interface ;
 - ponts et transports enfichables (Snowflake, obfs4, meek) avec bascule
   automatique quand Tor est bloqué ;
@@ -314,6 +317,39 @@ ordinaire qui arrive et repart tout seul.
 Les règles font partie de l’export de configuration et des sauvegardes
 chiffrées. Une pause n’y est jamais restaurée : c’est une intention de quelques
 minutes, pas un réglage.
+
+## Baie virtuelle
+
+La page **Baie virtuelle** donne à l’ensemble une vue de salle machine : des
+cadres, des emplacements numérotés en U, une machine par emplacement, une
+feuille de règles par machine. Elle couvre deux mondes.
+
+- **Les clients du Wi-Fi** y entrent tels quels. Les ranger dans une baie
+  n’ajoute aucun chemin d’application : leurs règles sont déléguées au
+  pare-feu et à l’ordonnanceur d’accès qui les appliquaient déjà.
+- **Les machines distantes** — un VPS, un serveur, une seconde Pi — y entrent
+  en installant l’agent de [`packaging/agent/`](packaging/agent/README.md).
+  L’agent n’écoute que sur sa boucle locale ; ce qui le rend joignable est son
+  propre service onion v3, chiffré pour la clé de cette baie. **Aucun port
+  n’est ouvert sur Internet**, et la baie le joint à travers Tor.
+
+Sur un nœud distant, la règle par défaut interdit toute sortie qui ne passe pas
+par le démon Tor : une application qui ignore le proxy échoue au lieu de fuir.
+Le port 22 reste joignable en entrée, parce qu’un serveur distant sans porte
+d’entrée ne se répare pas. L’isolement d’un nœud lui retire en plus l’accès au
+port SOCKS local : il reste administrable, il ne sort plus.
+
+Deux verrous indépendants protègent le canal — l’autorisation client onion, qui
+rend l’adresse irrésoluble sans la clé, et une signature HMAC sur chaque appel,
+avec refus des horodatages décalés et des nonces déjà vus. **Aucun secret n’est
+stocké** : le jeton d’un nœud et sa clé sont dérivés d’un secret maître, de
+l’identifiant du nœud et d’un compteur ; renouveler un nœud est un incrément, et
+un export de configuration ne contient aucune identification de nœud.
+
+Les verbes qu’un nœud accepte sont énumérés et revalidés des deux côtés : état,
+nouvelle identité Tor, redémarrage de Tor, lecture d’un journal d’une unité
+listée, redémarrage. Il n’y a pas de shell distant, et aucun verbe ne prend de
+commande en argument. Détails dans [`docs/rack.md`](docs/rack.md).
 
 ## Audit de sécurité
 

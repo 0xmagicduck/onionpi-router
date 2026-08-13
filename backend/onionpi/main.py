@@ -21,6 +21,7 @@ from .routes.files import MULTIPART_ENVELOPE_BYTES, upload_body_budget
 from .routes.files import create_router as create_files_router
 from .routes.network import create_router as create_network_router
 from .routes.protection import create_router as create_protection_router
+from .routes.rack import create_router as create_rack_router
 from .routes.updates import MAX_IMPORTED_DEVICES as MAX_IMPORTED_DEVICES
 from .routes.updates import create_router as create_updates_router
 from .services import AppServices, build_app_services
@@ -44,6 +45,7 @@ dns_filter = services.dns_filter
 tor_policy = services.tor_policy
 onion = services.onion
 updates = services.updates
+rack = services.rack
 speedtest_limiter = services.speedtest_limiter
 
 
@@ -97,9 +99,16 @@ async def lifespan(_: FastAPI):
     # before the first tick so a device paused before a reboot stays paused.
     access.start()
     await asyncio.to_thread(onion.ensure_published)
+    rack.seed_demo()
+    # Tor holds client authorisations in memory: a restart of the daemon, or of
+    # this service, leaves every authorised node unresolvable until they are
+    # taught again. Same reason the onion service is republished just above.
+    await asyncio.to_thread(rack.republish_client_auth)
+    rack.start()
     if not database.activities(1):
         database.add_activity("secure", "OnionPi est prêt")
     yield
+    rack.stop()
     access.stop()
     tor_policy.stop()
     circumvention.stop()
@@ -170,6 +179,7 @@ for router_factory in (
     create_auth_router,
     create_protection_router,
     create_network_router,
+    create_rack_router,
     create_updates_router,
     create_files_router,
     create_chat_router,

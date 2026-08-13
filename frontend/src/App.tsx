@@ -26,6 +26,7 @@ import { LoginPage } from './pages/LoginPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { ChatPage, LogsPage, NetworkPage, SettingsPage, TorPage } from './pages/OperationalPages'
 import { ProtectionPage } from './pages/ProtectionPage'
+import { RackPage } from './pages/RackPage'
 import { SecurityPage } from './pages/SecurityPage'
 import { useTheme, type ThemePreference } from './theme'
 import type { Session } from './types'
@@ -307,6 +308,7 @@ function AuthenticatedApp({ session, theme, onThemeChange, onSignedOut }: ShellP
               onRefresh={() => void devices.refresh()}
             />
           )}
+          {page === 'rack' && <RackPage notify={notify} />}
           {page === 'protection' && (
             <ProtectionPage
               status={status.data}

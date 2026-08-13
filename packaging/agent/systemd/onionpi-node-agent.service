@@ -1,0 +1,39 @@
+[Unit]
+Description=Agent OnionPi du nœud (baie virtuelle)
+Documentation=https://github.com/0xmagicduck/onionpi-router
+After=network-online.target tor.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=onionpi-node
+Group=onionpi-node
+# Le compte du démon Tor, pour lire le cookie du port de contrôle, et le journal
+# système pour répondre au verbe « journal ». Rien d'autre.
+SupplementaryGroups=debian-tor systemd-journal
+EnvironmentFile=/etc/onionpi-node/agent.env
+ExecStart=/usr/bin/python3 /usr/local/lib/onionpi-node/onionpi-node-agent.py
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/onionpi-node
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# Un nœud n'est pas une charge de travail: ces bornes le disent au noyau.
+MemoryMax=128M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

@@ -410,6 +410,40 @@ class TorController:
         except TorControlError:
             return False
 
+    # ------------------------------------------------- onion client auth --
+
+    ONION_ADDRESS_PATTERN = re.compile(r"^[a-z2-7]{56}$")
+    BASE64_KEY_PATTERN = re.compile(r"^[A-Za-z0-9+/]{43}=$")
+
+    def add_client_auth(self, address: str, private_key: str) -> None:
+        """Registers the key that decrypts an authorised service's descriptor.
+
+        This is the client side of what `add_onion` does for a service: a rack
+        node publishes its descriptor for this appliance alone, and without the
+        key here Tor cannot even resolve the address.
+
+        Deliberately not `Flags=Permanent`: keeping the credential in Tor's
+        memory means no new directory has to be writable by both the web
+        account and Tor. The caller re-registers at startup, exactly as it
+        re-publishes the onion service.
+        """
+        if self.demo_mode:
+            return
+        if not self.ONION_ADDRESS_PATTERN.fullmatch(address):
+            raise TorControlError("Adresse onion invalide")
+        if not self.BASE64_KEY_PATTERN.fullmatch(private_key):
+            raise TorControlError("Clé d’autorisation client invalide")
+        with self._lock:
+            self._command(f"ONION_CLIENT_AUTH_ADD {address} x25519:{private_key}")
+
+    def remove_client_auth(self, address: str) -> None:
+        if self.demo_mode:
+            return
+        if not self.ONION_ADDRESS_PATTERN.fullmatch(address):
+            raise TorControlError("Adresse onion invalide")
+        with self._lock:
+            self._command(f"ONION_CLIENT_AUTH_REMOVE {address}")
+
     # ------------------------------------------------------------ speed test --
 
     def speed_test(self, sample_bytes: int = 3_000_000, timeout: float = 90.0) -> dict[str, Any]:

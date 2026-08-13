@@ -55,6 +55,47 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- Virtual rack. A rack is a drawing: what it is worth comes from the rules
+-- attached to the machines placed in it, which are applied by the firewall
+-- here and by the node agent over there.
+CREATE TABLE IF NOT EXISTS racks (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    location TEXT NOT NULL DEFAULT '',
+    units INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rack_nodes (
+    id TEXT PRIMARY KEY,
+    rack_id TEXT REFERENCES racks(id) ON DELETE SET NULL,
+    -- 0 means "not racked yet": the node exists and keeps its rules, it simply
+    -- occupies no slot. Partial index below leaves those rows unconstrained.
+    position INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT '',
+    mac TEXT NOT NULL DEFAULT '',
+    onion TEXT NOT NULL DEFAULT '',
+    agent_port INTEGER NOT NULL DEFAULT 9080,
+    token_epoch INTEGER NOT NULL DEFAULT 1,
+    client_auth INTEGER NOT NULL DEFAULT 0,
+    notes TEXT NOT NULL DEFAULT '',
+    rules TEXT NOT NULL DEFAULT '{}',
+    state TEXT NOT NULL DEFAULT '{}',
+    last_seen INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+-- Two machines in one slot is not a topology anyone can reason about, and the
+-- move endpoint would have to trust its own bookkeeping to prevent it. SQLite
+-- enforces it instead: a bad move fails, it does not overwrite.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rack_nodes_slot
+    ON rack_nodes(rack_id, position) WHERE rack_id IS NOT NULL AND position > 0;
+CREATE INDEX IF NOT EXISTS idx_rack_nodes_rack ON rack_nodes(rack_id);
 """
 
 MAX_MESSAGES = 2_000
@@ -75,7 +116,45 @@ COUNT_QUERIES = {
     "messages": "SELECT count(*) FROM messages",
     "activity": "SELECT count(*) FROM activity",
     "settings": "SELECT count(*) FROM settings",
+    "racks": "SELECT count(*) FROM racks",
+    "rack_nodes": "SELECT count(*) FROM rack_nodes",
 }
+
+#: Mutable columns of a rack node, in the order both statements below use.
+#: Nothing outside this tuple is ever written from a caller's dictionary.
+RACK_NODE_DEFAULTS: dict[str, Any] = {
+    "rack_id": None,
+    "position": 0,
+    "name": "",
+    "role": "",
+    "mac": "",
+    "onion": "",
+    "agent_port": 9080,
+    "token_epoch": 1,
+    "client_auth": 0,
+    "notes": "",
+    "rules": "{}",
+    "state": "{}",
+    "last_seen": 0,
+    "last_error": "",
+}
+RACK_NODE_FIELDS = tuple(RACK_NODE_DEFAULTS)
+# Written out rather than assembled: a statement built by a loop is a statement
+# a reader has to reconstruct, and `test_rack` checks the two lists agree.
+RACK_NODE_INSERT = """
+INSERT INTO rack_nodes(
+    id, kind, created_at, updated_at,
+    rack_id, position, name, role, mac, onion, agent_port, token_epoch,
+    client_auth, notes, rules, state, last_seen, last_error
+) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+"""
+RACK_NODE_UPDATE = """
+UPDATE rack_nodes SET
+    rack_id=?, position=?, name=?, role=?, mac=?, onion=?, agent_port=?,
+    token_epoch=?, client_auth=?, notes=?, rules=?, state=?, last_seen=?,
+    last_error=?, updated_at=?
+WHERE id=?
+"""
 
 
 class Database:
@@ -300,6 +379,130 @@ class Database:
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (key[:64], json.dumps(value), int(time.time())),
             )
+
+    # -------------------------------------------------------------- rack ---
+
+    def racks(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT id,name,location,units,created_at FROM racks ORDER BY created_at, id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def rack(self, rack_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT id,name,location,units,created_at FROM racks WHERE id=?", (rack_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def create_rack(self, rack_id: str, name: str, location: str, units: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO racks(id,name,location,units,created_at) VALUES(?,?,?,?,?)",
+                (rack_id, name, location, units, int(time.time())),
+            )
+
+    def update_rack(self, rack_id: str, name: str, location: str, units: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE racks SET name=?, location=?, units=? WHERE id=?",
+                (name, location, units, rack_id),
+            )
+
+    def delete_rack(self, rack_id: str) -> None:
+        """Removes the frame. Its machines survive, unracked and still ruled."""
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE rack_nodes SET rack_id=NULL, position=0, updated_at=? WHERE rack_id=?",
+                (int(time.time()), rack_id),
+            )
+            connection.execute("DELETE FROM racks WHERE id=?", (rack_id,))
+
+    def rack_nodes(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM rack_nodes ORDER BY rack_id IS NULL, rack_id, position, name"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def rack_node(self, node_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM rack_nodes WHERE id=?", (node_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def create_rack_node(self, node_id: str, kind: str, values: dict[str, Any]) -> None:
+        now = int(time.time())
+        row = {**RACK_NODE_DEFAULTS, **{
+            field: values[field] for field in RACK_NODE_FIELDS if field in values
+        }}
+        with self.connect() as connection:
+            connection.execute(RACK_NODE_INSERT, (node_id, kind, now, now, *row.values()))
+
+    def update_rack_node(self, node_id: str, values: dict[str, Any]) -> None:
+        """Replaces the mutable half of one node row.
+
+        Every column is written every time, from a fixed statement: a partial
+        update assembled from the caller's keys would put a name this module
+        does not choose into an SQL string, which is exactly the shape of
+        mistake a rack full of remote machines cannot afford.
+        """
+        with self.connect() as connection:
+            current = connection.execute(
+                "SELECT * FROM rack_nodes WHERE id=?", (node_id,)
+            ).fetchone()
+            if current is None:
+                return
+            row = {
+                field: values[field] if field in values else current[field]
+                for field in RACK_NODE_FIELDS
+            }
+            connection.execute(
+                RACK_NODE_UPDATE, (*row.values(), int(time.time()), node_id)
+            )
+
+    def delete_rack_node(self, node_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute("DELETE FROM rack_nodes WHERE id=?", (node_id,))
+
+    def move_rack_node(self, node_id: str, rack_id: str | None, position: int) -> str:
+        """Places one node, swapping with whatever already holds the slot.
+
+        The whole exchange is one transaction, and the occupant is parked at
+        position 0 first: the partial unique index ignores that row, so the
+        intermediate state never trips the constraint it exists to enforce.
+        """
+        now = int(time.time())
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT rack_id, position FROM rack_nodes WHERE id=?", (node_id,)
+            ).fetchone()
+            if row is None:
+                return ""
+            occupant = None
+            if rack_id and position > 0:
+                occupant = connection.execute(
+                    "SELECT id FROM rack_nodes WHERE rack_id=? AND position=? AND id<>?",
+                    (rack_id, position, node_id),
+                ).fetchone()
+            if occupant is not None:
+                connection.execute(
+                    "UPDATE rack_nodes SET position=0, updated_at=? WHERE id=?",
+                    (now, occupant["id"]),
+                )
+            connection.execute(
+                "UPDATE rack_nodes SET rack_id=?, position=?, updated_at=? WHERE id=?",
+                (rack_id, position, now, node_id),
+            )
+            if occupant is not None:
+                connection.execute(
+                    "UPDATE rack_nodes SET rack_id=?, position=?, updated_at=? WHERE id=?",
+                    (row["rack_id"], row["position"], now, occupant["id"]),
+                )
+                return str(occupant["id"])
+        return ""
 
     def activities(self, limit: int = 10) -> list[dict[str, Any]]:
         with self.connect() as connection:

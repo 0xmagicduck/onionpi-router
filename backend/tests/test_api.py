@@ -766,3 +766,96 @@ def test_exported_configuration_carries_the_access_rules() -> None:
         assert restored.status_code == 200
         assert any("règle" in item for item in restored.json()["applied"])
         assert client.get("/api/v1/devices/access").json()["rules"][0]["alias"] == "Tablette"
+
+
+def test_rack_is_authenticated_and_every_mutation_needs_the_csrf_header() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        assert client.get("/api/v1/rack").status_code == 401
+        csrf = login(client)
+
+        assert client.post(
+            "/api/v1/rack/racks", json={"name": "Baie", "location": "", "units": 6}
+        ).status_code == 403
+
+        created = client.post(
+            "/api/v1/rack/racks",
+            json={"name": "Baie de test", "location": "Bureau", "units": 6},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert created.status_code == 200
+        rack_id = next(
+            item["id"] for item in created.json()["racks"] if item["name"] == "Baie de test"
+        )
+
+        node = client.post(
+            "/api/v1/rack/nodes",
+            json={
+                "kind": "remote",
+                "name": "vps-test",
+                "role": "Relais",
+                "onion": f"{'d' * 56}.onion",
+                "agent_port": 9080,
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert node.status_code == 200
+        node_id = node.json()["id"]
+        assert node.json()["address"].endswith(".onion")
+
+        assert client.post(
+            "/api/v1/rack/nodes/move",
+            json={"id": node_id, "rack_id": rack_id, "position": 9},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 400
+
+        moved = client.post(
+            "/api/v1/rack/nodes/move",
+            json={"id": node_id, "rack_id": rack_id, "position": 3},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert moved.status_code == 200
+        placed = next(item for item in moved.json()["nodes"] if item["id"] == node_id)
+        assert placed["position"] == 3
+
+        bundle = client.post(
+            "/api/v1/rack/nodes/enrollment",
+            json={"id": node_id},
+            headers={"X-CSRF-Token": csrf},
+        ).json()
+        assert bundle["token"] not in client.get("/api/v1/rack").text
+        assert f"--node {node_id}" in bundle["command"]
+
+        refused = client.post(
+            "/api/v1/rack/nodes/action",
+            json={"id": node_id, "verb": "apply-policy"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert refused.status_code == 400
+
+        assert client.post(
+            "/api/v1/rack/nodes/remove",
+            json={"id": node_id},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 200
+        assert client.post(
+            "/api/v1/rack/racks/remove",
+            json={"id": rack_id},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 200
+
+
+def test_rack_agent_bundle_is_a_readable_archive() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        assert client.get("/api/v1/rack/agent-bundle").status_code == 401
+        login(client)
+        response = client.get("/api/v1/rack/agent-bundle")
+        assert response.status_code == 200
+        import io
+        import tarfile
+
+        with tarfile.open(fileobj=io.BytesIO(response.content), mode="r:gz") as archive:
+            names = archive.getnames()
+        assert "onionpi-node-agent/install-node-agent.sh" in names
+        assert "onionpi-node-agent/onionpi-node-agent.py" in names
