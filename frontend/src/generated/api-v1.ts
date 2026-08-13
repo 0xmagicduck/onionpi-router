@@ -29,6 +29,21 @@ export type BulkRequest = {
   "profile_id"?: string
 }
 
+export type CableCreateRequest = {
+  "rack_id": string
+  "source_node_id": string
+  "source_port": number
+  "target_node_id": string
+  "target_port": number
+  "label"?: string
+  "color"?: string
+  "speed"?: string
+}
+
+export type CableIdRequest = {
+  "id": string
+}
+
 export type CircumventionRequest = {
   "mode": string
   "transport"?: string

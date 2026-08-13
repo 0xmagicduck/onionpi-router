@@ -422,12 +422,35 @@ export type RackProfile = {
   updated_at: number
 }
 
+export type RackCableColor = 'amber' | 'cyan' | 'violet' | 'green'
+export type RackCableStatus = 'online' | 'warning' | 'offline'
+
+/** A logical patch lead between two faceplate ports. It documents topology;
+ *  enforcement remains owned by each node's rule sheet. */
+export type RackCable = {
+  id: string
+  rack_id: string
+  source_node_id: string
+  source_port: number
+  source_name: string
+  target_node_id: string
+  target_port: number
+  target_name: string
+  label: string
+  color: RackCableColor
+  speed: '100-mbps' | '1-gbps' | '10-gbps'
+  status: RackCableStatus
+  created_at: number
+  updated_at: number
+}
+
 /** Un client du Wi-Fi qui n’est pas encore un nœud de la baie. */
 export type RackDiscovered = { mac: string; name: string; ip: string; online: boolean }
 
 export type RackPayload = {
   racks: RackFrame[]
   nodes: RackNode[]
+  cables: RackCable[]
   profiles: RackProfile[]
   discovered: RackDiscovered[]
   health: { warnings: number; failures: number }
@@ -437,6 +460,7 @@ export type RackPayload = {
     max_units: number
     default_units: number
     max_profiles: number
+    max_cables: number
   }
   verbs: Array<{ id: string; label: string }>
   egress_modes: RackEgress[]

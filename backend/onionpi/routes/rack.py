@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 
 from ..nodeclient import NodeError
 from ..rack import (
+    CABLE_COLORS,
+    CABLE_SPEEDS,
     HISTORY_WINDOW_SECONDS,
     MAX_DISCOVERED,
     MAX_NODES,
@@ -38,6 +40,21 @@ class RackIdRequest(BaseModel):
 
 class NodeIdRequest(BaseModel):
     id: str = Field(min_length=16, max_length=16)
+
+
+class CableCreateRequest(BaseModel):
+    rack_id: str = Field(min_length=8, max_length=8)
+    source_node_id: str = Field(min_length=16, max_length=16)
+    source_port: int = Field(ge=1, le=8)
+    target_node_id: str = Field(min_length=16, max_length=16)
+    target_port: int = Field(ge=1, le=8)
+    label: str = Field(default="", max_length=48)
+    color: str = Field(default="cyan", pattern=f"^({'|'.join(CABLE_COLORS)})$")
+    speed: str = Field(default="1-gbps", pattern=f"^({'|'.join(CABLE_SPEEDS)})$")
+
+
+class CableIdRequest(BaseModel):
+    id: str = Field(min_length=12, max_length=12)
 
 
 class NodeScheduleRequest(BaseModel):
@@ -157,6 +174,28 @@ def create_router(context: RouteContext) -> APIRouter:
         payload: RackIdRequest, _: dict[str, Any] = Depends(csrf_session)
     ) -> dict[str, Any]:
         return await guard(rack.delete_rack, payload.id)
+
+    @router.post("/api/v1/rack/cables")
+    async def create_cable(
+        payload: CableCreateRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(
+            rack.create_cable,
+            payload.rack_id,
+            payload.source_node_id,
+            payload.source_port,
+            payload.target_node_id,
+            payload.target_port,
+            payload.label,
+            payload.color,
+            payload.speed,
+        )
+
+    @router.post("/api/v1/rack/cables/remove")
+    async def remove_cable(
+        payload: CableIdRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(rack.delete_cable, payload.id)
 
     @router.post("/api/v1/rack/nodes")
     async def create_node(

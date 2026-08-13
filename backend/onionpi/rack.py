@@ -65,6 +65,8 @@ MAX_UNITS = 42
 DEFAULT_UNITS = 12
 MAX_KEEP_OPEN_PORTS = 8
 MAX_PROFILES = 12
+MAX_CABLES = 128
+MAX_CABLE_PORTS = 8
 
 #: The Wi-Fi reading behind a local node's line — its address, whether it
 #: answers, what it moved. Reading it means asking the kernel for its neighbour
@@ -97,11 +99,14 @@ ROLE_PATTERN = re.compile(r"^[\w .'’()\-]{0,32}$", re.UNICODE)
 ONION_PATTERN = re.compile(r"^[a-z2-7]{56}$")
 ID_PATTERN = re.compile(r"^[0-9a-f]{16}$")
 RACK_ID_PATTERN = re.compile(r"^[0-9a-f]{8}$")
+CABLE_ID_PATTERN = re.compile(r"^[0-9a-f]{12}$")
 COUNTRY_PATTERN = re.compile(r"^[A-Z]{2}$")
 
 NODE_KINDS = ("local", "remote")
 EGRESS_MODES = ("tor-only", "direct")
 ACCESS_MODES = ("allowed", "blocked")
+CABLE_COLORS = ("amber", "cyan", "violet", "green")
+CABLE_SPEEDS = ("100-mbps", "1-gbps", "10-gbps")
 
 POLICY_VERSION = 1
 
@@ -121,6 +126,10 @@ def _node_id() -> str:
 
 def _rack_id() -> str:
     return secrets.token_hex(4)
+
+
+def _cable_id() -> str:
+    return secrets.token_hex(6)
 
 
 def clean_name(value: str, field: str = "Nom") -> str:
@@ -486,9 +495,14 @@ class RackManager:
                     "alerts": sum(len(node["alerts"]) for node in members),
                 }
             )
+        node_index = {node["id"]: node for node in nodes}
+        cables = [
+            self._cable_view(row, node_index) for row in self.database.rack_cables()
+        ]
         return {
             "racks": racks,
             "nodes": nodes,
+            "cables": cables,
             "profiles": self.profiles(),
             "discovered": self._discovered(nodes, wifi),
             "health": {
@@ -511,6 +525,7 @@ class RackManager:
                 "max_units": MAX_UNITS,
                 "default_units": DEFAULT_UNITS,
                 "max_profiles": MAX_PROFILES,
+                "max_cables": MAX_CABLES,
             },
             "verbs": [
                 {"id": verb, "label": AGENT_VERBS[verb][0]} for verb in MANUAL_VERBS
@@ -602,6 +617,98 @@ class RackManager:
                 raise RackError("Cette baie n’existe pas.")
             self.database.delete_rack(rack_id)
         self._notify("secure", f"Baie « {rack['name']} » supprimée")
+        return self.snapshot()
+
+    # ------------------------------------------------------------ cables --
+
+    @staticmethod
+    def _port_count(row: dict[str, Any]) -> int:
+        """Ports drawn on a faceplate: clients have one, servers four."""
+        return 1 if str(row.get("kind", "")) == "local" else 4
+
+    @staticmethod
+    def _cable_view(
+        row: dict[str, Any], nodes: dict[str, dict[str, Any]]
+    ) -> dict[str, Any]:
+        source = nodes.get(str(row["source_node_id"]))
+        target = nodes.get(str(row["target_node_id"]))
+        statuses = {str((source or {}).get("status", "offline")), str((target or {}).get("status", "offline"))}
+        if statuses & {"offline", "pending", "unknown"}:
+            status = "offline"
+        elif "isolated" in statuses:
+            status = "warning"
+        else:
+            status = "online"
+        return {
+            **row,
+            "source_name": str((source or {}).get("name", "Nœud retiré")),
+            "target_name": str((target or {}).get("name", "Nœud retiré")),
+            "status": status,
+        }
+
+    def create_cable(
+        self,
+        rack_id: str,
+        source_node_id: str,
+        source_port: int,
+        target_node_id: str,
+        target_port: int,
+        label: str = "",
+        color: str = "cyan",
+        speed: str = "1-gbps",
+    ) -> dict[str, Any]:
+        if not RACK_ID_PATTERN.fullmatch(rack_id):
+            raise RackError("Identifiant de baie invalide.")
+        if source_node_id == target_node_id:
+            raise RackError("Un câble doit relier deux appareils différents.")
+        if color not in CABLE_COLORS:
+            raise RackError("Couleur de câble invalide.")
+        if speed not in CABLE_SPEEDS:
+            raise RackError("Vitesse de câble invalide.")
+        with self._lock:
+            if len(self.database.rack_cables()) >= MAX_CABLES:
+                raise RackError(f"{MAX_CABLES} câbles au maximum.")
+            source = self._require_node(source_node_id)
+            target = self._require_node(target_node_id)
+            for node in (source, target):
+                if str(node["rack_id"] or "") != rack_id or not int(node["position"] or 0):
+                    raise RackError("Les deux appareils doivent occuper cette baie.")
+            for port, node in ((source_port, source), (target_port, target)):
+                if not 1 <= int(port) <= min(self._port_count(node), MAX_CABLE_PORTS):
+                    raise RackError("Port réseau invalide pour cet appareil.")
+            occupied = {
+                (str(cable[side + "_node_id"]), int(cable[side + "_port"]))
+                for cable in self.database.rack_cables()
+                for side in ("source", "target")
+            }
+            if (source_node_id, source_port) in occupied or (target_node_id, target_port) in occupied:
+                raise RackError("Un de ces ports est déjà câblé.")
+            title = " ".join(label.split())[:48] or f"{source['name']} ↔ {target['name']}"
+            self.database.create_rack_cable(
+                _cable_id(),
+                {
+                    "rack_id": rack_id,
+                    "source_node_id": source_node_id,
+                    "source_port": int(source_port),
+                    "target_node_id": target_node_id,
+                    "target_port": int(target_port),
+                    "label": title,
+                    "color": color,
+                    "speed": speed,
+                },
+            )
+        self._notify("device", f"Câble « {title} » ajouté")
+        return self.snapshot()
+
+    def delete_cable(self, cable_id: str) -> dict[str, Any]:
+        if not CABLE_ID_PATTERN.fullmatch(cable_id):
+            raise RackError("Identifiant de câble invalide.")
+        with self._lock:
+            cable = self.database.rack_cable(cable_id)
+            if cable is None:
+                raise RackError("Ce câble n’existe pas.")
+            self.database.delete_rack_cable(cable_id)
+        self._notify("device", f"Câble « {cable['label']} » retiré")
         return self.snapshot()
 
     def arrange_rack(self, rack_id: str) -> dict[str, Any]:
@@ -1285,8 +1392,10 @@ class RackManager:
             ("remote", "vps-stockage", "Sauvegardes chiffrées", 3, "c" * 56),
             ("local", "Portable Camille", "Poste de travail", 5, ""),
         ]
+        demo_node_ids: list[str] = []
         for kind, name, role, position, onion in demo:
             node_id = _node_id()
+            demo_node_ids.append(node_id)
             self.database.create_rack_node(
                 node_id,
                 kind,
@@ -1319,6 +1428,25 @@ class RackManager:
                 # this, every node would claim its rules were still pending.
                 self.push_policy(node_id)
                 self._seed_history(node_id)
+        if len(demo_node_ids) == 3:
+            self.create_cable(
+                rack_id,
+                demo_node_ids[0],
+                1,
+                demo_node_ids[1],
+                1,
+                "Relais vers stockage",
+                "cyan",
+            )
+            self.create_cable(
+                rack_id,
+                demo_node_ids[0],
+                2,
+                demo_node_ids[2],
+                1,
+                "Accès poste de travail",
+                "green",
+            )
         for label, rules in (
             ("Poste de travail", {}),
             ("Serveur exposé", {"keep_open_ports": [22, 443]}),

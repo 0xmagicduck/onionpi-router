@@ -15,6 +15,7 @@ import type {
   OnionState,
   OnboardingState,
   RackBulkAnswer,
+  RackCableColor,
   RackEnrollment,
   RackHistory,
   RackNode,
@@ -139,6 +140,18 @@ export const api = {
     request<RackPayload>('/api/v1/rack/racks/update', { method: 'POST', body: JSON.stringify(body) }),
   removeRack: (id: string) =>
     request<RackPayload>('/api/v1/rack/racks/remove', { method: 'POST', body: JSON.stringify({ id }) }),
+  createRackCable: (body: {
+    rack_id: string
+    source_node_id: string
+    source_port: number
+    target_node_id: string
+    target_port: number
+    label?: string
+    color: RackCableColor
+    speed: '100-mbps' | '1-gbps' | '10-gbps'
+  }) => request<RackPayload>('/api/v1/rack/cables', { method: 'POST', body: JSON.stringify(body) }),
+  removeRackCable: (id: string) =>
+    request<RackPayload>('/api/v1/rack/cables/remove', { method: 'POST', body: JSON.stringify({ id }) }),
   createRackNode: (body: {
     kind: 'local' | 'remote'
     name: string

@@ -1,8 +1,9 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDownUp,
   Ban,
+  Cable,
   CircleSlash,
   Laptop,
   Plus,
@@ -18,9 +19,11 @@ import {
 import { api } from '../api'
 import { ConfirmDialog, Modal } from '../components/Modal'
 import { Panel } from '../components/Panel'
-import { Badge, EmptyState, LoadingPanel, StatCard } from '../components/ui'
+import { Badge, EmptyState, LoadingPanel } from '../components/ui'
 import type {
   RackBulkAnswer,
+  RackCable,
+  RackCableColor,
   RackEgress,
   RackFrame,
   RackNode,
@@ -29,6 +32,7 @@ import type {
   RackPayload,
   RackProfile,
 } from '../types'
+import { CableInspector, RackCableLayer } from './RackCabling'
 import { RackNodeSheet } from './RackNodeSheet'
 import { DEFAULT_RULES, EGRESS_LABELS, STATUS } from './rackShared'
 
@@ -65,6 +69,8 @@ const FILTERS: Array<{ id: 'all' | 'alert' | RackNodeStatus; label: string }> = 
   { id: 'isolated', label: 'Isolés' },
 ]
 
+const CABLE_COLORS: RackCableColor[] = ['cyan', 'green', 'violet', 'amber']
+
 export function RackPage({ notify }: Props) {
   const [payload, setPayload] = useState<RackPayload>()
   const [error, setError] = useState('')
@@ -79,6 +85,10 @@ export function RackPage({ notify }: Props) {
   const [filter, setFilter] = useState<'all' | 'alert' | RackNodeStatus>('all')
   const [selection, setSelection] = useState<string[]>([])
   const [bulkProfile, setBulkProfile] = useState('')
+  const [cabling, setCabling] = useState(false)
+  const [cableStart, setCableStart] = useState<{ nodeId: string; port: number }>()
+  const [selectedCable, setSelectedCable] = useState('')
+  const rackCanvasRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     try {
@@ -103,6 +113,15 @@ export function RackPage({ notify }: Props) {
   const discovered = payload?.discovered ?? []
   const current = racks.find((rack) => rack.id === selectedRack) ?? racks[0]
   const detail = nodes.find((node) => node.id === openNode)
+  const currentCables = useMemo(
+    () => (payload?.cables ?? []).filter((cable) => cable.rack_id === current?.id),
+    [current?.id, payload?.cables],
+  )
+
+  useEffect(() => {
+    setCableStart(undefined)
+    setSelectedCable('')
+  }, [current?.id])
 
   const matches = useCallback(
     (node: RackNode) => {
@@ -199,6 +218,59 @@ export function RackPage({ notify }: Props) {
         : [...previous, nodeId],
     )
 
+  const connectPort = async (nodeId: string, port: number) => {
+    if (!current || busy) return
+    const existing = cableAt(currentCables, nodeId, port)
+    if (existing) {
+      setSelectedCable(existing.id)
+      return
+    }
+    if (!cabling) setCabling(true)
+    if (!cableStart) {
+      setCableStart({ nodeId, port })
+      return
+    }
+    if (cableStart.nodeId === nodeId) {
+      notify('Choisissez un port sur un autre appareil', true)
+      return
+    }
+    setBusy(true)
+    try {
+      const next = await api.createRackCable({
+        rack_id: current.id,
+        source_node_id: cableStart.nodeId,
+        source_port: cableStart.port,
+        target_node_id: nodeId,
+        target_port: port,
+        color: CABLE_COLORS[currentCables.length % CABLE_COLORS.length],
+        speed: '1-gbps',
+      })
+      const previousIds = new Set(currentCables.map((cable) => cable.id))
+      const created = next.cables.find((cable) => !previousIds.has(cable.id))
+      setPayload(next)
+      setCableStart(undefined)
+      setSelectedCable(created?.id ?? '')
+      notify('Câble réseau ajouté')
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Câblage impossible', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeCable = async (id: string) => {
+    setBusy(true)
+    try {
+      setPayload(await api.removeRackCable(id))
+      if (selectedCable === id) setSelectedCable('')
+      notify('Câble retiré')
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Suppression impossible', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (!payload && !error) return <LoadingPanel height={360} label="Chargement de la baie" />
 
   return (
@@ -206,38 +278,40 @@ export function RackPage({ notify }: Props) {
       <div className="page-title">
         <h1>Baie virtuelle</h1>
         <p>
-          Une salle machine dessinée à votre échelle. Les clients du Wi-Fi et les machines
-          distantes — un VPS, un serveur — occupent des emplacements, portent des règles, et
-          sortent par Tor. Rien de ce qui est affiché ici n’est décoratif : une règle posée sur un
-          emplacement est appliquée par le pare-feu, ici ou là-bas.
+          Visualisez, organisez et câblez vos appareils. Les règles restent appliquées par
+          OnionPi et les agents distants ; les liaisons documentent votre topologie réseau.
         </p>
       </div>
 
       {error && <p className="global-warning" role="status">{error}</p>}
 
-      <div className="stat-grid">
-        <StatCard icon={ShieldCheck} label="Nœuds en ligne" value={counts.online} tone="good" />
-        <StatCard icon={CircleSlash} label="Nœuds isolés" value={counts.isolated} tone={counts.isolated ? 'warn' : undefined} />
-        <StatCard icon={Ban} label="Injoignables" value={counts.unreachable} tone={counts.unreachable ? 'bad' : undefined} />
-        <StatCard
-          icon={AlertTriangle}
-          label="Points d’attention"
-          value={(payload?.health.warnings ?? 0) + (payload?.health.failures ?? 0)}
-          tone={payload?.health.failures ? 'bad' : payload?.health.warnings ? 'warn' : undefined}
-          foot={`${racks.length} baie${racks.length > 1 ? 's' : ''} · ${nodes.length} nœud${nodes.length > 1 ? 's' : ''}`}
-        />
+      <div className="rack-summary" aria-label="État de la baie">
+        <RackSummaryItem icon={<ShieldCheck />} label="Nœuds en ligne" value={counts.online} tone="good" />
+        <RackSummaryItem icon={<CircleSlash />} label="Nœuds isolés" value={counts.isolated} tone={counts.isolated ? 'warn' : undefined} />
+        <RackSummaryItem icon={<Ban />} label="Injoignables" value={counts.unreachable} tone={counts.unreachable ? 'bad' : undefined} />
+        <RackSummaryItem icon={<AlertTriangle />} label="Points d’attention" value={(payload?.health.warnings ?? 0) + (payload?.health.failures ?? 0)} tone={payload?.health.failures ? 'bad' : payload?.health.warnings ? 'warn' : undefined} />
+        <button className="button button-primary rack-summary-add" onClick={() => setDrafting(true)}>
+          <Plus size={16} /> Ajouter un nœud
+        </button>
       </div>
 
       <Panel
-        title="Baies"
-        subtitle={current ? `${current.occupied} / ${current.units} U occupés` : undefined}
+        title={current?.name ?? 'Baies'}
+        subtitle={current ? `${current.location || 'Emplacement non précisé'} · ${current.occupied} / ${current.units} U occupés` : undefined}
         action={
           <div className="rack-toolbar">
+            <button
+              className={`button button-small ${cabling ? 'button-primary' : 'button-secondary'}`}
+              aria-pressed={cabling}
+              onClick={() => {
+                setCabling((value) => !value)
+                setCableStart(undefined)
+              }}
+            >
+              <Cable size={15} /> {cabling ? 'Quitter le câblage' : 'Câbler'}
+            </button>
             <button className="button button-small button-secondary" onClick={() => setEditingRack('new')}>
               <Plus size={14} /> Nouvelle baie
-            </button>
-            <button className="button button-small button-primary" onClick={() => setDrafting(true)}>
-              <Plus size={14} /> Ajouter un nœud
             </button>
           </div>
         }
@@ -303,74 +377,100 @@ export function RackPage({ notify }: Props) {
         )}
 
         {current && (
-          <>
-            <div className="rack-frame-head">
-              <span className="muted">{current.location || 'Emplacement non précisé'}</span>
-              <div className="rack-actions">
-                <button
-                  className="button button-small button-ghost"
-                  disabled={busy || !current.occupied}
-                  onClick={() =>
-                    void run(() => api.arrangeRack(current.id), 'Baie rangée : les U sont contigus')
-                  }
-                >
-                  <ArrowDownUp size={14} /> Ranger
-                </button>
-                <button className="button button-small button-ghost" onClick={() => setEditingRack(current)}>
-                  Modifier la baie
-                </button>
-              </div>
-            </div>
-            <ol className="rack-elevation" aria-label={`Emplacements de ${current.name}`}>
-              {Array.from({ length: current.units }, (_, index) => index + 1).map((unit) => {
-                const node = nodes.find((item) => item.rack_id === current.id && item.position === unit)
-                const dimmed = Boolean(node && filtering && !matches(node))
-                return (
-                  <li
-                    key={unit}
-                    className={`rack-slot ${node ? 'rack-slot-filled' : ''} ${dimmed ? 'rack-slot-dimmed' : ''}`}
-                    onDragOver={(event) => {
-                      if (dragged) event.preventDefault()
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault()
-                      if (dragged) place(dragged, unit)
-                      setDragged('')
-                    }}
+          <div className="rack-workspace">
+            <div className="rack-canvas-column">
+              <div className="rack-frame-head">
+                <span><strong>{current.name}</strong><small>{current.location || 'Emplacement non précisé'} · {currentCables.length} connexion{currentCables.length > 1 ? 's' : ''}</small></span>
+                <div className="rack-actions">
+                  <button
+                    className="button button-small button-ghost"
+                    disabled={busy || !current.occupied}
+                    onClick={() =>
+                      void run(() => api.arrangeRack(current.id), 'Baie rangée : les U sont contigus')
+                    }
                   >
-                    <span className="rack-unit">U{unit}</span>
-                    {node ? (
-                      <NodeCard
-                        node={node}
-                        busy={busy}
-                        selected={selected.includes(node.id)}
-                        onSelect={() => toggle(node.id)}
-                        onOpen={() => setOpenNode(node.id)}
-                        onDragStart={() => setDragged(node.id)}
-                        onDragEnd={() => setDragged('')}
-                        onMove={(delta) => {
-                          const target = unit + delta
-                          if (target >= 1 && target <= current.units) place(node.id, target)
+                    <ArrowDownUp size={14} /> Ranger
+                  </button>
+                  <button className="button button-small button-ghost" onClick={() => setEditingRack(current)}>
+                    Modifier
+                  </button>
+                </div>
+              </div>
+              <div className={`rack-canvas ${cabling ? 'rack-canvas-cabling' : ''}`} ref={rackCanvasRef}>
+                <RackCableLayer
+                  canvasRef={rackCanvasRef}
+                  cables={currentCables}
+                  selected={selectedCable}
+                  onSelect={setSelectedCable}
+                />
+                <ol className="rack-elevation" aria-label={`Emplacements de ${current.name}`}>
+                  {Array.from({ length: current.units }, (_, index) => index + 1).map((unit) => {
+                    const node = nodes.find((item) => item.rack_id === current.id && item.position === unit)
+                    const dimmed = Boolean(node && filtering && !matches(node))
+                    return (
+                      <li
+                        key={unit}
+                        className={`rack-slot ${node ? 'rack-slot-filled' : ''} ${dimmed ? 'rack-slot-dimmed' : ''}`}
+                        onDragOver={(event) => {
+                          if (dragged) event.preventDefault()
                         }}
-                        onEject={() =>
-                          void run(
-                            () => api.moveRackNode({ id: node.id, rack_id: '', position: 0 }),
-                            `${node.name} retiré de la baie`,
-                          )
-                        }
-                      />
-                    ) : (
-                      <EmptySlot
-                        nodes={nodes.filter((item) => !item.rack_id || !item.position)}
-                        busy={busy}
-                        onPlace={(nodeId) => place(nodeId, unit)}
-                      />
-                    )}
-                  </li>
-                )
-              })}
-            </ol>
-          </>
+                        onDrop={(event) => {
+                          event.preventDefault()
+                          if (dragged) place(dragged, unit)
+                          setDragged('')
+                        }}
+                      >
+                        <span className="rack-unit rack-unit-left">U{unit}</span>
+                        {node ? (
+                          <NodeCard
+                            node={node}
+                            busy={busy}
+                            selected={selected.includes(node.id)}
+                            cables={currentCables}
+                            cabling={cabling}
+                            cableStart={cableStart}
+                            onPort={(port) => void connectPort(node.id, port)}
+                            onSelect={() => toggle(node.id)}
+                            onOpen={() => setOpenNode(node.id)}
+                            onDragStart={() => setDragged(node.id)}
+                            onDragEnd={() => setDragged('')}
+                            onMove={(delta) => {
+                              const target = unit + delta
+                              if (target >= 1 && target <= current.units) place(node.id, target)
+                            }}
+                            onEject={() =>
+                              void run(
+                                () => api.moveRackNode({ id: node.id, rack_id: '', position: 0 }),
+                                `${node.name} retiré de la baie`,
+                              )
+                            }
+                          />
+                        ) : (
+                          <EmptySlot
+                            nodes={nodes.filter((item) => !item.rack_id || !item.position)}
+                            busy={busy}
+                            onPlace={(nodeId) => place(nodeId, unit)}
+                          />
+                        )}
+                        <span className="rack-unit rack-unit-right">U{unit}</span>
+                      </li>
+                    )
+                  })}
+                </ol>
+              </div>
+              <CableLegend />
+            </div>
+            <CableInspector
+              cables={currentCables}
+              nodes={nodes}
+              selected={selectedCable}
+              cabling={cabling}
+              start={cableStart}
+              busy={busy}
+              onSelect={setSelectedCable}
+              onRemove={(id) => void removeCable(id)}
+            />
+          </div>
         )}
       </Panel>
 
@@ -553,6 +653,10 @@ function NodeCard({
   onDragEnd,
   onMove,
   onEject,
+  cables = [],
+  cabling = false,
+  cableStart,
+  onPort,
 }: {
   node: RackNode
   busy: boolean
@@ -563,9 +667,14 @@ function NodeCard({
   onDragEnd: () => void
   onMove?: (delta: number) => void
   onEject?: () => void
+  cables?: RackCable[]
+  cabling?: boolean
+  cableStart?: { nodeId: string; port: number }
+  onPort?: (port: number) => void
 }) {
   const status = STATUS[node.status]
   const worst = node.alerts.find((alert) => alert.level === 'danger') ?? node.alerts[0]
+  const ports = Array.from({ length: node.kind === 'local' ? 1 : 4 }, (_, index) => index + 1)
   return (
     <article
       className={`rack-node rack-node-${node.status} ${selected ? 'rack-node-selected' : ''}`}
@@ -598,6 +707,35 @@ function NodeCard({
           </small>
         </span>
       </button>
+      {onPort && (
+        <div className="rack-node-ports" aria-label={`Ports de ${node.name}`}>
+          {ports.map((port) => {
+            const cable = cableAt(cables, node.id, port)
+            const peer = cable
+              ? cable.source_node_id === node.id
+                ? `${cable.target_name} port ${cable.target_port}`
+                : `${cable.source_name} port ${cable.source_port}`
+              : ''
+            const starting = cableStart?.nodeId === node.id && cableStart.port === port
+            return (
+              <button
+                key={port}
+                type="button"
+                data-rack-port={`${node.id}:${port}`}
+                className={`rack-port ${cable ? `rack-port-connected rack-port-${cable.color} rack-port-${cable.status}` : ''} ${starting ? 'rack-port-start' : ''}`}
+                aria-label={cable ? `Port ${port} de ${node.name}, connecté à ${peer}` : `Port ${port} libre de ${node.name}`}
+                aria-pressed={starting || Boolean(cable)}
+                disabled={busy}
+                onClick={() => onPort(port)}
+              >
+                <span>{port}</span>
+                <i aria-hidden="true" />
+                {cabling && !cable && <em>libre</em>}
+              </button>
+            )
+          })}
+        </div>
+      )}
       {worst && (
         <p className={`rack-node-alert rack-alert-${worst.level}`} role="status">
           {worst.message}
@@ -620,6 +758,44 @@ function NodeCard({
         </div>
       )}
     </article>
+  )
+}
+
+function cableAt(cables: RackCable[], nodeId: string, port: number): RackCable | undefined {
+  return cables.find(
+    (cable) =>
+      (cable.source_node_id === nodeId && cable.source_port === port) ||
+      (cable.target_node_id === nodeId && cable.target_port === port),
+  )
+}
+
+function RackSummaryItem({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: number
+  tone?: 'good' | 'warn' | 'bad'
+}) {
+  return (
+    <span className={`rack-summary-item ${tone ? `rack-summary-${tone}` : ''}`}>
+      <i>{icon}</i><span><small>{label}</small><strong>{value}</strong></span>
+    </span>
+  )
+}
+
+function CableLegend() {
+  return (
+    <div className="rack-cable-legend" aria-label="Légende des câbles">
+      <strong>Légende des câbles</strong>
+      <span><i className="rack-legend-line rack-cable-bg-amber" /> Internet / WAN</span>
+      <span><i className="rack-legend-line rack-cable-bg-green" /> Réseau local</span>
+      <span><i className="rack-legend-line rack-cable-bg-cyan" /> Serveur</span>
+      <span><i className="rack-legend-line rack-cable-bg-violet" /> Gestion</span>
+    </div>
   )
 }
 
@@ -809,6 +985,7 @@ function ProfileEditor({
 }) {
   const [name, setName] = useState(profile?.name ?? '')
   const [rules, setRules] = useState<RackNodeRules>({ ...DEFAULT_RULES, ...profile?.rules })
+  const [portsInput, setPortsInput] = useState((profile?.rules.keep_open_ports ?? DEFAULT_RULES.keep_open_ports).join(', '))
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState('')
 
@@ -817,7 +994,11 @@ function ProfileEditor({
     setBusy(true)
     setFailure('')
     try {
-      await api.saveRackProfile({ id: profile?.id ?? '', name, rules })
+      await api.saveRackProfile({
+        id: profile?.id ?? '',
+        name,
+        rules: { ...rules, keep_open_ports: parseRackPorts(portsInput) },
+      })
       notify(profile ? 'Profil modifié' : 'Profil créé')
       await onSaved()
     } catch (reason) {
@@ -880,18 +1061,10 @@ function ProfileEditor({
         <label>
           Ports laissés joignables
           <input
-            value={rules.keep_open_ports.join(', ')}
+            value={portsInput}
             placeholder="22"
-            onChange={(event) =>
-              setRules({
-                ...rules,
-                keep_open_ports: event.target.value
-                  .split(/[\s,;]+/)
-                  .map((item) => Number(item))
-                  .filter((item) => Number.isInteger(item) && item > 0 && item <= 65535)
-                  .slice(0, 8),
-              })
-            }
+            inputMode="numeric"
+            onChange={(event) => setPortsInput(event.target.value)}
           />
         </label>
         <p className="prose">
@@ -902,6 +1075,14 @@ function ProfileEditor({
       </div>
     </Modal>
   )
+}
+
+function parseRackPorts(value: string): number[] {
+  return value
+    .split(/[\s,;]+/)
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0 && item <= 65535)
+    .slice(0, 8)
 }
 
 function RackEditor({

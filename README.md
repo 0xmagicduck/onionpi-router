@@ -36,8 +36,8 @@ raccourcis.
 - récupération locale limitée dans le temps par `onionpi-maintenance`, sans
   SSH ni porte de secours permanente ;
 - baie virtuelle : clients du Wi-Fi et machines distantes rangés dans des
-  emplacements, avec un agent installable qui force la sortie d’un VPS par Tor
-  et n’est joignable que par service onion ;
+  emplacements avec ports et câbles persistants, plus un agent installable qui
+  force la sortie d’un VPS par Tor et n’est joignable que par service onion ;
 - nouvelle identité Tor depuis l’interface ;
 - ponts et transports enfichables (Snowflake, obfs4, meek) avec bascule
   automatique quand Tor est bloqué ;

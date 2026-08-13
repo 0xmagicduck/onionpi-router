@@ -818,6 +818,55 @@ def test_rack_is_authenticated_and_every_mutation_needs_the_csrf_header() -> Non
         placed = next(item for item in moved.json()["nodes"] if item["id"] == node_id)
         assert placed["position"] == 3
 
+        peer = client.post(
+            "/api/v1/rack/nodes",
+            json={"kind": "remote", "name": "stockage-test", "onion": f"{'e' * 56}.onion"},
+            headers={"X-CSRF-Token": csrf},
+        ).json()
+        peer_id = peer["id"]
+        client.post(
+            "/api/v1/rack/nodes/move",
+            json={"id": peer_id, "rack_id": rack_id, "position": 4},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert client.post(
+            "/api/v1/rack/cables",
+            json={
+                "rack_id": rack_id,
+                "source_node_id": node_id,
+                "source_port": 1,
+                "target_node_id": peer_id,
+                "target_port": 1,
+                "color": "violet",
+                "speed": "1-gbps",
+            },
+        ).status_code == 403
+        cabled = client.post(
+            "/api/v1/rack/cables",
+            json={
+                "rack_id": rack_id,
+                "source_node_id": node_id,
+                "source_port": 1,
+                "target_node_id": peer_id,
+                "target_port": 1,
+                "color": "violet",
+                "speed": "1-gbps",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert cabled.status_code == 200
+        cable_id = next(
+            cable["id"]
+            for cable in cabled.json()["cables"]
+            if cable["source_node_id"] == node_id
+        )
+        uncabled = client.post(
+            "/api/v1/rack/cables/remove",
+            json={"id": cable_id},
+            headers={"X-CSRF-Token": csrf},
+        ).json()
+        assert cable_id not in {cable["id"] for cable in uncabled["cables"]}
+
         bundle = client.post(
             "/api/v1/rack/nodes/enrollment",
             json={"id": node_id},
@@ -836,6 +885,11 @@ def test_rack_is_authenticated_and_every_mutation_needs_the_csrf_header() -> Non
         assert client.post(
             "/api/v1/rack/nodes/remove",
             json={"id": node_id},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 200
+        assert client.post(
+            "/api/v1/rack/nodes/remove",
+            json={"id": peer_id},
             headers={"X-CSRF-Token": csrf},
         ).status_code == 200
         assert client.post(

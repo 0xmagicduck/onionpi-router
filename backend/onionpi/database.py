@@ -97,6 +97,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_rack_nodes_slot
     ON rack_nodes(rack_id, position) WHERE rack_id IS NOT NULL AND position > 0;
 CREATE INDEX IF NOT EXISTS idx_rack_nodes_rack ON rack_nodes(rack_id);
 
+-- Logical copper links drawn on the rack. They document topology and port
+-- occupancy; they never change nftables or the routing policy by themselves.
+CREATE TABLE IF NOT EXISTS rack_cables (
+    id TEXT PRIMARY KEY,
+    rack_id TEXT NOT NULL REFERENCES racks(id) ON DELETE CASCADE,
+    source_node_id TEXT NOT NULL REFERENCES rack_nodes(id) ON DELETE CASCADE,
+    source_port INTEGER NOT NULL,
+    target_node_id TEXT NOT NULL REFERENCES rack_nodes(id) ON DELETE CASCADE,
+    target_port INTEGER NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    color TEXT NOT NULL DEFAULT 'cyan',
+    speed TEXT NOT NULL DEFAULT '1-gbps',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    CHECK(source_node_id <> target_node_id),
+    CHECK(source_port BETWEEN 1 AND 8),
+    CHECK(target_port BETWEEN 1 AND 8)
+);
+CREATE INDEX IF NOT EXISTS idx_rack_cables_rack ON rack_cables(rack_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rack_cables_source
+    ON rack_cables(source_node_id, source_port);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rack_cables_target
+    ON rack_cables(target_node_id, target_port);
+
 -- A named rule sheet, applied to any number of nodes. It holds intent only:
 -- applying a profile writes the same rules the node form writes, through the
 -- same validation, so a profile can never express more than a node can.
@@ -145,6 +169,7 @@ COUNT_QUERIES = {
     "settings": "SELECT count(*) FROM settings",
     "racks": "SELECT count(*) FROM racks",
     "rack_nodes": "SELECT count(*) FROM rack_nodes",
+    "rack_cables": "SELECT count(*) FROM rack_cables",
     "rack_profiles": "SELECT count(*) FROM rack_profiles",
     "rack_samples": "SELECT count(*) FROM rack_samples",
 }
@@ -501,6 +526,52 @@ class Database:
         with self.connect() as connection:
             connection.execute("DELETE FROM rack_nodes WHERE id=?", (node_id,))
 
+    def rack_cables(self, rack_id: str = "") -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            if rack_id:
+                rows = connection.execute(
+                    "SELECT * FROM rack_cables WHERE rack_id=? ORDER BY created_at, id",
+                    (rack_id,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM rack_cables ORDER BY rack_id, created_at, id"
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def rack_cable(self, cable_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM rack_cables WHERE id=?", (cable_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def create_rack_cable(self, cable_id: str, values: dict[str, Any]) -> None:
+        now = int(time.time())
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO rack_cables("
+                "id,rack_id,source_node_id,source_port,target_node_id,target_port,"
+                "label,color,speed,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    cable_id,
+                    values["rack_id"],
+                    values["source_node_id"],
+                    values["source_port"],
+                    values["target_node_id"],
+                    values["target_port"],
+                    values.get("label", ""),
+                    values.get("color", "cyan"),
+                    values.get("speed", "1-gbps"),
+                    now,
+                    now,
+                ),
+            )
+
+    def delete_rack_cable(self, cable_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute("DELETE FROM rack_cables WHERE id=?", (cable_id,))
+
     def move_rack_node(self, node_id: str, rack_id: str | None, position: int) -> str:
         """Places one node, swapping with whatever already holds the slot.
 
@@ -515,6 +586,13 @@ class Database:
             ).fetchone()
             if row is None:
                 return ""
+            if str(row["rack_id"] or "") != str(rack_id or ""):
+                # A cable belongs to one frame. Moving an endpoint to another
+                # frame removes that drawing instead of leaving a ghost link.
+                connection.execute(
+                    "DELETE FROM rack_cables WHERE source_node_id=? OR target_node_id=?",
+                    (node_id, node_id),
+                )
             occupant = None
             if rack_id and position > 0:
                 occupant = connection.execute(

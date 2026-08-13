@@ -233,6 +233,45 @@ def test_the_same_machine_cannot_be_racked_twice(manager: RackManager) -> None:
         remote(manager, "doublon", ONION)
 
 
+def test_cables_persist_and_one_port_cannot_be_used_twice(manager: RackManager) -> None:
+    rack_id = manager.create_rack("Baie", "Salon", 6)["racks"][0]["id"]
+    source = remote(manager, "routeur", ONION)["id"]
+    target = remote(manager, "stockage", OTHER_ONION)["id"]
+    manager.move_node(source, rack_id, 1)
+    manager.move_node(target, rack_id, 2)
+
+    snapshot = manager.create_cable(
+        rack_id, source, 1, target, 2, "Sauvegardes", "violet", "1-gbps"
+    )
+    assert snapshot["cables"][0]["label"] == "Sauvegardes"
+    assert snapshot["cables"][0]["status"] in {"online", "offline"}
+    assert manager.database.stats()["rack_cables"] == 1
+
+    with pytest.raises(RackError, match="déjà câblé"):
+        manager.create_cable(rack_id, source, 1, target, 3)
+    with pytest.raises(RackError, match="deux appareils"):
+        manager.create_cable(rack_id, source, 2, source, 3)
+
+    cable_id = snapshot["cables"][0]["id"]
+    assert manager.delete_cable(cable_id)["cables"] == []
+
+
+def test_moving_a_node_to_another_rack_removes_its_old_cables(
+    manager: RackManager,
+) -> None:
+    manager.create_rack("Première", "", 4)
+    racks = manager.create_rack("Seconde", "", 4)["racks"]
+    first_rack = next(rack["id"] for rack in racks if rack["name"] == "Première")
+    second_rack = next(rack["id"] for rack in racks if rack["name"] == "Seconde")
+    source = remote(manager, "a", ONION)["id"]
+    target = remote(manager, "b", OTHER_ONION)["id"]
+    manager.move_node(source, first_rack, 1)
+    manager.move_node(target, first_rack, 2)
+    manager.create_cable(first_rack, source, 1, target, 1)
+
+    assert manager.move_node(source, second_rack, 1)["cables"] == []
+
+
 # ------------------------------------------------------------ enforcement ---
 
 
