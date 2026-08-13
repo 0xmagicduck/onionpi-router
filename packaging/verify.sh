@@ -7,6 +7,9 @@ if [[ -r /etc/onionpi/install.conf ]]; then
 fi
 GATEWAY_IP="${ONIONPI_GATEWAY_IP:-10.42.0.1}"
 WIFI_INTERFACE="${ONIONPI_WIFI_INTERFACE:-wlan0}"
+MESH_INTERFACE="${ONIONPI_MESH_INTERFACE:-}"
+MESH_DEVICE="${ONIONPI_MESH_DEVICE:-bat0}"
+MESH_ADDRESS="${ONIONPI_MESH_ADDRESS:-}"
 HTTP_WAIT_SECONDS="${ONIONPI_VERIFY_HTTP_WAIT_SECONDS:-0}"
 failed=0
 
@@ -23,6 +26,10 @@ printf 'Services\n'
 for service in tor dnsmasq onionpi-firewall onionpi-ap nginx onionpi NetworkManager; do
   if systemctl is-active --quiet "$service"; then ok "$service"; else fail "$service est arrêté"; fi
 done
+if [[ -n "$MESH_INTERFACE" ]]; then
+  systemctl is-active --quiet onionpi-mesh \
+    && ok 'onionpi-mesh' || fail 'onionpi-mesh est arrêté'
+fi
 
 printf 'Noyau\n'
 [[ "$(sysctl -n net.ipv4.ip_forward)" == "1" ]] \
@@ -41,6 +48,10 @@ if rules="$(nft list table inet onionpi 2>/dev/null)"; then
     && ok 'DNS client capturé localement' || fail 'redirection DNS absente'
   grep -qE "iifname \"$WIFI_INTERFACE\" counter packets [0-9]+ bytes [0-9]+ drop" <<<"$rules" \
     && ok 'coupe-circuit de routage en place' || fail 'coupe-circuit de routage absent'
+  if [[ -n "$MESH_INTERFACE" ]]; then
+    grep -qE "iifname \"$MESH_DEVICE\" counter packets [0-9]+ bytes [0-9]+ drop" <<<"$rules" \
+      && ok 'transit direct du mesh bloqué' || fail 'coupe-circuit mesh absent'
+  fi
   if grep -q 'set blocked_clients' <<<"$rules"; then
     blocked="$(grep -cE '^[0-9a-f]{2}(:[0-9a-f]{2}){5}$' /var/lib/onionpi/blocked-macs.txt 2>/dev/null || true)"
     blocked="${blocked:-0}"
@@ -59,6 +70,25 @@ if rules="$(nft list table inet onionpi 2>/dev/null)"; then
   fi
 else
   fail 'table nftables absente'
+fi
+
+if [[ -n "$MESH_INTERFACE" ]]; then
+  printf 'Maillage\n'
+  [[ -d "/sys/class/net/$MESH_DEVICE/mesh" ]] \
+    && ok "$MESH_DEVICE est piloté par batman-adv" || fail "$MESH_DEVICE est absent"
+  [[ -L "/sys/class/net/$MESH_INTERFACE/master" \
+      && "$(basename -- "$(readlink -f "/sys/class/net/$MESH_INTERFACE/master")")" == "$MESH_DEVICE" ]] \
+    && ok "$MESH_INTERFACE attachée à $MESH_DEVICE" || fail "$MESH_INTERFACE n’est pas attachée à $MESH_DEVICE"
+  mesh_ip="${MESH_ADDRESS%/*}"
+  ip -4 address show dev "$MESH_DEVICE" 2>/dev/null | grep -Fq "inet $MESH_ADDRESS" \
+    && ok "adresse mesh $MESH_ADDRESS" || fail "adresse mesh $MESH_ADDRESS absente"
+  mesh_peers="$(batctl -m "$MESH_DEVICE" originators 2>/dev/null \
+    | grep -cE '[0-9a-f]{2}(:[0-9a-f]{2}){5}' || true)"
+  mesh_peers="${mesh_peers:-0}"
+  (( mesh_peers > 0 )) \
+    && ok "$mesh_peers pair(s) mesh visible(s)" || warn 'aucun pair mesh visible'
+  ss -ltnH 2>/dev/null | grep -q "$mesh_ip:443" \
+    && ok "interface web en écoute sur $mesh_ip" || fail "HTTPS absent de $mesh_ip"
 fi
 
 printf 'Actions privilégiées\n'

@@ -47,8 +47,8 @@ const INSTALL_PLATFORMS: Array<{
   icon: typeof Terminal
 }> = [
   { id: 'linux', label: 'Linux', detail: 'Debian, Ubuntu et Raspberry Pi OS', icon: Terminal },
-  { id: 'macos', label: 'macOS', detail: 'Apple Silicon et Intel', icon: Apple },
-  { id: 'windows', label: 'Windows', detail: 'PowerShell administrateur', icon: Monitor },
+  { id: 'macos', label: 'macOS', detail: 'TCP et DNS transparents via Tor', icon: Apple },
+  { id: 'windows', label: 'Windows', detail: 'Agent distant, sortie directe', icon: Monitor },
 ]
 
 export function RackNodeSheet({
@@ -204,6 +204,9 @@ export function RackNodeSheet({
             {node.state.platform?.system && (
               <div><dt>Système</dt><dd>{node.state.platform.system} · {node.state.platform.machine}</dd></div>
             )}
+            {node.state.platform?.policy_mode && (
+              <div><dt>Routage</dt><dd>{node.state.platform.policy_mode}</dd></div>
+            )}
             <div><dt>Hôte</dt><dd className="mono">{node.state.hostname ?? '—'}</dd></div>
             <div><dt>Uptime</dt><dd>{formatUptime(node.state.uptime_seconds ?? 0)}</dd></div>
             <div><dt>Charge</dt><dd className="tabular">{node.state.load ?? '—'}</dd></div>
@@ -281,8 +284,9 @@ export function RackNodeSheet({
                   />
                 </label>
                 <p className="prose">
-                  En sortie « Tor uniquement », tout ce qui ne passe pas par Tor est jeté sur le
-                  nœud, <code>apt</code> compris. Gardez au moins un port joignable : un serveur
+                  « Tor uniquement » est complet sous Linux et transparent pour TCP/DNS sous
+                  macOS ; UDP/QUIC y reste bloqué. Windows refuse ce mode tant qu’un tunnel TUN
+                  vérifié n’est pas installé. Gardez au moins un port joignable : un serveur
                   distant sans porte d’entrée ne se répare pas.
                 </p>
               </>

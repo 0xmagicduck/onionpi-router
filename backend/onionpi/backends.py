@@ -56,6 +56,10 @@ class RaspberryPiAccessPointBackend:
     wifi_interface: str
     upstream_interface: str
     gateway_ip: str
+    mesh_interface: str = ""
+    mesh_device: str = "bat0"
+    mesh_id: str = ""
+    mesh_address: str = ""
 
     def snapshot(self) -> dict[str, Any]:
         return wifi_details(
@@ -63,6 +67,10 @@ class RaspberryPiAccessPointBackend:
             self.upstream_interface,
             self.gateway_ip,
             False,
+            self.mesh_interface,
+            self.mesh_device,
+            self.mesh_id,
+            self.mesh_address,
         )
 
     def restart(self) -> dict[str, Any]:
@@ -86,6 +94,10 @@ class DemoAccessPointBackend:
     wifi_interface: str
     upstream_interface: str
     gateway_ip: str
+    mesh_interface: str = ""
+    mesh_device: str = "bat0"
+    mesh_id: str = ""
+    mesh_address: str = ""
 
     def snapshot(self) -> dict[str, Any]:
         return wifi_details(
@@ -93,6 +105,10 @@ class DemoAccessPointBackend:
             self.upstream_interface,
             self.gateway_ip,
             True,
+            self.mesh_interface,
+            self.mesh_device,
+            self.mesh_id,
+            self.mesh_address,
         )
 
     def restart(self) -> dict[str, Any]:

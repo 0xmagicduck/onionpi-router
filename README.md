@@ -20,6 +20,8 @@ raccourcis.
 ## Ce qui fonctionne
 
 - point d’accès WPA2 géré par NetworkManager, en 2,4 ou 5 GHz ;
+- vrai backhaul maillé optionnel entre plusieurs OnionPi : 802.11s chiffré par
+  WPA3-SAE, routage multi-saut batman-adv, radio dédiée et transit direct bloqué ;
 - redirection transparente du TCP vers le `TransPort` de Tor ;
 - DNS local (`dnsmasq`) dont l’unique résolveur amont est le `DNSPort` Tor ;
 - coupe-circuit nftables : aucun paquet client n’est routé directement ;
@@ -80,9 +82,14 @@ raccourcis.
 - Ethernet (`eth0`) relié à la box/au modem ;
 - Wi‑Fi intégré (`wlan0`) utilisé comme point d’accès.
 
-Une seule radio Wi‑Fi ne doit pas servir à la fois de connexion amont et de
-point d’accès. Pour un WAN Wi‑Fi, ajoutez un adaptateur USB et passez son nom à
+Une seule radio Wi-Fi ne doit pas servir à la fois de connexion amont et de
+point d’accès. Pour un WAN Wi-Fi, ajoutez un adaptateur USB et passez son nom à
 `--wan`.
+
+Pour former un [vrai maillage entre plusieurs OnionPi](docs/mesh.md), ajoutez
+une seconde radio compatible 802.11s à chaque Pi. Les appareils ordinaires se
+connectent toujours au point d’accès le plus proche ; les Pi constituent le
+backhaul multi-saut et chacune conserve sa propre sortie Tor fail-closed.
 
 ## Image prête à flasher
 
@@ -113,6 +120,8 @@ Options utiles :
 | `--login NOM` | compte système créé sur la Pi (défaut `onionpi`) |
 | `--ssh-key ~/.ssh/id_ed25519.pub` | clé publique installée sur ce compte |
 | `--no-lan-ssh` | interdit SSH depuis le Wi-Fi OnionPi |
+| `--mesh wlan1` | active le backhaul 802.11s sur une radio dédiée |
+| `--mesh-address 10.43.0.1/16` | fixe l’adresse unique de ce nœud dans le mesh |
 | `--compress` | produit aussi une archive `.img.xz` |
 | `--source CHEMIN` | réutilise une image de base déjà téléchargée |
 | `--source-sha256 EMPREINTE` | authentifie une image de base personnalisée |
@@ -171,6 +180,11 @@ sudo env \
   ONIONPI_ADMIN_PASSWORD='une-phrase-admin-longue' \
   ./packaging/install.sh --yes --country BE
 ```
+
+Pour activer le vrai maillage entre plusieurs OnionPi, suivez
+[la procédure 802.11s/batman-adv](docs/mesh.md). Une deuxième radio est exigée :
+`wlan0` continue de servir les appareils clients et `wlan1` transporte le
+backhaul multi-saut.
 
 Ensuite :
 
@@ -335,8 +349,11 @@ feuille de règles par machine. Elle couvre deux mondes.
   propre service onion v3, chiffré pour la clé de cette baie. **Aucun port
   n’est ouvert sur Internet**, et la baie le joint à travers Tor.
 
-Sur un nœud distant, la règle par défaut interdit toute sortie qui ne passe pas
-par le démon Tor : une application qui ignore le proxy échoue au lieu de fuir.
+Sur Linux, la règle par défaut interdit toute sortie qui ne passe pas par le
+démon Tor : une application qui ignore le proxy échoue au lieu de fuir. Sur
+macOS, TCP et DNS sont redirigés de manière transparente et UDP/QUIC est
+bloqué. Windows reste en sortie directe : `tor-only` y est refusé tant qu’un
+tunnel TUN vérifié n’est pas livré, plutôt que de couper toute la machine.
 Le port 22 reste joignable en entrée, parce qu’un serveur distant sans porte
 d’entrée ne se répare pas. L’isolement d’un nœud lui retire en plus l’accès au
 port SOCKS local : il reste administrable, il ne sort plus.

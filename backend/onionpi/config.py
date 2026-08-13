@@ -73,6 +73,10 @@ class Settings:
     gateway_ip: str
     wifi_interface: str
     upstream_interface: str
+    mesh_interface: str
+    mesh_device: str
+    mesh_id: str
+    mesh_address: str
     session_ttl_seconds: int
     max_request_bytes: int
     max_upload_bytes: int
@@ -302,6 +306,10 @@ def get_settings() -> Settings:
         gateway_ip=os.getenv("ONIONPI_GATEWAY_IP", "10.42.0.1"),
         wifi_interface=os.getenv("ONIONPI_WIFI_INTERFACE", "wlan0"),
         upstream_interface=os.getenv("ONIONPI_UPSTREAM_INTERFACE", "eth0"),
+        mesh_interface=os.getenv("ONIONPI_MESH_INTERFACE", "").strip(),
+        mesh_device=os.getenv("ONIONPI_MESH_DEVICE", "bat0").strip() or "bat0",
+        mesh_id=os.getenv("ONIONPI_MESH_ID", "").strip(),
+        mesh_address=os.getenv("ONIONPI_MESH_ADDRESS", "").strip(),
         # 5 minutes to 30 days. Zero would log everyone out at the moment they
         # signed in, and an unbounded value never expires a stolen cookie.
         session_ttl_seconds=_bounded_int("ONIONPI_SESSION_TTL", 43_200, 300, 2_592_000),

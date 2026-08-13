@@ -124,12 +124,31 @@ export type LoginRequest = {
   "password": string
 }
 
+export type MeshPeer = {
+  "mac": string
+  "last_seen": string
+  "throughput_mbps": number | null
+  "next_hop": string
+}
+
+export type MeshStatus = {
+  "enabled": boolean
+  "active": boolean
+  "mesh_id": string
+  "radio_interface": string
+  "interface": string
+  "address": string
+  "peers": Array<MeshPeer>
+  "peer_count": number
+}
+
 export type NetworkStatus = {
   "ssid": string
   "wifi_interface": string
   "upstream_interface": string
   "gateway_ip": string
   "channel": string
+  "mesh": MeshStatus
 }
 
 export type NodeActionRequest = {

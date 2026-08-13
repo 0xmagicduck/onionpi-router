@@ -48,6 +48,7 @@ sed \
   -e 's/__WIFI_INTERFACE__/lan0/g' \
   -e 's|__LAN_NETWORK__|10.42.0.0/24|g' \
   -e 's|__LAN_SSH_RULE__|# SSH désactivé|g' \
+  -e 's|__MESH_SSH_RULE__|# SSH mesh désactivé|g' \
   "$PROJECT_ROOT/packaging/templates/onionpi.nft" >"$work/onionpi.nft"
 ip netns exec "$router" nft --file "$work/onionpi.nft"
 

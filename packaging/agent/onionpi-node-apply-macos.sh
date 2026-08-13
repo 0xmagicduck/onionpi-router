@@ -13,6 +13,8 @@ RULES="$RESULT_DIR/policy.pf"
 RENDER="$BASE/lib/render-policy-macos.py"
 PYTHON="$BASE/python"
 SOCKS_PORT_FILE="$BASE/tor-socks-port"
+TRANS_PORT_FILE="$BASE/tor-trans-port"
+DNS_PORT_FILE="$BASE/tor-dns-port"
 LOG="$BASE/log/apply.log"
 
 install -d -m 0755 "$RESULT_DIR" "$(dirname "$LOG")"
@@ -34,15 +36,24 @@ case "$ACTION" in
   policy)
     [[ -s "$POLICY" ]] || { answer "$NONCE" error "Aucune politique à appliquer"; exit 0; }
     SOCKS_PORT="$(tr -d '[:space:]' <"$SOCKS_PORT_FILE" 2>/dev/null || true)"
-    [[ "$SOCKS_PORT" =~ ^[0-9]{1,5}$ ]] && (( SOCKS_PORT >= 1 && SOCKS_PORT <= 65535 )) \
-      || { answer "$NONCE" error "Port SOCKS invalide"; exit 0; }
-    if ! RENDERED="$("$PYTHON" "$RENDER" "$POLICY" "$RULES" "$SOCKS_PORT")"; then
+    TRANS_PORT="$(tr -d '[:space:]' <"$TRANS_PORT_FILE" 2>/dev/null || true)"
+    DNS_PORT="$(tr -d '[:space:]' <"$DNS_PORT_FILE" 2>/dev/null || true)"
+    for PORT_VALUE in "$SOCKS_PORT" "$TRANS_PORT" "$DNS_PORT"; do
+      [[ "$PORT_VALUE" =~ ^[0-9]{1,5}$ ]] && (( PORT_VALUE >= 1 && PORT_VALUE <= 65535 )) \
+        || { answer "$NONCE" error "Port Tor invalide"; exit 0; }
+    done
+    if ! RENDERED="$("$PYTHON" "$RENDER" "$POLICY" "$RULES" \
+      "$SOCKS_PORT" "$TRANS_PORT" "$DNS_PORT")"; then
       answer "$NONCE" error "Politique refusée"
       exit 0
     fi
     read -r DIGEST EGRESS <<<"$RENDERED"
     if [[ "$EGRESS" == direct ]]; then
-      /sbin/pfctl -a com.onionpi.node -F rules
+      /sbin/pfctl -a com.onionpi.node -F all
+    elif ! /usr/sbin/lsof -nP -iTCP@127.0.0.1:"$TRANS_PORT" -sTCP:LISTEN 2>/dev/null \
+      | grep -q LISTEN; then
+      answer "$NONCE" error "TransPort Tor indisponible"
+      exit 0
     elif ! /sbin/pfctl -a com.onionpi.node -nf "$RULES" \
       || ! /sbin/pfctl -a com.onionpi.node -f "$RULES"; then
       answer "$NONCE" error "Application du coupe-circuit refusée"
@@ -52,7 +63,7 @@ case "$ACTION" in
       "$DIGEST" "$EGRESS" "$(date +%s)" >"$APPLIED.tmp"
     chmod 0644 "$APPLIED.tmp"
     mv -f "$APPLIED.tmp" "$APPLIED"
-    answer "$NONCE" ok "Coupe-circuit PF appliqué"
+    answer "$NONCE" ok "Routage transparent Tor appliqué"
     ;;
   restart-tor)
     if /bin/launchctl kickstart -k system/com.onionpi.node.tor; then

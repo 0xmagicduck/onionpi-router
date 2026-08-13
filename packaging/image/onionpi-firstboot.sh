@@ -55,6 +55,14 @@ arguments=(--yes
   --country "${ONIONPI_COUNTRY:-BE}"
   --band "${ONIONPI_BAND:-bg}"
   --channel "${ONIONPI_CHANNEL:-7}")
+if [[ -n "${ONIONPI_MESH_INTERFACE:-}" ]]; then
+  arguments+=(
+    --mesh "$ONIONPI_MESH_INTERFACE"
+    --mesh-id "${ONIONPI_MESH_ID:-OnionPi-Mesh}"
+    --mesh-band "${ONIONPI_MESH_BAND:-a}"
+    --mesh-channel "${ONIONPI_MESH_CHANNEL:-36}")
+  [[ -z "${ONIONPI_MESH_ADDRESS:-}" ]] || arguments+=(--mesh-address "$ONIONPI_MESH_ADDRESS")
+fi
 [[ "${ONIONPI_LAN_SSH:-1}" == "1" ]] || arguments+=(--no-lan-ssh)
 
 if "$INSTALLER" "${arguments[@]}"; then

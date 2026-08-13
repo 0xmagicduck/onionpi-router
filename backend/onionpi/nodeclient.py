@@ -68,7 +68,7 @@ def sign(token: str, verb: str, timestamp: int, nonce: str, body: bytes) -> str:
 
 def _demo_status(name: str) -> dict[str, Any]:
     return {
-        "agent_version": "0.4.1",
+        "agent_version": "0.4.2",
         "hostname": name.lower().replace(" ", "-")[:32] or "node",
         "uptime_seconds": 412_233,
         "load": 0.14,
@@ -80,6 +80,12 @@ def _demo_status(name: str) -> dict[str, Any]:
             {"id": "tor", "label": "Tor", "active": True},
             {"id": "onionpi-node-agent", "label": "Agent OnionPi", "active": True},
         ],
+        "platform": {
+            "system": "Linux",
+            "release": "6.6",
+            "machine": "aarch64",
+            "policy_mode": "complet",
+        },
     }
 
 

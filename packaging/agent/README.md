@@ -19,7 +19,7 @@ l’interface puisse vous le remettre.
 | `bootstrap-node.sh` / `.ps1` | Télécharge la source depuis GitHub sans placer les identifiants dans l’URL. |
 | `install-node-agent.sh` | Installation Linux (Debian, Ubuntu, Raspberry Pi OS). |
 | `install-node-agent-macos.sh` | Installation macOS avec Homebrew, launchd et PF. |
-| `install-node-agent-windows.ps1` | Installation Windows avec tâches système et coupe-circuit sortant. |
+| `install-node-agent-windows.ps1` | Installation Windows avec tâches système ; sortie directe sûre tant qu’un tunnel TUN manque. |
 
 ## Installation
 
@@ -45,12 +45,17 @@ fiche du nœud : la baie ne peut pas la deviner, et c’est voulu.
 
 - **Linux** applique la politique complète avec nftables et systemd.
 - **macOS** installe Tor et Python avec Homebrew, lance les services avec
-  launchd et applique le coupe-circuit avec une ancre PF dédiée. Les ports
-  SOCKS et de contrôle sont choisis sans gêner un Tor déjà lancé.
+  launchd et applique un routage transparent avec une ancre PF dédiée : TCP et
+  DNS entrent dans les ports transparents de Tor, le reste d’Internet est
+  bloqué. Le LAN local reste joignable et les ports Tor sont choisis sans gêner
+  une autre instance. Une ancienne installation `0.4.1` ne faisait que bloquer
+  les applications ; relancez l’installateur pour la remplacer.
 - **Windows** installe Python avec winget et le Tor Expert Bundle officiel. Le
-  coupe-circuit suspend les autorisations de sortie existantes, bloque les
-  sorties directes et autorise Tor. Ces autorisations sont restaurées en mode
-  `direct` ; les règles entrantes déjà administrées sont conservées.
+  mode direct et l’administration distante fonctionnent. `tor-only` est refusé
+  explicitement tant qu’un transport TUN vérifié n’est pas disponible : le
+  pare-feu Windows sait bloquer une sortie, mais il ne sait pas convertir le
+  TCP arbitraire en SOCKS et ne doit jamais couper la machine en prétendant
+  l’avoir routée par Tor.
 
 ## Comment la baie le joint
 
@@ -69,19 +74,24 @@ d’un coup l’ancien jeton et l’ancienne clé.
 
 ## Le pare-feu du nœud
 
-La politique par défaut, appliquée dès la première synchronisation :
+Sous Linux et macOS, la politique par défaut appliquée à la première
+synchronisation :
 
-* **sortie** interdite sauf le trafic du démon Tor. Une application qui ignore
-  le proxy n’atteint rien ;
+* **sortie** directe interdite ; Linux exige le proxy Tor, macOS redirige TCP
+  et DNS dans Tor ;
 * **entrée** interdite sauf les ports gardés ouverts — le 22 par défaut, pour
   qu’un VPS reste administrable ;
 * **isolement** (règle « Accès : bloqué ») : les applications perdent en plus
   l’accès au port SOCKS. La machine reste joignable et son service onion reste
   publié, mais elle ne sort plus.
 
-Conséquence à connaître : en mode `tor-only`, `apt` et les mises à jour
-n’aboutissent plus sans passer par Tor. Réglez la sortie sur **directe** le
-temps d’une maintenance, ou configurez `apt` sur le proxy SOCKS local.
+Windows refuse cette politique et conserve sa sortie directe tant qu’un tunnel
+TUN vérifié n’est pas installé.
+
+Conséquence à connaître : sous Linux, `apt` et les mises à jour n’aboutissent
+plus sans proxy SOCKS. Sous macOS, TCP et DNS sont transparents mais UDP/QUIC
+restent bloqués, puisque Tor ne les transporte pas. Réglez la sortie sur
+**directe** le temps d’une maintenance qui exige un protocole incompatible.
 
 ### Diagnostic macOS
 

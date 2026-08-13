@@ -88,6 +88,13 @@ class RecordingClient(NodeClient):
         return super().call(**kwargs)
 
 
+class RefusingClient(RecordingClient):
+    def call(self, **kwargs: Any) -> dict[str, Any]:
+        if kwargs["verb"] == "apply-policy":
+            return {"applied": False, "message": "Tor-only indisponible sur Windows"}
+        return super().call(**kwargs)
+
+
 WIFI = [
     {
         "name": "Portable Camille",
@@ -312,6 +319,17 @@ def test_a_refused_push_still_stores_the_intent(manager: RackManager) -> None:
     stored = manager.node(node["id"])
     assert stored["rules"]["access"] == "blocked"
     assert "injoignable" in stored["last_error"]
+
+
+def test_an_agent_refusal_is_not_recorded_as_an_applied_policy(
+    manager: RackManager,
+) -> None:
+    manager.client = RefusingClient()
+    node = manager.create_node("remote", "windows", onion=ONION)
+    manager.set_rules(node["id"], {"egress": "tor-only"})
+    stored = manager.node(node["id"])
+    assert stored["last_error"] == "Tor-only indisponible sur Windows"
+    assert stored["state"].get("policy") is None
 
 
 def test_only_the_published_verbs_can_be_fired_by_hand(manager: RackManager) -> None:

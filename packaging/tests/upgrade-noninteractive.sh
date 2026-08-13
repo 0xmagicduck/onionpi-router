@@ -92,4 +92,18 @@ if output="$(run_section 0 ONIONPI_WIFI_PSK=zzz ONIONPI_ADMIN_PASSWORD_HASH='scr
   fail "Un PSK malformé doit être refusé: $output"
 fi
 
+# 6. A mesh first install needs its own shared secret, while an upgrade must
+# reuse the root-owned NetworkManager profile without ever asking for it.
+if output="$(run_section 0 MESH_INTERFACE=wlan1 \
+  ONIONPI_WIFI_PSK="$psk" ONIONPI_ADMIN_PASSWORD_HASH='scrypt$factice')"; then
+  fail "Un mesh neuf sans phrase SAE doit être refusé: $output"
+fi
+grep -Fq 'ONIONPI_MESH_PASSWORD' <<<"$output" \
+  || fail "Le refus doit nommer le secret mesh à définir: $output"
+output="$(run_section 0 MESH_INTERFACE=wlan1 ONIONPI_MESH_PASSWORD="$factice" \
+  ONIONPI_WIFI_PSK="$psk" ONIONPI_ADMIN_PASSWORD_HASH='scrypt$factice')" \
+  || fail "Une première installation mesh correctement identifiée doit aboutir: $output"
+output="$(run_section 1 MESH_INTERFACE=wlan1 ONIONPI_MESH_PASSWORD="$factice")" \
+  || fail "Une mise à niveau mesh ne doit jamais redemander son secret: $output"
+
 printf 'Mise à niveau non interactive validée.\n'

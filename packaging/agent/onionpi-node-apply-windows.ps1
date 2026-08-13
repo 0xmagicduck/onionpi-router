@@ -7,7 +7,6 @@ $result = Join-Path $resultDir "apply.result"
 $policyPath = Join-Path $state "policy.json"
 $applied = Join-Path $resultDir "policy.applied"
 $savedFirewall = Join-Path $resultDir "firewall-profiles.json"
-$torPathFile = Join-Path $base "tor-path.txt"
 $log = Join-Path $base "log\apply.log"
 
 function Write-Answer([string]$Nonce, [string]$Status, [string]$Message) {
@@ -26,7 +25,7 @@ try {
     switch ($action) {
         "policy" {
             if (-not (Test-Path -LiteralPath $policyPath)) {
-                Write-Answer $nonce "error" "Aucune politique à appliquer"
+                Write-Answer $nonce "error" "Aucune politique a appliquer"
                 exit 0
             }
             $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
@@ -55,38 +54,13 @@ try {
                 }
             }
             else {
-                if (Test-Path -LiteralPath $savedFirewall) {
-                    $saved = Get-Content -LiteralPath $savedFirewall -Raw | ConvertFrom-Json
-                }
-                else {
-                    $saved = [PSCustomObject]@{
-                        Profiles = @(Get-NetFirewallProfile | Select-Object Name, DefaultOutboundAction)
-                        OutboundAllowRules = @()
-                    }
-                }
-                $currentAllowRules = @(Get-NetFirewallRule -Enabled True -Direction Outbound -Action Allow |
-                    Where-Object { $_.Group -ne "OnionPi Node" } | Select-Object -ExpandProperty Name)
-                $savedRuleNames = @($saved.OutboundAllowRules) + $currentAllowRules
-                $savedRuleNames = @($savedRuleNames | Sort-Object -Unique)
-                $saved = [PSCustomObject]@{
-                    Profiles = @($saved.Profiles)
-                    OutboundAllowRules = $savedRuleNames
-                }
-                $saved | ConvertTo-Json -Depth 4 |
-                    Set-Content -LiteralPath $savedFirewall -Encoding UTF8
-                $tor = (Get-Content -LiteralPath $torPathFile -Raw).Trim()
-                if (-not (Test-Path -LiteralPath $tor)) { throw "Exécutable Tor absent" }
-                Get-NetFirewallRule -Group "OnionPi Node" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-                foreach ($ruleName in $savedRuleNames) {
-                    Disable-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
-                }
-                Set-NetFirewallProfile -All -DefaultOutboundAction Block
-                New-NetFirewallRule -DisplayName "OnionPi Node — Tor" -Group "OnionPi Node" `
-                    -Direction Outbound -Action Allow -Program $tor -Profile Any | Out-Null
-                foreach ($port in $ports) {
-                    New-NetFirewallRule -DisplayName "OnionPi Node — entrée $port" -Group "OnionPi Node" `
-                        -Direction Inbound -Action Allow -Protocol TCP -LocalPort $port -Profile Any | Out-Null
-                }
+                # Windows Filtering Platform can enforce fail-closed egress but
+                # cannot transparently turn arbitrary application TCP into
+                # SOCKS. Claiming tor-only here used to cut the whole machine
+                # off while reporting success. Refuse until a verified TUN
+                # transport is installed instead of creating that false state.
+                Write-Answer $nonce "error" "Tor-only indisponible sur Windows: aucune interface TUN configuree"
+                exit 0
             }
             $document = @{
                 digest = $policy.digest
@@ -95,22 +69,22 @@ try {
             } | ConvertTo-Json -Compress
             Set-Content -LiteralPath "$applied.tmp" -Value $document -Encoding UTF8
             Move-Item -LiteralPath "$applied.tmp" -Destination $applied -Force
-            Write-Answer $nonce "ok" "Coupe-circuit Windows appliqué"
+            Write-Answer $nonce "ok" "Coupe-circuit Windows applique"
         }
         "restart-tor" {
             Stop-ScheduledTask -TaskName "OnionPi Node Tor" -ErrorAction SilentlyContinue
             Get-Process tor -ErrorAction SilentlyContinue | Stop-Process -Force
             Start-ScheduledTask -TaskName "OnionPi Node Tor"
-            Write-Answer $nonce "ok" "Tor redémarré"
+            Write-Answer $nonce "ok" "Tor redemarre"
         }
         "reboot" {
-            Write-Answer $nonce "ok" "Redémarrage en cours"
+            Write-Answer $nonce "ok" "Redemarrage en cours"
             Restart-Computer -Force
         }
     }
 }
 catch {
-    if ($nonce) { Write-Answer $nonce "error" "Action refusée" }
+    if ($nonce) { Write-Answer $nonce "error" "Action refusee" }
     Add-Content -LiteralPath $log -Value "$(Get-Date -Format o) $($_.Exception.Message)"
     exit 1
 }

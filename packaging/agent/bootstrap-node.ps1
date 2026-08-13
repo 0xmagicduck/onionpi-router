@@ -1,6 +1,6 @@
-# Windows PowerShell 5.1 reads a UTF-8 script without BOM using the legacy
-# system code page. Keep this bootstrap ASCII-only: it adds a BOM to the
-# downloaded PowerShell files before the parser sees them.
+# Windows PowerShell 5.1 reads UTF-8 without BOM using the legacy system code
+# page. Keep the full Windows chain ASCII-only and parse the installer from
+# memory so the host never guesses its encoding.
 #requires -Version 5.1
 
 param(
@@ -36,17 +36,6 @@ try {
     & tar.exe -xzf $archive -C $work
     if ($LASTEXITCODE -ne 0) { throw "Archive GitHub illisible." }
 
-    # The repository is UTF-8 without BOM. Windows PowerShell 5.1 otherwise
-    # decodes French punctuation with the active ANSI code page and can turn a
-    # valid quoted string into a parser error. Normalize every script that can
-    # be invoked now or later by Task Scheduler.
-    $utf8WithoutBom = [Text.UTF8Encoding]::new($false)
-    $utf8WithBom = [Text.UTF8Encoding]::new($true)
-    Get-ChildItem -Path $work -Filter *.ps1 -Recurse | ForEach-Object {
-        $scriptText = [IO.File]::ReadAllText($_.FullName, $utf8WithoutBom)
-        [IO.File]::WriteAllText($_.FullName, $scriptText, $utf8WithBom)
-    }
-
     $installer = Get-ChildItem -Path $work -Filter install-node-agent-windows.ps1 -Recurse |
         Where-Object { $_.FullName -match '[\\/]packaging[\\/]agent[\\/]' } |
         Select-Object -First 1
@@ -57,9 +46,19 @@ try {
         Port = $Port
         ClientKey = $ClientKey
         ClientName = $ClientName
+        SourceRoot = $installer.DirectoryName
         Yes = $Yes
     }
-    & $installer.FullName @arguments
+    # Every PowerShell file in packaging/agent is deliberately ASCII. Read and
+    # execute the installer from memory so Windows PowerShell 5.1 never gets a
+    # second chance to reinterpret its bytes through the active ANSI code page.
+    $installerBytes = [IO.File]::ReadAllBytes($installer.FullName)
+    foreach ($byte in $installerBytes) {
+        if ($byte -gt 127) { throw "Installateur Windows non ASCII refuse." }
+    }
+    $installerText = [Text.Encoding]::ASCII.GetString($installerBytes)
+    $installerBlock = [ScriptBlock]::Create($installerText)
+    & $installerBlock @arguments
 }
 finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

@@ -19,6 +19,11 @@ BAND="bg"
 CHANNEL=""
 WAN_INTERFACE="eth0"
 WIFI_INTERFACE="wlan0"
+MESH_INTERFACE=""
+MESH_ID="OnionPi-Mesh"
+MESH_ADDRESS=""
+MESH_BAND="a"
+MESH_CHANNEL=""
 SSH_KEY=""
 LAN_SSH=1
 COMPRESS=0
@@ -40,15 +45,21 @@ Usage: ./packaging/image/build-image.sh [options]
   --channel N          canal (défaut: 7 en bg, 36 en a)
   --wan INTERFACE      interface Internet de la Pi (défaut: eth0)
   --wifi INTERFACE     interface point d'accès (défaut: wlan0)
+  --mesh INTERFACE     radio Wi-Fi dédiée au maillage 802.11s
+  --mesh-id NOM        identifiant partagé du mesh (défaut: OnionPi-Mesh)
+  --mesh-address CIDR  adresse unique du nœud dans 10.43.0.0/16
+  --mesh-band bg|a     bande du backhaul mesh (défaut: a)
+  --mesh-channel N     canal commun à tous les nœuds (défaut: 36 en a)
   --ssh-key FICHIER    clé publique SSH à installer sur le compte
   --no-lan-ssh         interdire SSH depuis le Wi-Fi OnionPi
   --compress           produire aussi une archive .img.xz
   --keep-work          conserver les fichiers intermédiaires
   -h, --help           afficher cette aide
 
-Mots de passe: définissez ONIONPI_WIFI_PASSWORD, ONIONPI_ADMIN_PASSWORD et
-ONIONPI_LOGIN_PASSWORD, sinon des mots de passe aléatoires sont générés et
-écrits à côté de l'image dans un fichier lisible par vous seul.
+Mots de passe: définissez ONIONPI_WIFI_PASSWORD, ONIONPI_ADMIN_PASSWORD,
+ONIONPI_LOGIN_PASSWORD et ONIONPI_MESH_PASSWORD si le mesh est activé. Sinon,
+des mots de passe aléatoires sont générés et écrits à côté de l'image dans un
+fichier lisible par vous seul.
 
 L'image ne contient jamais ces mots de passe en clair: seulement le PSK Wi-Fi
 dérivé, le condensat scrypt du compte web et le condensat SHA-512 du compte
@@ -69,6 +80,11 @@ while (($#)); do
     --channel) CHANNEL="${2:?canal manquant}"; shift 2 ;;
     --wan) WAN_INTERFACE="${2:?interface manquante}"; shift 2 ;;
     --wifi) WIFI_INTERFACE="${2:?interface manquante}"; shift 2 ;;
+    --mesh) MESH_INTERFACE="${2:?interface mesh manquante}"; shift 2 ;;
+    --mesh-id) MESH_ID="${2:?identifiant mesh manquant}"; shift 2 ;;
+    --mesh-address) MESH_ADDRESS="${2:?adresse mesh manquante}"; shift 2 ;;
+    --mesh-band) MESH_BAND="${2:?bande mesh manquante}"; shift 2 ;;
+    --mesh-channel) MESH_CHANNEL="${2:?canal mesh manquant}"; shift 2 ;;
     --ssh-key) SSH_KEY="${2:?fichier manquant}"; shift 2 ;;
     --no-lan-ssh) LAN_SSH=0; shift ;;
     --compress) COMPRESS=1; shift ;;
@@ -83,10 +99,30 @@ case "$BAND" in
   a) CHANNEL="${CHANNEL:-36}" ;;
   *) printf 'Bande invalide: %s (bg ou a).\n' "$BAND" >&2; exit 1 ;;
 esac
+case "$MESH_BAND" in
+  bg) MESH_CHANNEL="${MESH_CHANNEL:-7}" ;;
+  a) MESH_CHANNEL="${MESH_CHANNEL:-36}" ;;
+  *) printf 'Bande mesh invalide: %s (bg ou a).\n' "$MESH_BAND" >&2; exit 1 ;;
+esac
 [[ "$COUNTRY" =~ ^[A-Z]{2}$ ]] || { printf 'Code pays invalide: %s\n' "$COUNTRY" >&2; exit 1; }
 [[ "$HOSTNAME_VALUE" =~ ^[a-z0-9-]{1,32}$ ]] || { printf 'Nom d’hôte invalide.\n' >&2; exit 1; }
 [[ "$LOGIN" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { printf 'Nom de compte invalide.\n' >&2; exit 1; }
 (( ${#SSID} >= 1 && ${#SSID} <= 32 )) || { printf 'SSID invalide.\n' >&2; exit 1; }
+[[ -z "$MESH_INTERFACE" || "$MESH_INTERFACE" =~ ^[A-Za-z0-9_.:-]{1,32}$ ]] \
+  || { printf 'Interface mesh invalide.\n' >&2; exit 1; }
+[[ -z "$MESH_INTERFACE" || ( "$MESH_INTERFACE" != "$WAN_INTERFACE" && "$MESH_INTERFACE" != "$WIFI_INTERFACE" ) ]] \
+  || { printf 'La radio mesh doit être distincte du WAN et du point d’accès.\n' >&2; exit 1; }
+[[ "$MESH_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$ ]] \
+  || { printf 'Identifiant mesh invalide.\n' >&2; exit 1; }
+[[ -z "$MESH_ADDRESS" || "$MESH_ADDRESS" =~ ^10\.43\.[0-9]{1,3}\.[0-9]{1,3}/16$ ]] \
+  || { printf 'Adresse mesh invalide.\n' >&2; exit 1; }
+if [[ -n "$MESH_ADDRESS" ]]; then
+  IFS=. read -r _ _ mesh_third mesh_fourth <<<"${MESH_ADDRESS%/*}"
+  ((10#$mesh_third <= 255 && 10#$mesh_fourth <= 255)) \
+    || { printf 'Adresse mesh hors plage.\n' >&2; exit 1; }
+  [[ "$MESH_ADDRESS" != 10.43.0.0/16 && "$MESH_ADDRESS" != 10.43.255.255/16 ]] \
+    || { printf 'Adresse mesh réservée.\n' >&2; exit 1; }
+fi
 
 for tool in curl python3 tar openssl shasum; do
   command -v "$tool" >/dev/null 2>&1 || command -v "${tool/shasum/sha256sum}" >/dev/null 2>&1 || {
@@ -139,15 +175,22 @@ PY
 WIFI_PASSWORD="${ONIONPI_WIFI_PASSWORD:-}"
 ADMIN_PASSWORD="${ONIONPI_ADMIN_PASSWORD:-}"
 LOGIN_PASSWORD="${ONIONPI_LOGIN_PASSWORD:-}"
+MESH_PASSWORD="${ONIONPI_MESH_PASSWORD:-}"
 if [[ -z "$WIFI_PASSWORD" ]]; then WIFI_PASSWORD="$(random_phrase 20)"; generated_notes+=(wifi); fi
 if [[ -z "$ADMIN_PASSWORD" ]]; then ADMIN_PASSWORD="$(random_phrase 20)"; generated_notes+=(admin); fi
 if [[ -z "$LOGIN_PASSWORD" ]]; then LOGIN_PASSWORD="$(random_phrase 20)"; generated_notes+=(login); fi
+if [[ -n "$MESH_INTERFACE" && -z "$MESH_PASSWORD" ]]; then
+  MESH_PASSWORD="$(random_phrase 20)"
+  generated_notes+=(mesh)
+fi
 (( ${#WIFI_PASSWORD} >= 12 && ${#WIFI_PASSWORD} <= 63 )) || {
   printf 'ONIONPI_WIFI_PASSWORD doit contenir entre 12 et 63 caractères.\n' >&2; exit 1; }
 (( ${#ADMIN_PASSWORD} >= 12 )) || {
   printf 'ONIONPI_ADMIN_PASSWORD doit contenir au moins 12 caractères.\n' >&2; exit 1; }
 (( ${#LOGIN_PASSWORD} >= 12 )) || {
   printf 'ONIONPI_LOGIN_PASSWORD doit contenir au moins 12 caractères.\n' >&2; exit 1; }
+[[ -z "$MESH_INTERFACE" ]] || (( ${#MESH_PASSWORD} >= 12 && ${#MESH_PASSWORD} <= 63 )) || {
+  printf 'ONIONPI_MESH_PASSWORD doit contenir entre 12 et 63 caractères.\n' >&2; exit 1; }
 
 WIFI_PSK="$(SSID="$SSID" WIFI_PASSWORD="$WIFI_PASSWORD" python3 - <<'PY'
 import hashlib, os
@@ -267,6 +310,11 @@ COPYFILE_DISABLE=1 tar "${tar_options[@]}" -czf "$STAGE/onionpi/payload.tar.gz" 
   # SSID contains a space, and password hashes can contain shell metacharacters.
   printf 'ONIONPI_WAN_INTERFACE=%q\n' "$WAN_INTERFACE"
   printf 'ONIONPI_WIFI_INTERFACE=%q\n' "$WIFI_INTERFACE"
+  printf 'ONIONPI_MESH_INTERFACE=%q\n' "$MESH_INTERFACE"
+  printf 'ONIONPI_MESH_ID=%q\n' "$MESH_ID"
+  printf 'ONIONPI_MESH_ADDRESS=%q\n' "$MESH_ADDRESS"
+  printf 'ONIONPI_MESH_BAND=%q\n' "$MESH_BAND"
+  printf 'ONIONPI_MESH_CHANNEL=%q\n' "$MESH_CHANNEL"
   printf 'ONIONPI_SSID=%q\n' "$SSID"
   printf 'ONIONPI_COUNTRY=%q\n' "$COUNTRY"
   printf 'ONIONPI_BAND=%q\n' "$BAND"
@@ -274,6 +322,7 @@ COPYFILE_DISABLE=1 tar "${tar_options[@]}" -czf "$STAGE/onionpi/payload.tar.gz" 
   printf 'ONIONPI_LAN_SSH=%q\n' "$LAN_SSH"
   printf 'ONIONPI_WIFI_PSK=%q\n' "$WIFI_PSK"
   printf 'ONIONPI_ADMIN_PASSWORD_HASH=%q\n' "$ADMIN_HASH"
+  printf 'ONIONPI_MESH_PASSWORD=%q\n' "$MESH_PASSWORD"
 } >"$STAGE/onionpi/install.env"
 bash -n "$STAGE/onionpi/install.env"
 chmod 0600 "$STAGE/onionpi/install.env"
@@ -364,6 +413,12 @@ Généré le $(date -u +%FT%TZ)
 Wi-Fi OnionPi
   SSID              : $SSID
   Mot de passe      : $WIFI_PASSWORD
+
+Mesh OnionPi
+  État              : $([[ -n "$MESH_INTERFACE" ]] && printf activé || printf désactivé)
+  Identifiant       : $MESH_ID
+  Mot de passe      : $MESH_PASSWORD
+  Adresse demandée  : ${MESH_ADDRESS:-dérivée de la MAC au premier démarrage}
 
 Interface web (https://$HOSTNAME_VALUE.local)
   Utilisateur       : admin
