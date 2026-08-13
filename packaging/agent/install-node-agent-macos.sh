@@ -6,8 +6,11 @@ NODE_ID=""
 TOKEN=""
 TOKEN_STDIN=0
 PORT=9080
+MESH_PORT=9081
 CLIENT_KEY=""
 CLIENT_NAME="baie"
+COORDINATOR_KEY=""
+MESH_LOCK=""
 ASSUME_YES=0
 
 usage() {
@@ -20,8 +23,14 @@ Usage: sudo ./install-node-agent-macos.sh --node <id> --token-stdin [options]
                        « ps » et reste dans l'historique du shell.
   --token <jeton>      Jeton partagé, 64 caractères hexadécimaux. Déconseillé.
   --port <port>        Port local de l'agent (défaut: 9080).
+  --mesh-port <port>   Port du plan de données du maillage (défaut: 9081).
   --client-key <clé>   Clé publique x25519 de la baie, en base32.
   --client-name <nom>  Nom de l'autorisation (défaut: baie).
+  --coordinator-key <clé>
+                       Clé publique Ed25519 du coordinateur, « ed25519:… ».
+                       Sans elle, le maillage reste éteint.
+  --mesh-lock K:clé,clé,…
+                       Verrou de maillage K-sur-N.
   --yes                Ne pas demander de confirmation.
 USAGE
 }
@@ -32,8 +41,11 @@ while (($#)); do
     --token) TOKEN="${2:-}"; shift 2 ;;
     --token-stdin) TOKEN_STDIN=1; shift ;;
     --port) PORT="${2:-}"; shift 2 ;;
+    --mesh-port) MESH_PORT="${2:-}"; shift 2 ;;
     --client-key) CLIENT_KEY="${2:-}"; shift 2 ;;
     --client-name) CLIENT_NAME="${2:-}"; shift 2 ;;
+    --coordinator-key) COORDINATOR_KEY="${2:-}"; shift 2 ;;
+    --mesh-lock) MESH_LOCK="${2:-}"; shift 2 ;;
     --yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Option inconnue: %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -63,6 +75,20 @@ fi
   || { printf '%s\n' '--port invalide.' >&2; exit 2; }
 [[ -z "$CLIENT_KEY" || "$CLIENT_KEY" =~ ^[A-Z2-7]{52}$ ]] \
   || { printf '%s\n' '--client-key invalide.' >&2; exit 2; }
+[[ "$MESH_PORT" =~ ^[0-9]{1,5}$ ]] && (( MESH_PORT >= 1 && MESH_PORT <= 65535 && MESH_PORT != PORT )) \
+  || { printf '%s\n' '--mesh-port invalide.' >&2; exit 2; }
+[[ -z "$COORDINATOR_KEY" || "$COORDINATOR_KEY" =~ ^ed25519:[0-9a-f]{64}$ ]] \
+  || { printf '%s\n' '--coordinator-key invalide.' >&2; exit 2; }
+if [[ -n "$MESH_LOCK" ]]; then
+  [[ -n "$COORDINATOR_KEY" ]] \
+    || { printf '%s\n' '--mesh-lock sans --coordinator-key n’a rien à verrouiller.' >&2; exit 2; }
+  [[ "$MESH_LOCK" =~ ^([1-8]):(ed25519:[0-9a-f]{64}(,ed25519:[0-9a-f]{64})*)$ ]] \
+    || { printf '%s\n' '--mesh-lock invalide: attendu « K:clé,clé,… ».' >&2; exit 2; }
+  LOCK_THRESHOLD="${BASH_REMATCH[1]}"
+  IFS=',' read -r -a LOCK_TRUSTEES <<<"${BASH_REMATCH[2]}"
+  (( LOCK_THRESHOLD <= ${#LOCK_TRUSTEES[@]} )) \
+    || { printf '%s\n' 'Seuil du verrou supérieur au nombre de garants.' >&2; exit 2; }
+fi
 [[ "$CLIENT_NAME" =~ ^[A-Za-z0-9_-]{1,32}$ ]] \
   || { printf '%s\n' '--client-name invalide.' >&2; exit 2; }
 
@@ -187,6 +213,8 @@ install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$STATE"
 install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$TOR_DATA" "$HS_DIR"
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$LOG_DIR"
 install -m 0755 "$SOURCE_DIR/onionpi-node-agent.py" "$LIB/onionpi-node-agent.py"
+install -m 0644 "$SOURCE_DIR/onionpi_mesh.py" "$LIB/onionpi_mesh.py"
+install -m 0644 "$SOURCE_DIR/onionpi_mesh_runtime.py" "$LIB/onionpi_mesh_runtime.py"
 install -m 0755 "$SOURCE_DIR/render-policy-macos.py" "$LIB/render-policy-macos.py"
 install -m 0755 "$SOURCE_DIR/onionpi-node-apply-macos.sh" "$LIB/onionpi-node-apply-macos.sh"
 ln -sf "$PYTHON_BINARY" "$BASE/python"
@@ -202,9 +230,29 @@ cat >"$CONFIG" <<EOF
 NODE_ID=$NODE_ID
 TOKEN=$TOKEN
 PORT=$PORT
+MESH_PORT=$MESH_PORT
+SOCKS_PORT=$TOR_SOCKS_PORT
+COORDINATOR_KEY=$COORDINATOR_KEY
 EOF
 chown root:"$SERVICE_GROUP" "$CONFIG"
 chmod 0640 "$CONFIG"
+
+# Appartient à root, lu par l'agent: un verrou que le coordinateur pourrait
+# remplacer ne verrouillerait rien.
+if [[ -n "$MESH_LOCK" ]]; then
+  {
+    printf '{"version":1,"threshold":%s,"trustees":[' "$LOCK_THRESHOLD"
+    for index in "${!LOCK_TRUSTEES[@]}"; do
+      (( index == 0 )) || printf ','
+      printf '"%s"' "${LOCK_TRUSTEES[index]}"
+    done
+    printf ']}\n'
+  } >"$BASE/mesh.lock"
+  chown root:"$SERVICE_GROUP" "$BASE/mesh.lock"
+  chmod 0644 "$BASE/mesh.lock"
+else
+  rm -f "$BASE/mesh.lock"
+fi
 
 [[ -f "$STATE/apply.request" ]] || : >"$STATE/apply.request"
 chown "$SERVICE_USER":"$SERVICE_GROUP" "$STATE/apply.request"
@@ -234,6 +282,7 @@ CookieAuthFile "$TOR_DATA/control.authcookie"
 HiddenServiceDir "$HS_DIR"
 HiddenServiceVersion 3
 HiddenServicePort $PORT 127.0.0.1:$PORT
+HiddenServicePort $MESH_PORT 127.0.0.1:$MESH_PORT
 Log notice stdout
 EOF
 chown "$SERVICE_USER":"$SERVICE_GROUP" "$BASE/torrc"
@@ -268,6 +317,8 @@ cat >/Library/LaunchDaemons/com.onionpi.node.agent.plist <<EOF
 <key>ONIONPI_NODE_TOR_CONTROL_PORT</key><string>$TOR_CONTROL_PORT</string>
 <key>ONIONPI_NODE_LOG_DIR</key><string>$LOG_DIR</string>
 <key>ONIONPI_NODE_PORT</key><string>$PORT</string>
+<key>ONIONPI_NODE_MESH_PORT</key><string>$MESH_PORT</string>
+<key>ONIONPI_NODE_MESH_LOCK</key><string>$BASE/mesh.lock</string>
 </dict>
 <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
 <key>StandardOutPath</key><string>$LOG_DIR/agent.log</string>

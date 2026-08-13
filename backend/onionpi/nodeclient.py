@@ -40,6 +40,8 @@ from typing import Any
 
 import httpx
 
+from .mesh import DEFAULT_MESH_PORT, demo_identity, demo_rotation
+
 logger = logging.getLogger("onionpi.nodeclient")
 
 #: Verb -> (label, seconds allowed). Everything is short: a call travels
@@ -51,12 +53,22 @@ AGENT_VERBS: dict[str, tuple[str, float]] = {
     "restart-tor": ("Redémarrage de Tor", 40.0),
     "journal": ("Lecture du journal", 25.0),
     "reboot": ("Redémarrage du nœud", 15.0),
+    "netmap": ("Publication de la carte du maillage", 40.0),
+    "mesh-rotate": ("Rotation de la clé de maillage", 30.0),
 }
 
-#: Verbs an operator may fire by hand from the interface. `apply-policy` is
-#: absent on purpose: rules are pushed by the manager when they change, never
-#: as a free-form command carrying a body chosen at the other end of a form.
-MANUAL_VERBS = ("status", "new-identity", "restart-tor", "journal", "reboot")
+#: Verbs an operator may fire by hand from the interface. `apply-policy` and
+#: `netmap` are absent on purpose: rules and maps are pushed by the manager when
+#: they change, never as a free-form command carrying a body chosen at the other
+#: end of a form.
+MANUAL_VERBS = (
+    "status",
+    "new-identity",
+    "restart-tor",
+    "journal",
+    "reboot",
+    "mesh-rotate",
+)
 
 #: Version 2 signs the answer as well as the call, and binds both to the node
 #: identifier. A version 1 agent cannot verify it and must be reinstalled — the
@@ -145,6 +157,13 @@ def _demo_status(name: str) -> dict[str, Any]:
             "release": "6.6",
             "machine": "aarch64",
             "policy_mode": "complet",
+        },
+        "mesh": {
+            **demo_identity(name),
+            "port": DEFAULT_MESH_PORT,
+            "direct": "",
+            "netmap_serial": 0,
+            "sessions": 0,
         },
     }
 
@@ -266,5 +285,23 @@ class NodeClient:
                 "applied": True,
                 "digest": str(payload.get("digest", "")),
                 "message": "Règles appliquées (démonstration)",
+            }
+        if verb == "netmap":
+            return {
+                "accepted": True,
+                "serial": int(payload.get("serial", 0) or 0),
+                "peers": len(payload.get("peers", []) or []),
+                "message": "Carte acceptée (démonstration)",
+            }
+        if verb == "mesh-rotate":
+            # A second, distinct identity: a rotation that returns the same key
+            # would let the demonstration hide the one thing it must show.
+            return {
+                "ok": True,
+                "mesh": {
+                    **demo_rotation(name, f"{name}/rotated"),
+                    "port": DEFAULT_MESH_PORT,
+                },
+                "message": "Clé de maillage renouvelée (démonstration)",
             }
         return {"ok": True, "message": f"{AGENT_VERBS[verb][0]} (démonstration)"}

@@ -124,6 +124,17 @@ export type LoginRequest = {
   "password": string
 }
 
+export type MeshEndorsementRequest = {
+  "id": string
+  "endorsements"?: Record<string, string>
+}
+
+export type MeshLockRequest = {
+  "enabled"?: boolean
+  "threshold"?: number
+  "trustees"?: Array<string>
+}
+
 export type MeshPeer = {
   "mac": string
   "last_seen": string
@@ -172,6 +183,18 @@ export type NodeIdRequest = {
   "id": string
 }
 
+export type NodeMeshDocument = {
+  "enabled"?: boolean
+  "ports"?: Array<number>
+  "forwards"?: Array<NodeMeshForward>
+}
+
+export type NodeMeshForward = {
+  "listen": number
+  "node": string
+  "port": number
+}
+
 export type NodeMoveRequest = {
   "id": string
   "rack_id"?: string
@@ -184,6 +207,7 @@ export type NodeRulesDocument = {
   "exit_country"?: string
   "keep_open_ports"?: Array<number>
   "schedule"?: NodeScheduleRequest | null
+  "mesh"?: NodeMeshDocument | null
 }
 
 export type NodeRulesRequest = {

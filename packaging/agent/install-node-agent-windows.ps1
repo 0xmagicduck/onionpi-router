@@ -3,8 +3,11 @@ param(
     [string]$Token = "",
     [switch]$TokenStdin,
     [int]$Port = 9080,
+    [int]$MeshPort = 9081,
     [string]$ClientKey = "",
     [string]$ClientName = "baie",
+    [string]$CoordinatorKey = "",
+    [string]$MeshLock = "",
     [string]$SourceRoot = "",
     [switch]$Yes
 )
@@ -26,6 +29,19 @@ if ($Node -notmatch '^[0-9a-f]{16}$') { throw "Identifiant de noeud invalide." }
 if ($Token -notmatch '^[0-9a-f]{64}$') { throw "Jeton invalide." }
 if ($Port -lt 1 -or $Port -gt 65535) { throw "Port invalide." }
 if ($ClientKey -and $ClientKey -notmatch '^[A-Z2-7]{52}$') { throw "Cle client invalide." }
+if ($MeshPort -lt 1 -or $MeshPort -gt 65535 -or $MeshPort -eq $Port) { throw "MeshPort invalide." }
+if ($CoordinatorKey -and $CoordinatorKey -notmatch '^ed25519:[0-9a-f]{64}$') {
+    throw "Cle de coordinateur invalide."
+}
+if ($MeshLock) {
+    if (-not $CoordinatorKey) { throw "MeshLock sans CoordinatorKey ne verrouille rien." }
+    if ($MeshLock -notmatch '^([1-8]):(ed25519:[0-9a-f]{64}(,ed25519:[0-9a-f]{64})*)$') {
+        throw "MeshLock invalide: attendu K:cle,cle,..."
+    }
+    $lockThreshold = [int]$Matches[1]
+    $lockTrustees = $Matches[2] -split ','
+    if ($lockThreshold -gt $lockTrustees.Count) { throw "Seuil du verrou trop eleve." }
+}
 if ($ClientName -notmatch '^[A-Za-z0-9_-]{1,32}$') { throw "Nom client invalide." }
 
 if (-not $Yes) {
@@ -110,8 +126,28 @@ Set-Content -LiteralPath (Join-Path $base "tor-path.txt") -Value $tor.FullName -
 
 Write-Host "> Agent et identite"
 Copy-Item -LiteralPath (Join-Path $source "onionpi-node-agent.py") -Destination $lib -Force
+Copy-Item -LiteralPath (Join-Path $source "onionpi_mesh.py") -Destination $lib -Force
+Copy-Item -LiteralPath (Join-Path $source "onionpi_mesh_runtime.py") -Destination $lib -Force
 Copy-Item -LiteralPath (Join-Path $source "onionpi-node-apply-windows.ps1") -Destination $lib -Force
-@("NODE_ID=$Node", "TOKEN=$Token", "PORT=$Port") | Set-Content -LiteralPath $config -Encoding ASCII
+@(
+    "NODE_ID=$Node", "TOKEN=$Token", "PORT=$Port", "MESH_PORT=$MeshPort",
+    "COORDINATOR_KEY=$CoordinatorKey"
+) | Set-Content -LiteralPath $config -Encoding ASCII
+
+# Ecrit par SYSTEM, lu par l'agent: un verrou que le coordinateur pourrait
+# remplacer ne verrouillerait rien.
+$meshLock = Join-Path $base "mesh.lock"
+if ($MeshLock) {
+    $document = @{
+        version   = 1
+        threshold = $lockThreshold
+        trustees  = @($lockTrustees)
+    } | ConvertTo-Json -Compress
+    Set-Content -LiteralPath $meshLock -Value $document -Encoding ASCII
+}
+elseif (Test-Path -LiteralPath $meshLock) {
+    Remove-Item -LiteralPath $meshLock -Force
+}
 if (-not (Test-Path -LiteralPath (Join-Path $state "apply.request"))) {
     New-Item -ItemType File -Path (Join-Path $state "apply.request") | Out-Null
 }
@@ -142,6 +178,7 @@ $torLogConfig = (Join-Path $logDir "tor.log").Replace('\', '/')
     "HiddenServiceDir `"$hiddenConfig`"",
     "HiddenServiceVersion 3",
     "HiddenServicePort $Port 127.0.0.1:$Port",
+    "HiddenServicePort $MeshPort 127.0.0.1:$MeshPort",
     "Log notice file `"$torLogConfig`""
 ) | Set-Content -LiteralPath $torrc -Encoding ASCII
 
@@ -180,6 +217,8 @@ $agentWrapper = Join-Path $base "agent.cmd"
     "set `"ONIONPI_NODE_TOR_COOKIE=$cookie`"",
     "set `"ONIONPI_NODE_LOG_DIR=$logDir`"",
     "set `"ONIONPI_NODE_PORT=$Port`"",
+    "set `"ONIONPI_NODE_MESH_PORT=$MeshPort`"",
+    "set `"ONIONPI_NODE_MESH_LOCK=$meshLock`"",
     'set "ONIONPI_NODE_APPLY_TIMEOUT=75"',
     "`"$python`" `"$(Join-Path $lib 'onionpi-node-agent.py')`" >> `"$(Join-Path $logDir 'agent.log')`" 2>&1"
 ) | Set-Content -LiteralPath $agentWrapper -Encoding ASCII

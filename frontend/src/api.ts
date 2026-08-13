@@ -16,8 +16,10 @@ import type {
   OnboardingState,
   RackBulkAnswer,
   RackCableColor,
+  RackEndorsementRequest,
   RackEnrollment,
   RackHistory,
+  RackMesh,
   RackNode,
   RackNodeRules,
   RackPayload,
@@ -203,6 +205,24 @@ export const api = {
     request<RackEnrollment>('/api/v1/rack/nodes/enrollment', { method: 'POST', body: JSON.stringify({ id }) }),
   rotateRackNodeToken: (id: string) =>
     request<RackEnrollment>('/api/v1/rack/nodes/rotate-token', { method: 'POST', body: JSON.stringify({ id }) }),
+  rackMesh: () => request<RackMesh>('/api/v1/rack/mesh'),
+  setRackMeshLock: (body: { enabled: boolean; threshold: number; trustees: string[] }) =>
+    request<RackMesh>('/api/v1/rack/mesh/lock', { method: 'POST', body: JSON.stringify(body) }),
+  publishRackNetmap: (id: string) =>
+    request<{ published: boolean; digest: string; peers: number }>('/api/v1/rack/mesh/netmap', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }),
+  rackEndorsementRequest: (id: string) =>
+    request<RackEndorsementRequest>('/api/v1/rack/mesh/endorsement', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }),
+  setRackEndorsements: (id: string, endorsements: Record<string, string>) =>
+    request<RackNode>('/api/v1/rack/mesh/endorsements', {
+      method: 'POST',
+      body: JSON.stringify({ id, endorsements }),
+    }),
   securityAudit: () => request<SecurityAudit>('/api/v1/security/audit'),
   dnsFilter: () => request<DnsFilterState>('/api/v1/dns-filter'),
   setDnsFilter: (body: { profiles: string[]; custom_blocked: string[]; allowed: string[] }) =>

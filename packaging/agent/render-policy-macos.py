@@ -11,6 +11,11 @@ from typing import NoReturn
 
 SERVICE_USER = "_onionpi-node"
 MAX_PORTS = 8
+#: Même version que `render-policy.py`. Les deux champs du maillage qu'elle
+#: ajoute concernent le chemin direct sur `bat0`, qui n'existe pas ici: un Mac
+#: n'a pas de radio 802.11s pilotée par OnionPi, et son maillage passe par Tor,
+#: qui ne demande aucune exception au coupe-circuit.
+POLICY_VERSION = 2
 
 
 def fail(message: str) -> NoReturn:
@@ -23,7 +28,7 @@ def load(path: Path) -> dict[str, object]:
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         fail(f"document illisible ({error})")
-    if not isinstance(document, dict) or document.get("version") != 1:
+    if not isinstance(document, dict) or document.get("version") != POLICY_VERSION:
         fail("version de politique inconnue")
     egress = document.get("egress")
     if egress not in {"tor-only", "direct"}:

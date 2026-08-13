@@ -348,6 +348,18 @@ export type RackNodeStatus = 'online' | 'offline' | 'isolated' | 'pending' | 'un
 
 export type RackEgress = 'tor-only' | 'direct'
 
+/** Une redirection locale vers un pair, comme `ssh -L`. C’est le mode par
+ *  défaut du plan de données: un flux onion est du TCP, et y faire passer de
+ *  l’IP empilerait deux contrôles de congestion. */
+export type RackMeshForward = { listen: number; node: string; port: number }
+
+export type RackMeshRules = {
+  enabled: boolean
+  /** Ports que ce nœud accepte de présenter à ses pairs. */
+  ports: number[]
+  forwards: RackMeshForward[]
+}
+
 export type RackNodeRules = {
   access: 'allowed' | 'blocked'
   egress: RackEgress
@@ -355,6 +367,7 @@ export type RackNodeRules = {
   /** Ports laissés joignables en entrée. Le 22 y est par défaut. */
   keep_open_ports: number[]
   schedule: DeviceSchedule | null
+  mesh: RackMeshRules
 }
 
 /** Dernière lecture renvoyée par l’agent du nœud. Vide tant qu’il n’a pas
@@ -370,6 +383,20 @@ export type RackNodeState = {
   policy?: { digest: string; egress: string; applied_at: number }
   services?: Array<{ id: string; label: string; active: boolean }>
   platform?: { system: string; release: string; machine: string; policy_mode: string }
+  /** Ce que le nœud annonce de son identité de maillage. Les moitiés publiques
+   *  seulement: la clé est engendrée sur le nœud et n’en sort jamais. */
+  mesh?: {
+    identity?: string
+    static?: string
+    address?: string
+    port?: number
+    direct?: string
+    netmap_serial?: number
+    peers?: number
+    sessions?: number
+    locked?: boolean
+  }
+  netmap?: { digest: string; serial: number; issued_at: number; peers: number; forwards: number }
 }
 
 export type RackAlert = { level: 'info' | 'warning' | 'danger'; message: string }
@@ -403,6 +430,16 @@ export type RackNode = {
   status: RackNodeStatus
   link: RackLink | null
   alerts: RackAlert[]
+  /** Identité de maillage annoncée par le nœud, jamais dérivée ici. */
+  mesh_identity: string
+  mesh_static: string
+  mesh_static_signature: string
+  /** Adresse `fd7a:…` déduite de la clé d’identité: rien à attribuer. */
+  mesh_address: string
+  mesh_endorsements: Record<string, string>
+  netmap_serial: number
+  /** Adresse `10.43.X.Y` du lien radio, quand le nœud en a une. */
+  mesh_v4: string
 }
 
 export type RackFrame = {
@@ -465,7 +502,47 @@ export type RackPayload = {
   }
   verbs: Array<{ id: string; label: string }>
   egress_modes: RackEgress[]
+  mesh: RackMesh
   now: number
+}
+
+export type RackMeshLock = { enabled: boolean; threshold: number; trustees: string[] }
+
+export type RackMeshMember = {
+  id: string
+  name: string
+  enabled: boolean
+  identity: string
+  address: string
+  direct: string
+  ports: number[]
+  forwards: RackMeshForward[]
+  endorsed: number
+  /** Faux quand il manque une clé, une adresse onion ou l’activation: le nœud
+   *  n’est alors dans aucune carte, et c’est visible. */
+  in_map: boolean
+  netmap_serial: number
+  netmap_peers: number
+  netmap_issued_at: number
+}
+
+export type RackMesh = {
+  coordinator: string
+  lock: RackMeshLock
+  revoked: string[]
+  members: RackMeshMember[]
+  mesh_port: number
+  limits: { max_ports: number; max_forwards: number }
+}
+
+export type RackEndorsementRequest = {
+  node_id: string
+  name: string
+  identity: string
+  /** Le message exact qu’un garant signe, en hexadécimal. */
+  message: string
+  command: string
+  lock: RackMeshLock
 }
 
 export type RackBulkAnswer = {

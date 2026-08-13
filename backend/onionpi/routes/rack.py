@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from ..mesh import MAX_MESH_FORWARDS, MAX_MESH_PORTS, MAX_TRUSTEES
 from ..nodeclient import NodeError
 from ..rack import (
     CABLE_COLORS,
@@ -64,12 +65,42 @@ class NodeScheduleRequest(BaseModel):
     end: str = Field(default="", max_length=5)
 
 
+class NodeMeshForward(BaseModel):
+    listen: int = Field(ge=1, le=65535)
+    node: str = Field(min_length=16, max_length=16)
+    port: int = Field(ge=1, le=65535)
+
+
+class NodeMeshDocument(BaseModel):
+    enabled: bool = False
+    ports: list[int] = Field(default_factory=list, max_length=MAX_MESH_PORTS)
+    forwards: list[NodeMeshForward] = Field(
+        default_factory=list, max_length=MAX_MESH_FORWARDS
+    )
+
+
 class NodeRulesDocument(BaseModel):
     access: str = Field(default="allowed", max_length=16)
     egress: str = Field(default="tor-only", max_length=16)
     exit_country: str = Field(default="", max_length=2)
     keep_open_ports: list[int] = Field(default_factory=list, max_length=8)
     schedule: NodeScheduleRequest | None = None
+    mesh: NodeMeshDocument | None = None
+
+
+class MeshLockRequest(BaseModel):
+    enabled: bool = False
+    threshold: int = Field(default=0, ge=0, le=MAX_TRUSTEES)
+    #: `ed25519:` plus 64 hexadecimal characters. Checked again by the
+    #: coordinator, which is the half that refuses.
+    trustees: list[str] = Field(default_factory=list, max_length=MAX_TRUSTEES)
+
+
+class MeshEndorsementRequest(BaseModel):
+    id: str = Field(min_length=16, max_length=16)
+    #: Trustee key -> signature. Bounded here so a body cannot be a dictionary
+    #: of arbitrary size before anything looks at it.
+    endorsements: dict[str, str] = Field(default_factory=dict, max_length=MAX_TRUSTEES)
 
 
 class NodeCreateRequest(BaseModel):
@@ -314,6 +345,38 @@ def create_router(context: RouteContext) -> APIRouter:
         payload: NodeIdRequest, _: dict[str, Any] = Depends(csrf_session)
     ) -> dict[str, Any]:
         return await guard(rack.rotate_token, payload.id)
+
+    # --------------------------------------------------------- maillage ---
+
+    @router.get("/api/v1/rack/mesh")
+    async def mesh_state(_: dict[str, Any] = Depends(current_session)) -> dict[str, Any]:
+        return await guard(rack.mesh)
+
+    @router.post("/api/v1/rack/mesh/lock")
+    async def set_mesh_lock(
+        payload: MeshLockRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(
+            rack.set_mesh_lock, payload.enabled, payload.threshold, payload.trustees
+        )
+
+    @router.post("/api/v1/rack/mesh/netmap")
+    async def publish_netmap(
+        payload: NodeIdRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(rack.push_netmap, payload.id, True)
+
+    @router.post("/api/v1/rack/mesh/endorsement")
+    async def endorsement_request(
+        payload: NodeIdRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(rack.endorsement_request, payload.id)
+
+    @router.post("/api/v1/rack/mesh/endorsements")
+    async def set_endorsements(
+        payload: MeshEndorsementRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(rack.set_endorsements, payload.id, payload.endorsements)
 
     @router.get("/api/v1/rack/agent-bundle")
     async def agent_bundle(_: dict[str, Any] = Depends(current_session)) -> Response:

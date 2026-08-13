@@ -572,6 +572,55 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MeshEndorsementRequest": {
+        "properties": {
+          "endorsements": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 8,
+            "title": "Endorsements",
+            "type": "object"
+          },
+          "id": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "MeshEndorsementRequest",
+        "type": "object"
+      },
+      "MeshLockRequest": {
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "threshold": {
+            "default": 0,
+            "maximum": 8.0,
+            "minimum": 0.0,
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "trustees": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Trustees",
+            "type": "array"
+          }
+        },
+        "title": "MeshLockRequest",
+        "type": "object"
+      },
       "MeshPeer": {
         "properties": {
           "last_seen": {
@@ -800,6 +849,62 @@
         "title": "NodeIdRequest",
         "type": "object"
       },
+      "NodeMeshDocument": {
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "forwards": {
+            "items": {
+              "$ref": "#/components/schemas/NodeMeshForward"
+            },
+            "maxItems": 8,
+            "title": "Forwards",
+            "type": "array"
+          },
+          "ports": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "title": "Ports",
+            "type": "array"
+          }
+        },
+        "title": "NodeMeshDocument",
+        "type": "object"
+      },
+      "NodeMeshForward": {
+        "properties": {
+          "listen": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Listen",
+            "type": "integer"
+          },
+          "node": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Node",
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "listen",
+          "node",
+          "port"
+        ],
+        "title": "NodeMeshForward",
+        "type": "object"
+      },
       "NodeMoveRequest": {
         "properties": {
           "id": {
@@ -855,6 +960,16 @@
             "maxItems": 8,
             "title": "Keep Open Ports",
             "type": "array"
+          },
+          "mesh": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NodeMeshDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "schedule": {
             "anyOf": [
@@ -3313,6 +3428,258 @@
           }
         },
         "summary": "Remove Cable"
+      }
+    },
+    "/api/v1/rack/mesh": {
+      "get": {
+        "operationId": "mesh_state_api_v1_rack_mesh_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Mesh State Api V1 Rack Mesh Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mesh State"
+      }
+    },
+    "/api/v1/rack/mesh/endorsement": {
+      "post": {
+        "operationId": "endorsement_request_api_v1_rack_mesh_endorsement_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Endorsement Request Api V1 Rack Mesh Endorsement Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Endorsement Request"
+      }
+    },
+    "/api/v1/rack/mesh/endorsements": {
+      "post": {
+        "operationId": "set_endorsements_api_v1_rack_mesh_endorsements_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeshEndorsementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Endorsements Api V1 Rack Mesh Endorsements Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Endorsements"
+      }
+    },
+    "/api/v1/rack/mesh/lock": {
+      "post": {
+        "operationId": "set_mesh_lock_api_v1_rack_mesh_lock_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeshLockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Mesh Lock Api V1 Rack Mesh Lock Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Mesh Lock"
+      }
+    },
+    "/api/v1/rack/mesh/netmap": {
+      "post": {
+        "operationId": "publish_netmap_api_v1_rack_mesh_netmap_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Publish Netmap Api V1 Rack Mesh Netmap Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Netmap"
       }
     },
     "/api/v1/rack/nodes": {

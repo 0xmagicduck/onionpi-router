@@ -51,6 +51,20 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from .access import AccessError, DeviceAccessManager, _clean_schedule, _schedule_allows
 from .atomic_io import atomic_write_text
 from .database import Database
+from .mesh import (
+    DEFAULT_MESH_PORT,
+    IDENTITY_PREFIX,
+    MAX_MESH_FORWARDS,
+    MAX_MESH_PORTS,
+    NETMAP_LIFETIME,
+    MeshCoordinator,
+    MeshError,
+    clean_mesh_rules,
+    decode_key,
+    rotation_message,
+    verify_announcement,
+    verify_signature,
+)
 from .netcontrol import DeviceGuard, NetControlError, normalize_mac
 from .nodeclient import AGENT_VERBS, MANUAL_VERBS, NodeClient, NodeError
 from .tor_control import TorControlError, TorController
@@ -108,7 +122,10 @@ ACCESS_MODES = ("allowed", "blocked")
 CABLE_COLORS = ("amber", "cyan", "violet", "green")
 CABLE_SPEEDS = ("100-mbps", "1-gbps", "10-gbps")
 
-POLICY_VERSION = 1
+#: Version 2 porte les deux champs du maillage. Le renderer de chaque
+#: plateforme les revalide, et refuse une version qu'il ne connaît pas plutôt
+#: que d'appliquer un pare-feu dont il devine les champs manquants.
+POLICY_VERSION = 2
 
 # The bootstrap is fetched from GitHub, and nothing about that download is
 # trusted: the appliance pins it to the digest of its own copy of the agent
@@ -211,7 +228,7 @@ def clean_onion(value: str) -> str:
     return cleaned
 
 
-def clean_rules(raw: Any) -> dict[str, Any]:
+def clean_rules(raw: Any, known_nodes: set[str] | None = None) -> dict[str, Any]:
     """Validates a rule sheet. Unknown keys are dropped, never carried along."""
     document = raw if isinstance(raw, dict) else {}
     access = str(document.get("access", "allowed"))
@@ -239,12 +256,17 @@ def clean_rules(raw: Any) -> dict[str, Any]:
         schedule = _clean_schedule(document.get("schedule"))
     except AccessError as error:
         raise RackError(str(error)) from error
+    try:
+        mesh = clean_mesh_rules(document.get("mesh"), known_nodes)
+    except MeshError as error:
+        raise RackError(str(error)) from error
     return {
         "access": access,
         "egress": egress,
         "exit_country": country,
         "keep_open_ports": ports or list(DEFAULT_KEEP_OPEN_PORTS),
         "schedule": schedule,
+        "mesh": mesh,
     }
 
 
@@ -254,12 +276,17 @@ def policy_document(rules: dict[str, Any], blocked: bool) -> dict[str, Any]:
     The digest is computed over the canonical form so both sides can tell
     whether the node already runs these rules without comparing field by field.
     """
+    mesh = rules.get("mesh", {})
     body = {
         "version": POLICY_VERSION,
         "egress": rules["egress"],
         "exit_country": rules["exit_country"],
         "keep_open_ports": sorted(rules["keep_open_ports"]),
         "isolated": bool(blocked),
+        # The one hole the kill switch opens for the overlay, and only for the
+        # direct path: the relayed path rides Tor and needs no exception.
+        "mesh_enabled": bool(mesh.get("enabled", False)),
+        "mesh_port": DEFAULT_MESH_PORT if mesh.get("enabled") else 0,
     }
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
     return {**body, "digest": hashlib.sha256(canonical).hexdigest()}
@@ -276,6 +303,7 @@ class RackManager:
         access: DeviceAccessManager,
         client: NodeClient,
         controller: TorController,
+        coordinator: MeshCoordinator,
         demo_mode: bool = False,
         on_event: Callable[[str, str], None] | None = None,
         wifi_view: Callable[[], list[dict[str, Any]]] | None = None,
@@ -292,6 +320,9 @@ class RackManager:
         self.access = access
         self.client = client
         self.controller = controller
+        # The rack signs network maps; it does not hold any node's identity.
+        # That split is what lets two nodes talk without trusting the centre.
+        self.coordinator = coordinator
         self.demo_mode = demo_mode
         self.on_event = on_event
         # Composed rather than imported: the rack reads the Wi-Fi, it does not
@@ -424,6 +455,16 @@ class RackManager:
             "created_at": int(row["created_at"] or 0),
             "updated_at": int(row["updated_at"] or 0),
             "policy_digest": policy_document(rules, blocked)["digest"],
+            "mesh_identity": str(row["mesh_identity"] or ""),
+            "mesh_static": str(row["mesh_static"] or ""),
+            "mesh_static_signature": str(row["mesh_static_signature"] or ""),
+            "mesh_address": str(row["mesh_address"] or ""),
+            "mesh_endorsements": self._json(row["mesh_endorsements"], {}) or {},
+            "netmap_serial": int(row["netmap_serial"] or 0),
+            # The node's own reading of its radio address, refreshed by `status`
+            # and never stored as a column: it belongs to the link, not to the
+            # identity, and it changes when the radio does.
+            "mesh_v4": str((state.get("mesh") or {}).get("direct", "")),
         }
         if blocked_macs is None:
             blocked_macs = self.guard.blocked_macs()
@@ -579,6 +620,7 @@ class RackManager:
                 {"id": verb, "label": AGENT_VERBS[verb][0]} for verb in MANUAL_VERBS
             ],
             "egress_modes": list(EGRESS_MODES),
+            "mesh": self.mesh(nodes),
             "now": now,
         }
 
@@ -938,6 +980,11 @@ class RackManager:
         with self._lock:
             self.database.delete_rack_node(node_id)
         self._forget_client_auth(str(row["onion"] or ""))
+        if row["mesh_identity"]:
+            # Deleting the row removes the peer from the next map; the
+            # revocation list is what tells nodes still holding the old map to
+            # stop, up to its `not_after`.
+            self.coordinator.revoke(str(row["mesh_identity"]))
         # The rack stops describing this machine; the firewall must stop acting
         # on a sheet nobody can see any more.
         if str(row["kind"]) == "local" and row["mac"]:
@@ -972,7 +1019,8 @@ class RackManager:
         in one gesture are one line in the activity feed, not twenty.
         """
         row = self._require_node(node_id)
-        sheet = clean_rules(rules)
+        known = {str(other["id"]) for other in self.database.rack_nodes()}
+        sheet = clean_rules(rules, known)
         with self._lock:
             self.database.update_rack_node(node_id, {"rules": json.dumps(sheet)})
         self._apply_local(node_id)
@@ -983,6 +1031,14 @@ class RackManager:
                 self.push_policy(node_id)
             except (RackError, NodeError) as error:
                 logger.info("Règles non poussées vers %s: %s", row["name"], error)
+            # Only this node's own map is pushed now. Its peers learn about the
+            # change on their next sweep: twelve circuits opened from one form
+            # submission is a page that times out, and the sweep is the
+            # documented bound on how long that takes.
+            try:
+                self.push_netmap(node_id)
+            except (RackError, NodeError, MeshError) as error:
+                logger.info("Carte non publiée vers %s: %s", row["name"], error)
         if announce:
             self._notify("secure", f"Règles de « {row['name']} » enregistrées")
         return self.node(node_id)
@@ -1150,6 +1206,257 @@ class RackManager:
             )
         return result
 
+    # ------------------------------------------------------------- maillage --
+
+    def _adopt_announcement(self, row: dict[str, Any], announcement: Any) -> None:
+        """Records what a node says about its own overlay identity.
+
+        The rack never mints one of these. It checks that the static key the
+        node offers is signed by the identity it claims — otherwise the centre
+        would choose the key its peers encrypt with — and that a *change* of
+        identity is signed by the key being replaced. A node whose key is
+        replaced without that proof keeps the key the rack already knows: an
+        unproven rotation is indistinguishable from a stolen enrolment token.
+        """
+        node_id = str(row["id"])
+        try:
+            checked = verify_announcement(announcement)
+        except MeshError as error:
+            logger.info("Annonce de maillage refusée pour %s: %s", node_id, error)
+            self._notify(
+                "danger",
+                f"Annonce de maillage refusée pour « {row['name']} »: {error}",
+            )
+            return
+        previous = str(row["mesh_identity"] or "")
+        endorsements = str(row["mesh_endorsements"] or "{}")
+        if previous and previous != checked["identity"]:
+            proof = str((announcement or {}).get("rotation_signature", ""))
+            try:
+                # A stored key nobody can parse cannot vouch for its successor,
+                # and this runs on the monitor thread: it must refuse, not raise.
+                previous_key = decode_key(IDENTITY_PREFIX, previous)
+            except MeshError:
+                previous_key = b""
+            if not previous_key or not verify_signature(
+                previous_key, rotation_message(previous, checked["identity"]), proof
+            ):
+                self._notify(
+                    "danger",
+                    f"Changement de clé de maillage refusé sur « {row['name']} »: "
+                    "il n’est pas signé par la clé précédente.",
+                )
+                return
+            self.coordinator.revoke(previous)
+            # The trustees signed the key that is going away, not this one.
+            endorsements = "{}"
+        elif previous == checked["identity"] and str(row["mesh_static"] or "") == checked["static"]:
+            return
+        with self._lock:
+            self.database.update_rack_node(
+                node_id,
+                {
+                    "mesh_identity": checked["identity"],
+                    "mesh_static": checked["static"],
+                    "mesh_static_signature": checked["static_signature"],
+                    "mesh_address": checked["address"],
+                    "mesh_endorsements": endorsements,
+                },
+            )
+        if previous and previous != checked["identity"]:
+            self._notify("secure", f"Clé de maillage de « {row['name']} » renouvelée")
+
+    def _mesh_views(self) -> list[dict[str, Any]]:
+        now = int(time.time())
+        moment = time.localtime(now)
+        blocked = self.guard.blocked_macs()
+        return [
+            self._node_view(row, now, moment, blocked, {})
+            for row in self.database.rack_nodes()
+            if str(row["kind"]) == "remote"
+        ]
+
+    def netmap_for(self, node_id: str) -> dict[str, Any]:
+        """The map a node would receive right now, unsigned and unnumbered.
+
+        Exposed so the interface can show what a node is being told without
+        burning a serial number: issuing a map is not a read.
+        """
+        views = self._mesh_views()
+        target = next((view for view in views if view["id"] == node_id), None)
+        if target is None:
+            raise RackError("Ce nœud n’existe pas.")
+        peers = [
+            entry
+            for view in views
+            if view["id"] != node_id
+            for entry in (self.coordinator.peer_entry(view),)
+            if entry is not None
+        ]
+        return self.coordinator.body(target, peers)
+
+    def push_netmap(self, node_id: str, force: bool = False) -> dict[str, Any]:
+        """Issues and delivers this node's map, when its content has changed.
+
+        Skipped when the content is identical and the map still has more than
+        half its life left: a rack sweeps every minute, and re-signing the same
+        peers sixty times an hour would spend circuits to say nothing. A node
+        whose map is not renewed before `not_after` stops trusting it, which is
+        the point — an appliance that has gone quiet must not keep a maillage
+        running indefinitely.
+        """
+        row = self._require_node(node_id)
+        if str(row["kind"]) != "remote":
+            raise RackError("Seuls les nœuds distants reçoivent une carte.")
+        if not row["onion"]:
+            raise RackError("Ce nœud n’a pas encore d’adresse onion.")
+        body = self.netmap_for(node_id)
+        digest = self.coordinator.digest(body)
+        state = self._json(row.get("state"), {})
+        published = state.get("netmap") if isinstance(state.get("netmap"), dict) else {}
+        now = int(time.time())
+        stale = now - int(published.get("issued_at", 0) or 0) > NETMAP_LIFETIME // 2
+        if not force and not stale and str(published.get("digest", "")) == digest:
+            return {"published": False, "digest": digest, "peers": len(body["peers"])}
+        document = self.coordinator.issue(body, now)
+        result = self._call(row, "netmap", document)
+        if not result.get("accepted"):
+            message = str(result.get("message", ""))[:200] or "Carte refusée par le nœud."
+            with self._lock:
+                self.database.update_rack_node(node_id, {"last_error": message})
+            raise NodeError(message)
+        state["netmap"] = {
+            "digest": digest,
+            "serial": document["serial"],
+            "issued_at": now,
+            "peers": len(body["peers"]),
+            "forwards": len(body["forwards"]),
+        }
+        values: dict[str, Any] = {
+            "state": json.dumps(state)[:8000],
+            "netmap_serial": int(document["serial"]),
+            "last_seen": now,
+        }
+        # A published map says nothing about the rules: clearing the node's last
+        # error here would erase a refusal the operator has to see, and a rack
+        # that hides a refused policy behind an accepted map is worse than one
+        # that reports neither.
+        if str(row["last_error"] or "").startswith(AGENT_VERBS["netmap"][0]):
+            values["last_error"] = ""
+        with self._lock:
+            self.database.update_rack_node(node_id, values)
+        return {"published": True, "digest": digest, "peers": len(body["peers"])}
+
+    def rotate_mesh_key(self, node_id: str) -> dict[str, Any]:
+        """Asks a node to replace its overlay identity, and republishes.
+
+        The node generates the new key and signs the change with the old one.
+        Nothing about the new key comes from here — which is why losing the
+        coordinator's key costs re-signing maps, not re-enrolling machines.
+        """
+        row = self._require_node(node_id)
+        if str(row["kind"]) != "remote":
+            raise RackError("Seuls les nœuds distants ont une clé de maillage.")
+        result = self._call(row, "mesh-rotate", {})
+        self._adopt_announcement(row, result.get("mesh"))
+        return self.node(node_id)
+
+    def mesh(self, views: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """What the overlay looks like from here, for the interface."""
+        if views is None:
+            views = self._mesh_views()
+        else:
+            views = [view for view in views if view["kind"] == "remote"]
+        lock = self.coordinator.lock()
+        members = []
+        for view in views:
+            entry = self.coordinator.peer_entry(view)
+            published = view["state"].get("netmap") or {}
+            members.append(
+                {
+                    "id": view["id"],
+                    "name": view["name"],
+                    "enabled": bool(view["rules"]["mesh"]["enabled"]),
+                    "identity": view["mesh_identity"],
+                    "address": view["mesh_address"],
+                    "direct": view["mesh_v4"],
+                    "ports": list(view["rules"]["mesh"]["ports"]),
+                    "forwards": list(view["rules"]["mesh"]["forwards"]),
+                    "endorsed": len(view["mesh_endorsements"]),
+                    "in_map": entry is not None,
+                    "netmap_serial": view["netmap_serial"],
+                    "netmap_peers": int(published.get("peers", 0) or 0),
+                    "netmap_issued_at": int(published.get("issued_at", 0) or 0),
+                }
+            )
+        return {
+            "coordinator": self.coordinator.public_key(),
+            "lock": lock,
+            "revoked": self.coordinator.revoked(),
+            "members": members,
+            "mesh_port": DEFAULT_MESH_PORT,
+            "limits": {
+                "max_ports": MAX_MESH_PORTS,
+                "max_forwards": MAX_MESH_FORWARDS,
+            },
+        }
+
+    def set_mesh_lock(
+        self, enabled: bool, threshold: int, trustees: list[str]
+    ) -> dict[str, Any]:
+        try:
+            self.coordinator.set_lock(enabled, threshold, trustees)
+        except MeshError as error:
+            raise RackError(str(error)) from error
+        self._notify(
+            "secure",
+            "Verrou de maillage activé" if enabled else "Verrou de maillage désactivé",
+        )
+        return self.mesh()
+
+    def set_endorsements(self, node_id: str, endorsements: Any) -> dict[str, Any]:
+        """Stores the trustee signatures that let a node's key enter the maillage.
+
+        Checked here so a node sheet says the truth about what it holds; the
+        check that matters happens on each node, against its own pinned
+        `mesh.lock`. A rack that could vouch for a key would be exactly the
+        single point of compromise the lock exists to remove.
+        """
+        row = self._require_node(node_id)
+        identity = str(row["mesh_identity"] or "")
+        if not identity:
+            raise RackError("Ce nœud n’a pas encore annoncé de clé de maillage.")
+        try:
+            kept = self.coordinator.check_endorsements(node_id, identity, endorsements)
+        except MeshError as error:
+            raise RackError(str(error)) from error
+        with self._lock:
+            self.database.update_rack_node(
+                node_id, {"mesh_endorsements": json.dumps(kept)}
+            )
+        self._notify(
+            "secure",
+            f"{len(kept)} contre-signature(s) enregistrée(s) pour « {row['name']} »",
+        )
+        return self.node(node_id)
+
+    def endorsement_request(self, node_id: str) -> dict[str, Any]:
+        """What a trustee has to sign, and with which command."""
+        row = self._require_node(node_id)
+        identity = str(row["mesh_identity"] or "")
+        if not identity:
+            raise RackError("Ce nœud n’a pas encore annoncé de clé de maillage.")
+        return {
+            "node_id": node_id,
+            "name": str(row["name"]),
+            "identity": identity,
+            "message": self.coordinator.endorsement_target(node_id, identity),
+            "command": (
+                f"onionpi-admin mesh-endorse --node {node_id} --identity {identity}"
+            ),
+            "lock": self.coordinator.lock(),
+        }
+
     def run_action(self, node_id: str, verb: str, unit: str = "") -> dict[str, Any]:
         if verb not in MANUAL_VERBS:
             raise RackError("Action inconnue pour un nœud.")
@@ -1161,6 +1468,8 @@ class RackManager:
             if unit and not re.fullmatch(r"[\w.@-]{1,64}", unit):
                 raise RackError("Nom de service invalide.")
             payload = {"unit": unit or "tor", "lines": 80}
+        if verb == "mesh-rotate":
+            return self.rotate_mesh_key(node_id)
         result = self._call(row, verb, payload)
         if verb == "status":
             self._record_status(str(row["id"]), result)
@@ -1213,12 +1522,16 @@ class RackManager:
                 "policy",
                 "services",
                 "platform",
+                "mesh",
             )
             if key in status
         }
         # The reading from the node is the truth about what it runs, but the
         # last push we made is the truth about what we asked for.
         state.setdefault("policy", previous.get("policy", {}))
+        state.setdefault("netmap", previous.get("netmap", {}))
+        if isinstance(status.get("mesh"), dict):
+            self._adopt_announcement(row, status["mesh"])
         now = int(time.time())
         with self._lock:
             self.database.update_rack_node(
@@ -1321,6 +1634,15 @@ class RackManager:
         port = int(row["agent_port"] or 9080)
         token = self.token_for(node_id, epoch)
         digest = bundle_digest(self.agent_dir) if self.agent_dir else ""
+        # The coordinator key travels in the command, not over the channel it
+        # authenticates: a node that learned it from a map would accept the
+        # first map it was handed, which is the whole thing the key prevents.
+        coordinator = self.coordinator.public_key()
+        lock = self.coordinator.lock()
+        lock_argument = ""
+        if lock["enabled"]:
+            trustees = ",".join(lock["trustees"])
+            lock_argument = f" --mesh-lock {lock['threshold']}:{trustees}"
         # `--token-stdin` is what keeps the shared secret out of the node's
         # process list and shell history: the installer reads it from the
         # terminal. The operator pastes it at the prompt from the field the
@@ -1329,6 +1651,8 @@ class RackManager:
             f"--node {node_id}"
             f" --port {port}"
             f" --client-key {public}"
+            f" --coordinator-key {coordinator}"
+            f"{lock_argument}"
             " --token-stdin"
             " --yes"
         )
@@ -1372,6 +1696,9 @@ class RackManager:
                 windows_pins += f" -Ref {self.release_ref}"
         else:
             windows_pins = " -UnverifiedBundle"
+        windows_lock = ""
+        if lock["enabled"]:
+            windows_lock = f" -MeshLock {lock['threshold']}:{','.join(lock['trustees'])}"
         commands["windows"] = (
             "$p=Join-Path $env:TEMP 'onionpi-node.ps1'; "
             "Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue; "
@@ -1380,7 +1707,8 @@ class RackManager:
             "if ($LASTEXITCODE -ne 0) { throw 'Telechargement GitHub refuse' }; "
             "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p"
             f" -Node {node_id} -Port {port}"
-            f" -ClientKey {public} -TokenStdin{windows_pins} -Yes"
+            f" -ClientKey {public} -CoordinatorKey {coordinator}{windows_lock}"
+            f" -TokenStdin{windows_pins} -Yes"
         )
         return {
             "node_id": node_id,
@@ -1389,6 +1717,8 @@ class RackManager:
             "token_epoch": epoch,
             "agent_port": port,
             "client_public_key": public,
+            "coordinator_key": coordinator,
+            "mesh_lock": lock,
             "bundle_digest": digest,
             "onion": str(row["onion"] or ""),
             # Kept for clients predating the multi-platform installer.
@@ -1430,6 +1760,16 @@ class RackManager:
                 self.push_policy(node_id)
             except (RackError, NodeError) as error:
                 logger.info("Règles non poussées vers %s: %s", view["name"], error)
+            view = self.node(node_id)
+        # The map follows the same rule as the policy: intent lives here, and
+        # the sweep keeps handing it over until the node holds it. This is also
+        # what bounds a revocation — a peer stays reachable until every node
+        # has been visited, which is the sweep's own period.
+        try:
+            self.push_netmap(node_id)
+        except (RackError, NodeError, MeshError) as error:
+            logger.info("Carte non publiée vers %s: %s", view["name"], error)
+        else:
             view = self.node(node_id)
         return view
 
@@ -1553,6 +1893,29 @@ class RackManager:
                 self.push_policy(node_id)
                 self._seed_history(node_id)
         if len(demo_node_ids) == 3:
+            # Two peers of one overlay: the relay exposes ssh and its agent, the
+            # storage node reaches ssh through a local forward. Enabled here so
+            # the page shows a maillage that already carries something, rather
+            # than an empty table nobody can judge.
+            relay, storage, _ = demo_node_ids
+            self.set_rules(
+                relay,
+                {"mesh": {"enabled": True, "ports": [22, 9080]}},
+                announce=False,
+            )
+            self.set_rules(
+                storage,
+                {
+                    "mesh": {
+                        "enabled": True,
+                        "ports": [22],
+                        "forwards": [{"listen": 2222, "node": relay, "port": 22}],
+                    }
+                },
+                announce=False,
+            )
+            for node_id in (relay, storage):
+                self.push_netmap(node_id, force=True)
             self.create_cable(
                 rack_id,
                 demo_node_ids[0],

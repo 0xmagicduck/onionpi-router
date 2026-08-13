@@ -13,8 +13,11 @@ NODE_ID=""
 TOKEN=""
 TOKEN_STDIN=0
 PORT=9080
+MESH_PORT=9081
 CLIENT_KEY=""
 CLIENT_NAME="baie"
+COORDINATOR_KEY=""
+MESH_LOCK=""
 ASSUME_YES=0
 
 usage() {
@@ -28,9 +31,17 @@ Usage: sudo ./install-node-agent.sh --node <id> --token-stdin [options]
                        machine, et reste dans l'historique du shell.
   --token <jeton>      Jeton partagé, 64 caractères hexadécimaux. Déconseillé.
   --port <port>        Port de l'agent sur la boucle locale (défaut: 9080).
+  --mesh-port <port>   Port du plan de données du maillage (défaut: 9081).
   --client-key <clé>   Clé publique x25519 de la baie, en base32. Sans elle,
                        l'adresse onion est le seul secret: fortement déconseillé.
   --client-name <nom>  Nom du fichier d'autorisation (défaut: baie).
+  --coordinator-key <clé>
+                       Clé publique Ed25519 du coordinateur, « ed25519:… ».
+                       Elle est épinglée ici: sans elle le maillage reste
+                       éteint, et le nœud n'accepte aucune carte de pairs.
+  --mesh-lock K:clé,clé,…
+                       Verrou de maillage K-sur-N. Une clé de pair nouvelle
+                       n'est alors acceptée que contresignée par K garants.
   --yes                Ne pas demander de confirmation.
 
 Les valeurs sont affichées par « Baie virtuelle » dans l'interface OnionPi.
@@ -43,8 +54,11 @@ while (($#)); do
     --token) TOKEN="${2:-}"; shift 2 ;;
     --token-stdin) TOKEN_STDIN=1; shift ;;
     --port) PORT="${2:-}"; shift 2 ;;
+    --mesh-port) MESH_PORT="${2:-}"; shift 2 ;;
     --client-key) CLIENT_KEY="${2:-}"; shift 2 ;;
     --client-name) CLIENT_NAME="${2:-}"; shift 2 ;;
+    --coordinator-key) COORDINATOR_KEY="${2:-}"; shift 2 ;;
+    --mesh-lock) MESH_LOCK="${2:-}"; shift 2 ;;
     --yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Option inconnue: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -73,10 +87,25 @@ fi
 [[ "$TOKEN" =~ ^[0-9a-f]{64}$ ]] || { printf 'Jeton invalide.\n' >&2; exit 2; }
 [[ "$PORT" =~ ^[0-9]{1,5}$ ]] && (( PORT >= 1 && PORT <= 65535 )) \
   || { printf '--port invalide.\n' >&2; exit 2; }
+[[ "$MESH_PORT" =~ ^[0-9]{1,5}$ ]] && (( MESH_PORT >= 1 && MESH_PORT <= 65535 )) \
+  || { printf '--mesh-port invalide.\n' >&2; exit 2; }
+(( MESH_PORT != PORT )) || { printf '--mesh-port doit différer de --port.\n' >&2; exit 2; }
 [[ -z "$CLIENT_KEY" || "$CLIENT_KEY" =~ ^[A-Z2-7]{52}$ ]] \
   || { printf '--client-key invalide: 52 caractères base32.\n' >&2; exit 2; }
 [[ "$CLIENT_NAME" =~ ^[A-Za-z0-9_-]{1,32}$ ]] \
   || { printf '--client-name invalide.\n' >&2; exit 2; }
+[[ -z "$COORDINATOR_KEY" || "$COORDINATOR_KEY" =~ ^ed25519:[0-9a-f]{64}$ ]] \
+  || { printf '--coordinator-key invalide: « ed25519: » et 64 caractères hexadécimaux.\n' >&2; exit 2; }
+if [[ -n "$MESH_LOCK" ]]; then
+  [[ -n "$COORDINATOR_KEY" ]] \
+    || { printf '--mesh-lock sans --coordinator-key n’a rien à verrouiller.\n' >&2; exit 2; }
+  [[ "$MESH_LOCK" =~ ^([1-8]):(ed25519:[0-9a-f]{64}(,ed25519:[0-9a-f]{64})*)$ ]] \
+    || { printf '--mesh-lock invalide: attendu « K:clé,clé,… ».\n' >&2; exit 2; }
+  LOCK_THRESHOLD="${BASH_REMATCH[1]}"
+  IFS=',' read -r -a LOCK_TRUSTEES <<<"${BASH_REMATCH[2]}"
+  (( LOCK_THRESHOLD <= ${#LOCK_TRUSTEES[@]} )) \
+    || { printf 'Seuil du verrou supérieur au nombre de garants.\n' >&2; exit 2; }
+fi
 
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 HS_DIR=/var/lib/tor/onionpi-node
@@ -121,6 +150,10 @@ install -d -m 0755 "$LIB_DIR" /etc/onionpi-node
 printf '▸ Programmes\n'
 install -m 0755 "$SOURCE_DIR/onionpi-node-agent.py" "$LIB_DIR/onionpi-node-agent.py"
 install -m 0755 "$SOURCE_DIR/render-policy.py" "$LIB_DIR/render-policy.py"
+# À côté de l'agent, donc importés par le répertoire du programme. Aucune
+# dépendance externe: tout le maillage tient dans la bibliothèque standard.
+install -m 0644 "$SOURCE_DIR/onionpi_mesh.py" "$LIB_DIR/onionpi_mesh.py"
+install -m 0644 "$SOURCE_DIR/onionpi_mesh_runtime.py" "$LIB_DIR/onionpi_mesh_runtime.py"
 install -m 0755 "$SOURCE_DIR/onionpi-node-apply.sh" /usr/local/sbin/onionpi-node-apply.sh
 install -m 0644 "$SOURCE_DIR/systemd/onionpi-node-agent.service" \
   /etc/systemd/system/onionpi-node-agent.service
@@ -137,10 +170,29 @@ NODE_ID=$NODE_ID
 TOKEN=$TOKEN
 PORT=$PORT
 ONIONPI_NODE_PORT=$PORT
+MESH_PORT=$MESH_PORT
+COORDINATOR_KEY=$COORDINATOR_KEY
 EOF
 chown root:onionpi-node /etc/onionpi-node/agent.env
 chmod 0640 /etc/onionpi-node/agent.env
 umask 022
+
+# Le verrou de maillage appartient à root et l'agent ne fait que le lire: un
+# verrou que le coordinateur pourrait remplacer ne verrouillerait rien.
+if [[ -n "$MESH_LOCK" ]]; then
+  {
+    printf '{"version":1,"threshold":%s,"trustees":[' "$LOCK_THRESHOLD"
+    for index in "${!LOCK_TRUSTEES[@]}"; do
+      (( index == 0 )) || printf ','
+      printf '"%s"' "${LOCK_TRUSTEES[index]}"
+    done
+    printf ']}\n'
+  } >/etc/onionpi-node/mesh.lock
+  chown root:onionpi-node /etc/onionpi-node/mesh.lock
+  chmod 0644 /etc/onionpi-node/mesh.lock
+else
+  rm -f /etc/onionpi-node/mesh.lock
+fi
 
 # La file de requêtes privilégiées, sur le modèle de la Raspberry Pi: l'agent
 # écrit, root répond à côté, dans un répertoire que l'agent ne peut pas modifier.
@@ -175,6 +227,7 @@ CookieAuthFileGroupReadable 1
 HiddenServiceDir $HS_DIR/
 HiddenServiceVersion 3
 HiddenServicePort $PORT 127.0.0.1:$PORT
+HiddenServicePort $MESH_PORT 127.0.0.1:$MESH_PORT
 $MARK_END
 EOF
 
@@ -206,6 +259,7 @@ Agent installé.
 
   Adresse du nœud : $ADDRESS
   Port de l’agent : $PORT
+  Port du maillage : $MESH_PORT${COORDINATOR_KEY:+ (coordinateur épinglé)}${MESH_LOCK:+, verrou $LOCK_THRESHOLD-sur-${#LOCK_TRUSTEES[@]}}
 
 Recopiez cette adresse dans « Baie virtuelle » → le nœud « $NODE_ID », puis
 actualisez-le. Tant que la baie ne l’a pas, le nœud reste en attente.

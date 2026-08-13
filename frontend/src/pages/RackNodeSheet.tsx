@@ -27,6 +27,7 @@ import type {
   RackProfile,
   RackSample,
 } from '../types'
+import { MeshKeyActions, MeshRulesSection } from './RackMesh'
 import { DEFAULT_RULES, STATUS } from './rackShared'
 
 /** Services dont le journal a un sens à distance. Rien d’autre n’est proposé :
@@ -55,6 +56,8 @@ export function RackNodeSheet({
   node,
   racks,
   profiles,
+  peers,
+  meshLocked,
   onClose,
   onChanged,
   notify,
@@ -62,6 +65,9 @@ export function RackNodeSheet({
   node: RackNode
   racks: RackFrame[]
   profiles: RackProfile[]
+  /** Les autres nœuds distants, seules destinations qu’une redirection peut viser. */
+  peers: RackNode[]
+  meshLocked: boolean
   onClose: () => void
   onChanged: () => Promise<void>
   notify: (message: string, error?: boolean) => void
@@ -311,6 +317,20 @@ export function RackNodeSheet({
 
         {node.kind === 'remote' && (
           <>
+            <MeshRulesSection
+              node={node}
+              peers={peers}
+              rules={rules}
+              setRules={setRules}
+              busy={busy}
+            />
+            <MeshKeyActions
+              node={node}
+              locked={meshLocked}
+              busy={busy}
+              act={act}
+              notify={notify}
+            />
             <section className="rack-section">
               <h3>Identité</h3>
               <div className="settings-form">

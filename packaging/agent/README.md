@@ -13,6 +13,8 @@ l’interface puisse vous le remettre.
 | Fichier | Rôle |
 | --- | --- |
 | `onionpi-node-agent.py` | Agent HTTP sur `127.0.0.1` uniquement. Aucun privilège. Vérifie la signature de chaque appel. |
+| `onionpi_mesh.py` | Ed25519, X25519, ChaCha20-Poly1305, Noise IK, cartes signées, verrou de maillage. Bibliothèque standard uniquement. |
+| `onionpi_mesh_runtime.py` | Plan de données du maillage : répondeur, redirections locales, choix entre chemin direct et chemin relayé. |
 | `render-policy.py` | Traduit la politique reçue en règles nftables, après revalidation. Exécuté sous root. |
 | `onionpi-node-apply.sh` | Exécutant privilégié. Revalide le verbe, n’accepte aucun argument depuis le fichier de requête. |
 | `systemd/` | Les trois unités: l’agent, l’unité `.path` qui surveille la file, le service root qu’elle déclenche. |
@@ -104,6 +106,29 @@ restés en v1 : réinstallez leur agent depuis **Préparer l’installation**, l
 commande est réaffichable. La baie ne se rabat jamais sur la v1 — un repli
 déclenché par une réponse est un repli offert à qui la fabrique.
 
+## Le maillage
+
+L’agent 0.6 engendre au premier démarrage une identité **Ed25519** et une clé
+statique **X25519**, dans `identity.json` (0600), et n’en transmet que les
+moitiés publiques. C’est ce qui permet à deux nœuds de se parler sans faire
+confiance à la baie : elle les **autorise**, elle ne peut plus les **être**.
+
+Deux options d’installation le pilotent, toutes deux affichées par la baie dans
+la commande d’enrôlement :
+
+* `--coordinator-key ed25519:…` épingle la clé qui signe les cartes du réseau.
+  Sans elle, l’agent tourne mais le maillage reste éteint : un nœud qui
+  apprendrait cette clé d’une carte accepterait la première carte venue.
+* `--mesh-lock K:clé,clé,…` écrit `mesh.lock`, propriété de root. Une clé de
+  pair **nouvelle** n’est alors acceptée que contresignée par K garants sur N.
+
+L’installateur ouvre aussi un second port virtuel sur le service onion du nœud
+(9081 par défaut, `--mesh-port`) : c’est le plan de données. L’agent n’écoute
+jamais sur `0.0.0.0` — la boucle locale pour le chemin relayé, l’adresse de
+`bat0` pour le chemin direct quand la machine a une radio maillée.
+
+Détails et modèle de menace : [`docs/onionmesh.md`](../../docs/onionmesh.md).
+
 ## Le pare-feu du nœud
 
 Sous Linux et macOS, la politique par défaut appliquée à la première
@@ -116,6 +141,11 @@ synchronisation :
 * **isolement** (règle « Accès : bloqué ») : les applications perdent en plus
   l’accès au port SOCKS. La machine reste joignable et son service onion reste
   publié, mais elle ne sort plus.
+
+Quand le maillage est activé, Linux ajoute exactement deux règles : le port du
+plan de données, en entrée et en sortie, uniquement vers `10.43.0.0/16`. Sans
+elles le coupe-circuit couperait le chemin direct. Isoler un nœud retire la
+règle de sortie : un pair du maillage reste une sortie.
 
 Windows refuse cette politique et conserve sa sortie directe tant qu’un tunnel
 TUN vérifié n’est pas installé.

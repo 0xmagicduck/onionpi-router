@@ -31,6 +31,17 @@ TABLE = "onionpi_node"
 EGRESS_MODES = ("tor-only", "direct")
 MAX_PORTS = 8
 
+#: Version du document accepté. La 2 ajoute les deux champs du maillage; un
+#: document de version 1 n'arrive plus, la baie et l'agent étant publiés
+#: ensemble, et le refuser vaut mieux que deviner ce que ses champs voulaient.
+POLICY_VERSION = 2
+
+#: Le plan d'adressage du lien radio `bat0`, tel que `packaging/install.sh` le
+#: pose. Écrit ici plutôt que reçu: c'est le seul réseau vers lequel le
+#: coupe-circuit ouvre une exception, et une exception dont l'étendue arrive
+#: dans un fichier n'est plus une exception bornée.
+MESH_NETWORK = "10.43.0.0/16"
+
 #: Nom du compte du démon Tor selon la distribution.
 TOR_ACCOUNTS = ("debian-tor", "tor", "_tor")
 AGENT_ACCOUNT = "onionpi-node"
@@ -59,7 +70,7 @@ def load(path: Path) -> dict[str, object]:
         fail(f"JSON invalide ({error})")
     if not isinstance(document, dict):
         fail("document attendu: un objet")
-    if document.get("version") != 1:
+    if document.get("version") != POLICY_VERSION:
         fail("version de politique inconnue")
     egress = document.get("egress")
     if egress not in EGRESS_MODES:
@@ -79,11 +90,17 @@ def load(path: Path) -> dict[str, object]:
     digest = document.get("digest", "")
     if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
         fail("empreinte invalide")
+    mesh_port = document.get("mesh_port", 0)
+    if not isinstance(mesh_port, int) or isinstance(mesh_port, bool) or not 0 <= mesh_port <= 65535:
+        fail("port de maillage invalide")
+    mesh_enabled = bool(document.get("mesh_enabled", False)) and mesh_port > 0
     return {
         "egress": egress,
         "exit_country": country,
         "keep_open_ports": sorted(ports),
         "isolated": bool(document.get("isolated", False)),
+        "mesh_enabled": mesh_enabled,
+        "mesh_port": mesh_port if mesh_enabled else 0,
         "digest": digest,
     }
 
@@ -107,6 +124,14 @@ def render(policy: dict[str, object], socks_port: int) -> str:
     if ports:
         listed = ", ".join(str(port) for port in ports)
         lines.append(f"    tcp dport {{ {listed} }} accept")
+    if policy["mesh_enabled"]:
+        # Le chemin direct du maillage: un pair à portée radio joint ce nœud
+        # sur `bat0` sans payer six sauts Tor. Un seul port, un seul réseau, et
+        # ce qui passe dedans est du Noise — le lien n'est pas une frontière de
+        # confiance, la poignée de main l'est.
+        lines.append(
+            f"    ip saddr {MESH_NETWORK} tcp dport {policy['mesh_port']} accept"
+        )
     lines += [
         "  }",
         "  chain forward {",
@@ -139,9 +164,15 @@ def render(policy: dict[str, object], socks_port: int) -> str:
         "    ct state established,related accept",
         '    oif "lo" accept',
         f"    meta skuid {tor_uid} accept",
-        "  }",
-        "}",
     ]
+    if policy["mesh_enabled"] and not policy["isolated"]:
+        # L'autre moitié du chemin direct. Retirée quand le nœud est isolé:
+        # isoler veut dire « il ne sort plus », et un pair du maillage reste une
+        # sortie. Le chemin relayé par Tor, lui, n'a besoin d'aucune exception.
+        lines.append(
+            f"    ip daddr {MESH_NETWORK} tcp dport {policy['mesh_port']} accept"
+        )
+    lines += ["  }", "}"]
     return "\n".join(lines) + "\n"
 
 

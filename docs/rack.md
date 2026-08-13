@@ -217,10 +217,14 @@ elle-même, donc rien ne s’enrôle sans qu’un opérateur l’ait vu.
 
 * **Pas de shell distant.** Les verbes sont énumérés et revalidés des deux
   côtés : état, nouvelle identité, redémarrage de Tor, lecture d’un journal
-  d’une unité listée, redémarrage. Rien qui prenne une commande en argument.
-  Pour un accès interactif, `torsocks ssh` vers le port laissé ouvert.
+  d’une unité listée, redémarrage, publication de la carte du maillage, rotation
+  de la clé de maillage. Rien qui prenne une commande en argument. Pour un accès
+  interactif, `torsocks ssh` vers le port laissé ouvert — ou une redirection
+  OnionMesh, qui évite d’exposer ce port.
 * **Pas de trafic à travers la Pi.** Un nœud distant sort par son propre Tor.
-  La baie l’administre, elle ne le route pas.
+  La baie l’administre, elle ne le route pas. Deux nœuds qui se parlent le font
+  directement, par [OnionMesh](onionmesh.md) : la baie signe la carte qui les
+  autorise, elle n’est pas sur le chemin.
 * **Pas d’inventaire automatique.** Un client du Wi-Fi est *proposé*, jamais
   ajouté tout seul, et un nœud distant n’existe que parce qu’un opérateur l’a
   déclaré et lui a recopié son adresse.
@@ -245,4 +249,8 @@ Tous sous `/api/v1/rack`, session obligatoire, jeton CSRF pour chaque mutation.
 | `POST` | `/rack/profiles`, `/profiles/remove` | Feuilles de règles nommées |
 | `POST` | `/rack/nodes/action` | Un verbe de la liste publiée |
 | `POST` | `/rack/nodes/enrollment`, `/nodes/rotate-token` | Identifiants dérivés |
+| `GET` | `/rack/mesh` | État du réseau superposé : coordinateur, verrou, membres, révocations |
+| `POST` | `/rack/mesh/lock` | Verrou de maillage K-sur-N |
+| `POST` | `/rack/mesh/netmap` | Publication immédiate de la carte d’un nœud |
+| `POST` | `/rack/mesh/endorsement`, `/mesh/endorsements` | Ce qu’un garant signe, et les contre-signatures reçues |
 | `GET` | `/rack/agent-bundle` | `packaging/agent/` en tar.gz |

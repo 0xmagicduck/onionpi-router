@@ -1245,6 +1245,18 @@
 .rack-readout dt { color: var(--text-tertiary); font-size: var(--text-xs); }
 .rack-readout dd { margin: 0; color: var(--text-primary); font-size: var(--text-sm); }
 
+.rack-mesh { display: grid; gap: var(--space-4); }
+.rack-forwards { display: grid; gap: var(--space-2); }
+/* Port local, pair, port distant, retrait: la ligne se lit dans l'ordre du
+   chemin qu'elle décrit, et se replie sur les écrans étroits. */
+.rack-forward {
+  display: grid; align-items: center; gap: var(--space-2);
+  grid-template-columns: minmax(72px, 1fr) minmax(120px, 2fr) minmax(72px, 1fr) auto;
+}
+@media (max-width: 640px) {
+  .rack-forward { grid-template-columns: 1fr 1fr; }
+}
+
 .rack-section { display: grid; gap: var(--space-2); }
 .rack-section h3 {
   color: var(--text-secondary); font-size: var(--text-xs); font-weight: 600;

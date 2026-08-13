@@ -86,6 +86,18 @@ CREATE TABLE IF NOT EXISTS rack_nodes (
     state TEXT NOT NULL DEFAULT '{}',
     last_seen INTEGER NOT NULL DEFAULT 0,
     last_error TEXT NOT NULL DEFAULT '',
+    -- Overlay identity, announced by the node itself and never derived here.
+    -- The rack authorises a node; since these columns exist it can no longer
+    -- *be* one, which is what lets two nodes talk without trusting the centre.
+    mesh_identity TEXT NOT NULL DEFAULT '',
+    mesh_static TEXT NOT NULL DEFAULT '',
+    mesh_static_signature TEXT NOT NULL DEFAULT '',
+    mesh_address TEXT NOT NULL DEFAULT '',
+    -- Trustee signatures carried to the peers under a mesh lock. The rack
+    -- transports them; it cannot mint them.
+    mesh_endorsements TEXT NOT NULL DEFAULT '{}',
+    -- Highest map serial this node acknowledged, so a resend is visible.
+    netmap_serial INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -196,6 +208,12 @@ RACK_NODE_DEFAULTS: dict[str, Any] = {
     "state": "{}",
     "last_seen": 0,
     "last_error": "",
+    "mesh_identity": "",
+    "mesh_static": "",
+    "mesh_static_signature": "",
+    "mesh_address": "",
+    "mesh_endorsements": "{}",
+    "netmap_serial": 0,
 }
 RACK_NODE_FIELDS = tuple(RACK_NODE_DEFAULTS)
 # Written out rather than assembled: a statement built by a loop is a statement
@@ -204,16 +222,30 @@ RACK_NODE_INSERT = """
 INSERT INTO rack_nodes(
     id, kind, created_at, updated_at,
     rack_id, position, name, role, mac, onion, agent_port, token_epoch,
-    client_auth, notes, rules, state, last_seen, last_error
-) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    client_auth, notes, rules, state, last_seen, last_error,
+    mesh_identity, mesh_static, mesh_static_signature, mesh_address,
+    mesh_endorsements, netmap_serial
+) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 """
 RACK_NODE_UPDATE = """
 UPDATE rack_nodes SET
     rack_id=?, position=?, name=?, role=?, mac=?, onion=?, agent_port=?,
     token_epoch=?, client_auth=?, notes=?, rules=?, state=?, last_seen=?,
-    last_error=?, updated_at=?
+    last_error=?, mesh_identity=?, mesh_static=?, mesh_static_signature=?,
+    mesh_address=?, mesh_endorsements=?, netmap_serial=?, updated_at=?
 WHERE id=?
 """
+#: Columns added to `rack_nodes` after the first release that shipped it. Every
+#: one is `NOT NULL DEFAULT`, so an appliance upgraded in place gets them
+#: without a rewrite of existing rows.
+RACK_NODE_ADDED_COLUMNS = (
+    ("mesh_identity", "TEXT NOT NULL DEFAULT ''"),
+    ("mesh_static", "TEXT NOT NULL DEFAULT ''"),
+    ("mesh_static_signature", "TEXT NOT NULL DEFAULT ''"),
+    ("mesh_address", "TEXT NOT NULL DEFAULT ''"),
+    ("mesh_endorsements", "TEXT NOT NULL DEFAULT '{}'"),
+    ("netmap_serial", "INTEGER NOT NULL DEFAULT 0"),
+)
 
 
 class Database:
@@ -262,6 +294,18 @@ class Database:
             # The account was created with its password: that date is the best
             # estimate available for an appliance upgraded in place.
             connection.execute("UPDATE users SET password_changed_at = created_at")
+        node_columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(rack_nodes)").fetchall()
+        }
+        for name, declaration in RACK_NODE_ADDED_COLUMNS:
+            if name not in node_columns:
+                # The only statement in this module built by interpolation, and
+                # both halves come from the constant above: ALTER TABLE takes no
+                # parameters, and nothing a caller supplies reaches this string.
+                connection.execute(
+                    f"ALTER TABLE rack_nodes ADD COLUMN {name} {declaration}"
+                )
 
     @staticmethod
     def _trim(connection: sqlite3.Connection, table: str, limit: int) -> None:

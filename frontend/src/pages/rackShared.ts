@@ -16,11 +16,13 @@ export const EGRESS_LABELS: Record<RackEgress, string> = {
   direct: 'Sortie directe',
 }
 
-/** La feuille par défaut : elle ne bloque rien et laisse le 22 joignable. */
+/** La feuille par défaut : elle ne bloque rien et laisse le 22 joignable.
+ *  Le maillage y est éteint : y entrer est un choix, jamais un défaut. */
 export const DEFAULT_RULES: RackNodeRules = {
   access: 'allowed',
   egress: 'tor-only',
   exit_country: '',
   keep_open_ports: [22],
   schedule: null,
+  mesh: { enabled: false, ports: [], forwards: [] },
 }
