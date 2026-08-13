@@ -1,0 +1,43 @@
+CHANGELOG.md
+  s_bc59aedf46f33b::t_6b38cd33c3675f 121-125
+backend/onionpi/config.py
+  s_bc59aedf46f33b::t_fee049fde41cf1 5,7,93,280-321,400
+backend/onionpi/rack.py
+  s_bc59aedf46f33b::t_7e664599e602b0 118,136,309,316,1644-1649,1670-1677,1708-1709,1731
+backend/onionpi/services.py
+  s_bc59aedf46f33b::t_71b4f2786e47ea 134
+backend/tests/test_config.py
+  s_bc59aedf46f33b::t_1de29c8cf07a07 1-33
+backend/tests/test_rack.py
+  s_bc59aedf46f33b::t_a3af17cb07f78d 530,542-543,546-547,557,561,563
+docs/rack.md
+  s_bc59aedf46f33b::t_df224d5881cbb9 199-203
+frontend/src/pages/RackMesh.tsx
+  s_bc59aedf46f33b::t_7593994bf5c003 322-326,339-355,357-386,388,390-391,399,411,422,432,437
+frontend/src/pages/RackNodeSheet.tsx
+  s_bc59aedf46f33b::t_6dc3e655a1cebc 577
+frontend/src/styles/pages.css
+  s_bc59aedf46f33b::t_bb339b740a299e 1248-1320,1401,1431-1437
+frontend/src/types.ts
+  s_bc59aedf46f33b::t_f6f769b1e0b63f 583-584
+packaging/install.sh
+  s_bc59aedf46f33b::t_d19a24b1b4d5b9 10-20,550-553
+scripts/build-release.sh
+  s_bc59aedf46f33b::t_e7ad8b2896892f 22-47,84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4b007953cf90497200c25ace7ba08815a12f6cd5",
+  "prompts": {},
+  "sessions": {
+    "s_bc59aedf46f33b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ffcc8-f20b-7a33-bef8-a7c4f35cbace",
+        "model": "unknown"
+      },
+      "human_author": "0xmagicduck <0xmagicduck@proton.me>"
+    }
+  }
+}
