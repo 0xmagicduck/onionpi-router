@@ -118,6 +118,11 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- **Les commandes d’enrôlement ciblent le commit exact de leur agent.** Elles
+  déduisaient `vX.Y.Z` de la version applicative, même quand ce tag n’existait
+  pas encore, et téléchargeaient toujours le bootstrap depuis `main`. Chaque
+  archive signée transporte désormais son SHA source immuable ; Linux, macOS
+  et Windows l’emploient pour le bootstrap comme pour l’archive de l’agent.
 - **L’archive de publication n’emporte plus de cache de bytecode.** Les tests
   chargent `packaging/agent/*.py` par chemin, et la construction suit le test :
   un `__pycache__` voyageait jusqu’à `/opt/onionpi/current/agent`, entrait dans

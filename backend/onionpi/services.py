@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
-from . import __version__
 from .access import DeviceAccessManager
 from .accounting import TrafficAccountant
 from .agent import PrivilegedAgent
@@ -59,16 +57,6 @@ class AppServices:
     maintenance: MaintenanceWindow
     onboarding: OnboardingManager
     rack: RackManager
-
-
-def _is_tagged(version: str) -> bool:
-    """Whether this version exists as a `vX.Y.Z` tag a node can fetch.
-
-    A development build between releases has no tag, so the enrolment command
-    pins the download by digest alone rather than naming a ref that would
-    404 on the node.
-    """
-    return bool(re.fullmatch(r"\d+\.\d+\.\d+", version))
 
 
 def build_app_services(settings: Settings) -> AppServices:
@@ -143,7 +131,7 @@ def build_app_services(settings: Settings) -> AppServices:
         on_event=lambda kind, message: database.add_activity(kind, message),
         wifi_view=wifi_view,
         agent_dir=settings.node_agent_dir,
-        release_ref=f"v{__version__}" if _is_tagged(__version__) else "",
+        source_ref=settings.source_ref,
     )
     tor_policy = TorPolicy(
         database,

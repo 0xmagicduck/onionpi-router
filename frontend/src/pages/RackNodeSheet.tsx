@@ -574,7 +574,7 @@ export function RackNodeSheet({
                     Ce jeton ouvre le nœud. Ne le collez que sur la machine à enrôler, et
                     renouvelez-le s’il a été vu ailleurs.
                     {enrollment.bundle_digest
-                      ? ' La commande épingle l’agent à celui que cette appliance exécute : un téléchargement modifié est refusé avant d’être lancé.'
+                      ? ` La commande épingle l’agent à celui que cette appliance exécute${enrollment.source_ref ? ` (source ${enrollment.source_ref.slice(0, 12)})` : ''} : un téléchargement modifié est refusé avant d’être lancé.`
                       : ' Cette installation n’a pas de copie de référence de l’agent : la commande porte --unverified-bundle et le téléchargement n’est pas épinglé.'}
                   </p>
                 </div>

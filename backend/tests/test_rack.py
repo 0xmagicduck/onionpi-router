@@ -527,7 +527,7 @@ def test_the_enrolment_command_pins_what_it_downloads(
     (agent_dir / "bootstrap-node.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     (agent_dir / "onionpi-node-agent.py").write_text("x = 1\n", encoding="utf-8")
     manager.agent_dir = agent_dir
-    manager.release_ref = "v9.9.9"
+    manager.source_ref = "a" * 40
 
     bundle = manager.enrollment(manager.create_node("remote", "vps", onion=ONION)["id"])
     digest = hashlib.sha256((agent_dir / "bootstrap-node.sh").read_bytes()).hexdigest()
@@ -539,9 +539,12 @@ def test_the_enrolment_command_pins_what_it_downloads(
         assert f"{digest} " in command
         assert checker in command
         assert f"--bundle-digest {bundle['bundle_digest']}" in command
-        assert "--ref v9.9.9" in command
+        assert f"raw.githubusercontent.com/0xmagicduck/onionpi-router/{'a' * 40}/" in command
+        assert f"--ref {'a' * 40}" in command
         assert "--unverified-bundle" not in command
     assert f"-BundleDigest {bundle['bundle_digest']}" in bundle["commands"]["windows"]
+    assert f"-Ref {'a' * 40}" in bundle["commands"]["windows"]
+    assert bundle["source_ref"] == "a" * 40
 
 
 def test_without_a_reviewed_copy_the_command_says_so(manager: RackManager) -> None:
@@ -551,10 +554,13 @@ def test_without_a_reviewed_copy_the_command_says_so(manager: RackManager) -> No
     quietly trust GitHub — and the installer refuses without that flag.
     """
     manager.agent_dir = None
+    manager.source_ref = "b" * 40
     bundle = manager.enrollment(manager.create_node("remote", "vps", onion=ONION)["id"])
     assert bundle["bundle_digest"] == ""
     assert "--unverified-bundle" in bundle["commands"]["linux"]
+    assert f"--ref {'b' * 40}" in bundle["commands"]["linux"]
     assert "-UnverifiedBundle" in bundle["commands"]["windows"]
+    assert f"-Ref {'b' * 40}" in bundle["commands"]["windows"]
 
 
 def test_rotation_invalidates_the_previous_token_and_key(manager: RackManager) -> None:

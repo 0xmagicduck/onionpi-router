@@ -580,6 +580,8 @@ export type RackEnrollment = {
   client_public_key: string
   /** Empreinte de l’agent que la baie exécute, vide sans copie de référence. */
   bundle_digest: string
+  /** Commit Git immuable contenant exactement cet agent. */
+  source_ref: string
   onion: string
   command: string
   commands: {

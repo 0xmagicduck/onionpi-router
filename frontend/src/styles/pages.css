@@ -1245,7 +1245,79 @@
 .rack-readout dt { color: var(--text-tertiary); font-size: var(--text-xs); }
 .rack-readout dd { margin: 0; color: var(--text-primary); font-size: var(--text-sm); }
 
-.rack-mesh { display: grid; gap: var(--space-4); }
+.rack-mesh { display: grid; gap: var(--space-4); min-width: 0; }
+.rack-mesh-readout {
+  grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(110px, 1fr));
+}
+.rack-mesh-readout > div,
+.rack-mesh-readout dd { min-width: 0; }
+.rack-mesh-coordinator dd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cette vue utilise une vraie table HTML. Elle a donc son propre contrat de
+   colonnes au lieu de la grille générique `.data-table`. */
+.rack-mesh-table-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+.rack-mesh-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.rack-mesh-col-node { width: 27%; }
+.rack-mesh-col-address { width: 18%; }
+.rack-mesh-col-ports { width: 11%; }
+.rack-mesh-col-path { width: 18%; }
+.rack-mesh-col-map { width: 26%; }
+.rack-mesh-table th {
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-tertiary);
+  background: var(--surface-inset);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: var(--tracking-caps);
+  text-align: left;
+  text-transform: uppercase;
+}
+.rack-mesh-table td {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+.rack-mesh-table tbody tr:hover { background: var(--surface-hover); }
+.rack-mesh-member { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+.rack-mesh-member strong { color: var(--text-primary); font-weight: 600; }
+.rack-mesh-table-empty { color: var(--text-tertiary); text-align: center; }
+
+.rack-mesh-lock { padding: 0 var(--space-5) var(--space-5); }
+.rack-mesh-lock > h3 { display: flex; align-items: center; gap: var(--space-2); }
+.rack-mesh-lock-form {
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  padding: var(--space-4) 0 0;
+}
+.rack-mesh-lock-form .prose { padding: 0; }
+.rack-mesh-lock-intro,
+.rack-mesh-lock-choice,
+.rack-mesh-lock-actions,
+.rack-mesh-lock-note { grid-column: 1 / -1; }
+.rack-mesh-lock-threshold { align-self: start; }
+.rack-mesh-lock-note {
+  padding-left: var(--space-3) !important;
+  border-left: 2px solid var(--accent-line);
+  color: var(--text-tertiary);
+}
 .rack-forwards { display: grid; gap: var(--space-2); }
 /* Port local, pair, port distant, retrait: la ligne se lit dans l'ordre du
    chemin qu'elle décrit, et se replie sur les écrans étroits. */
@@ -1326,6 +1398,7 @@
 
 @media (max-width: 900px) {
   .rack-connection-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rack-mesh-readout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
@@ -1355,6 +1428,13 @@
   .rack-frame-head { flex-direction: column; align-items: flex-start; }
   .rack-connection-list { grid-template-columns: minmax(0, 1fr); }
   .rack-platforms { grid-template-columns: minmax(0, 1fr); }
+  .rack-mesh-readout { grid-template-columns: minmax(0, 1fr); }
+  .rack-mesh-lock { padding-right: var(--space-3); padding-left: var(--space-3); }
+  .rack-mesh-lock-form { grid-template-columns: minmax(0, 1fr); }
+  .rack-mesh-lock-intro,
+  .rack-mesh-lock-choice,
+  .rack-mesh-lock-actions,
+  .rack-mesh-lock-note { grid-column: auto; }
   .rack-command-head { align-items: flex-start; }
   .rack-cable-legend { align-items: flex-start; }
   .rack-node-table { min-width: 0; table-layout: fixed; }
