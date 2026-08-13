@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from ..access import MAX_PAUSE_MINUTES, AccessError
 from ..circumvention import CircumventionError
-from ..netcontrol import NetControlError
+from ..netcontrol import DnsFilterBusy, NetControlError
 from ..onion import OnionError
 from ..policy import PolicyError
 from ..relay import RelayError
@@ -326,6 +326,8 @@ def create_router(context: RouteContext) -> APIRouter:
                 payload.custom_blocked,
                 payload.allowed,
             )
+        except DnsFilterBusy as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except NetControlError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -335,6 +337,8 @@ def create_router(context: RouteContext) -> APIRouter:
     ) -> dict[str, Any]:
         try:
             return await asyncio.to_thread(services.dns_filter.rebuild)
+        except DnsFilterBusy as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except NetControlError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 

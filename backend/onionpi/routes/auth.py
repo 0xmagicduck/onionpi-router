@@ -204,13 +204,26 @@ def create_router(context: RouteContext) -> APIRouter:
                 await asyncio.sleep(0.2)
                 raise HTTPException(status_code=403, detail="Code de récupération refusé")
 
-            def replace_password() -> int:
+            def replace_password() -> None:
+                # Reset the account this appliance already has rather than
+                # minting a second "admin": recovery exists to take control
+                # back, and a parallel account would leave the old password
+                # working. Every session goes with it, including any the person
+                # being locked out still holds on another device.
+                administrator = database.administrator()
+                username = str(administrator["username"]) if administrator else "admin"
+                display_name = (
+                    str(administrator["display_name"])
+                    if administrator
+                    else "Administrateur"
+                )
                 with hashing_slot():
                     digest = hash_password(payload.new_password)
-                return database.create_user("admin", "Administrateur", digest)
+                database.create_user(username, display_name, digest)
+                database.delete_all_sessions()
 
-            user_id = await asyncio.to_thread(replace_password)
-            await context.chat.disconnect_user(user_id)
+            await asyncio.to_thread(replace_password)
+            await context.chat.disconnect_all()
             services.onboarding.record_recovery(True)
             database.add_activity(
                 "secure", "Compte administrateur récupéré en présence physique"

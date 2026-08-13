@@ -21,6 +21,41 @@ numérotation [SemVer](https://semver.org/lang/fr/).
   compteurs à zéro » de la page Protection
   (`POST /api/v1/devices/traffic/reset`) est le seul geste qui les efface.
 
+### Sécurité
+
+Audit statique complet du dépôt, consigné dans
+[`docs/security-audit-2026-08-13.md`](docs/security-audit-2026-08-13.md). Cinq
+constats, tous corrigés ici, chacun accompagné d’un test qui échoue sans son
+correctif.
+
+- **En-tête CSRF non ASCII.** Starlette décode les en-têtes en latin-1 et
+  `secrets.compare_digest` refuse les chaînes non ASCII : un caractère accentué
+  dans `X-CSRF-Token` répondait 500 avec une trace dans le journal, et une 500
+  échappe au middleware qui pose les en-têtes de sécurité. La comparaison porte
+  désormais sur les formes encodées et le refus reste un 403.
+- **Champ de formulaire d’import.** `max_part_size` ne borne que les parties
+  texte d’un corps multipart — une partie fichier est écrite dans un fichier
+  temporaire sans être mesurée. Lui passer le maximum d’import laissait donc
+  accumuler le champ `path` dans un `bytearray` jusqu’à un gigaoctet, soit toute
+  la mémoire de l’appliance. Il vaut maintenant 64 Kio.
+- **Réserve de stockage.** Elle était consultée après que l’analyseur multipart
+  avait déjà écrit tout le corps sur la carte SD. Le budget est calculé avant
+  toute lecture, réduit de moitié parce que la copie temporaire et le fichier
+  final coexistent, et `BodyLimitMiddleware` le réévalue à chaque import pour
+  arrêter aussi un corps qui n’annonce aucune longueur.
+- **Sauvegardes chiffrées.** Leur dérivation scrypt, aussi coûteuse en mémoire
+  qu’une vérification de mot de passe, ne passait pas par le plafond
+  `hashing_slot` du processus. Elle y passe, et les trois routes de sauvegarde
+  répondent 429 lorsqu’il est saturé.
+- **Récupération de compte.** Elle réinitialise le compte que l’appliance
+  possède déjà au lieu d’écrire « admin » en dur — ce qui, sur une installation
+  au nom différent, aurait ajouté un second administrateur en laissant valides
+  l’ancien mot de passe et les sessions ouvertes. Toutes les sessions et tous
+  les WebSockets sont révoqués.
+- Une actualisation des listes DNS à la fois : deux reconstructions simultanées
+  tenaient chacune jusqu’à 300 000 domaines en mémoire et se disputaient
+  l’écriture de `block.hosts`. Les endpoints concernés répondent 409.
+
 ## [0.4.0] — 2026-08-12
 
 Version « routeur utile » : chaque appareil du foyer reçoit ses propres règles

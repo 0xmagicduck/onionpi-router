@@ -9,11 +9,32 @@ import os
 import time
 from typing import Any
 
+from .auth import hashing_slot
+
 BACKUP_SCHEMA = "onionpi-config-backup-v1"
+
+#: Same shape as the login digest, so one derivation holds 128 * N * r bytes —
+#: 16 MiB with the parameters below.
+KDF_N = 2**14
+KDF_R = 8
+KDF_P = 1
 
 
 class BackupError(ValueError):
     pass
+
+
+def _derive_key(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:
+    """Derives the envelope key under the process-wide scrypt memory cap.
+
+    Every one of these allocates as much as a password verification, and the
+    three backup endpoints are reachable by anyone holding a session. Without
+    the shared slot a handful of parallel calls walk straight past the
+    MemoryMax the service unit sets and the appliance loses its interface to
+    the OOM killer.
+    """
+    with hashing_slot():
+        return hashlib.scrypt(passphrase.encode(), salt=salt, n=n, r=r, p=p, dklen=32)
 
 
 def _aesgcm() -> type[Any]:
@@ -29,13 +50,13 @@ def encrypt_configuration(document: dict[str, Any], passphrase: str) -> dict[str
         raise BackupError("La phrase de sauvegarde doit contenir au moins 12 caractères")
     salt = os.urandom(16)
     nonce = os.urandom(12)
-    key = hashlib.scrypt(passphrase.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
+    key = _derive_key(passphrase, salt, KDF_N, KDF_R, KDF_P)
     plaintext = json.dumps(document, ensure_ascii=False, sort_keys=True).encode()
     ciphertext = _aesgcm()(key).encrypt(nonce, plaintext, BACKUP_SCHEMA.encode())
     return {
         "schema": BACKUP_SCHEMA,
         "created_at": int(time.time()),
-        "kdf": {"name": "scrypt", "n": 2**14, "r": 8, "p": 1, "salt": base64.b64encode(salt).decode()},
+        "kdf": {"name": "scrypt", "n": KDF_N, "r": KDF_R, "p": KDF_P, "salt": base64.b64encode(salt).decode()},
         "cipher": {"name": "aes-256-gcm", "nonce": base64.b64encode(nonce).decode()},
         "payload": base64.b64encode(ciphertext).decode(),
     }
@@ -54,14 +75,14 @@ def decrypt_configuration(envelope: dict[str, Any], passphrase: str) -> dict[str
         if kdf.get("name") != "scrypt" or cipher.get("name") != "aes-256-gcm":
             raise BackupError("Algorithmes de sauvegarde non pris en charge")
         n, r, p = int(kdf["n"]), int(kdf["r"]), int(kdf["p"])
-        if (n, r, p) != (2**14, 8, 1):
+        if (n, r, p) != (KDF_N, KDF_R, KDF_P):
             raise BackupError("Paramètres de dérivation inattendus")
         salt = base64.b64decode(kdf["salt"], validate=True)
         nonce = base64.b64decode(cipher["nonce"], validate=True)
         payload = base64.b64decode(envelope["payload"], validate=True)
         if len(salt) != 16 or len(nonce) != 12 or len(payload) > 4 * 1024**2:
             raise BackupError("Sauvegarde invalide ou trop volumineuse")
-        key = hashlib.scrypt(passphrase.encode(), salt=salt, n=n, r=r, p=p, dklen=32)
+        key = _derive_key(passphrase, salt, n, r, p)
         plaintext = _aesgcm()(key).decrypt(nonce, payload, BACKUP_SCHEMA.encode())
         document = json.loads(plaintext)
     except BackupError:

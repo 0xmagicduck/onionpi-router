@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+UPLOAD_PATH = "/api/v1/files/upload"
 
 
 class _BodyTooLarge(Exception):
@@ -14,12 +18,28 @@ class BodyLimitMiddleware:
     Content-Length is only an optimization: the wrapped receive channel also
     counts chunked bodies, so omitting or forging the header cannot bypass the
     appliance-wide memory/SD-card budget.
+
+    `upload_limit` may be a callable, evaluated per request. The import budget
+    depends on the free space of the moment, and it is this layer — not the
+    handler — that sees a body announcing no length at all.
     """
 
-    def __init__(self, app: ASGIApp, *, request_limit: int, upload_limit: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        request_limit: int,
+        upload_limit: int | Callable[[], int],
+    ) -> None:
         self.app = app
         self.request_limit = request_limit
         self.upload_limit = upload_limit
+
+    def _limit_for(self, path: str) -> int:
+        if path != UPLOAD_PATH:
+            return self.request_limit
+        limit = self.upload_limit
+        return limit() if callable(limit) else limit
 
     async def __call__(
         self,
@@ -36,8 +56,7 @@ class BodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        path = str(scope.get("path", ""))
-        limit = self.upload_limit if path == "/api/v1/files/upload" else self.request_limit
+        limit = self._limit_for(str(scope.get("path", "")))
         headers = {key.lower(): value for key, value in scope.get("headers", [])}
         declared = headers.get(b"content-length")
         if declared:

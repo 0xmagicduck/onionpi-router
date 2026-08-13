@@ -78,6 +78,10 @@ class NetControlError(RuntimeError):
     pass
 
 
+class DnsFilterBusy(NetControlError):
+    """A blocklist rebuild is already running."""
+
+
 class DeviceGuard:
     """Keeps the list of Wi-Fi clients denied any access through the Pi."""
 
@@ -332,8 +336,19 @@ class DnsFilter:
         atomic_write_text(self.hosts_path, body, mode=0o644)
 
     def rebuild(self) -> dict[str, Any]:
-        """Downloads every selected profile and regenerates the hosts file."""
+        """Downloads every selected profile and regenerates the hosts file.
+
+        One rebuild at a time, appliance wide. Each one streams several lists
+        and holds up to MAX_DOMAINS names in memory before writing them, which
+        a Raspberry Pi affords once and not four times over; two of them also
+        race on `hosts_path` and on the reload the agent performs afterwards,
+        so the loser's list would silently stop being the one dnsmasq serves.
+        """
         with self._lock:
+            if self._refreshing:
+                raise DnsFilterBusy(
+                    "Une actualisation des listes est déjà en cours."
+                )
             self._refreshing = True
         try:
             state = self.state()

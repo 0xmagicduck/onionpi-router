@@ -17,6 +17,20 @@ COOKIE_NAME = "onionpi_session"
 SessionDependency = Callable[..., dict[str, Any]]
 
 
+def same_token(candidate: str, expected: str) -> bool:
+    """Constant-time comparison that survives a header full of raw bytes.
+
+    Starlette decodes header values as latin-1, so a client chooses every byte
+    of X-CSRF-Token. `secrets.compare_digest` refuses non-ASCII `str` arguments
+    and raises TypeError: one byte above 0x7F turned a refusal into a 500 with
+    a traceback in the journal, and a 500 escapes the middleware that adds the
+    security headers. Comparing the encoded forms keeps the check total — a
+    latin-1 string always encodes, and no byte sequence outside the token
+    alphabet can match a token that only holds URL-safe base64.
+    """
+    return secrets.compare_digest(candidate.encode("utf-8"), expected.encode("utf-8"))
+
+
 @dataclass(slots=True)
 class RouteContext:
     """Application-scoped services and request dependencies for routers."""
@@ -65,9 +79,7 @@ def build_route_context(settings: Settings, services: AppServices, chat: Any) ->
         origin = request.headers.get("origin")
         if origin and origin.rstrip("/") not in allowed_origins():
             raise HTTPException(status_code=403, detail="Origine refusée")
-        if not x_csrf_token or not secrets.compare_digest(
-            x_csrf_token, session["csrf_token"]
-        ):
+        if not x_csrf_token or not same_token(x_csrf_token, session["csrf_token"]):
             raise HTTPException(status_code=403, detail="Jeton CSRF invalide")
         return session
 
