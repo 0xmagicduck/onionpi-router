@@ -1,0 +1,8 @@
+[Unit]
+Description=Applique une requête privilégiée de l’agent OnionPi
+Documentation=https://github.com/0xmagicduck/onionpi-router
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/onionpi-node-apply.sh
+TimeoutStartSec=60

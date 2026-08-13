@@ -421,6 +421,10 @@ if [[ ! -f "$RELEASE_DIR/.complete" ]]; then
   fi
 
   rsync -a --delete "$PROJECT_ROOT/frontend/dist/" "$RELEASE_STAGE/frontend/dist/"
+  # Agent de nœud de la baie virtuelle. Il ne s'installe pas ici: il voyage
+  # avec la version pour que l'interface remette à l'opérateur exactement
+  # l'agent de la version qu'elle exécute.
+  rsync -a --delete "$PROJECT_ROOT/packaging/agent/" "$RELEASE_STAGE/agent/"
   install -m 0644 "$PROJECT_ROOT/README.md" "$RELEASE_STAGE/README.md"
   install -m 0644 "$PROJECT_ROOT/VERSION" "$RELEASE_STAGE/VERSION"
   : >"$RELEASE_STAGE/.complete"
@@ -464,6 +468,7 @@ ONIONPI_AGENT_RESULT=/var/lib/onionpi-privileged/agent.result
 ONIONPI_UPDATE_STATE=/var/lib/onionpi-privileged/update.state
 ONIONPI_MAINTENANCE_STATE=/var/lib/onionpi-privileged/maintenance.state
 ONIONPI_TRAFFIC_STATE=/var/lib/onionpi-privileged/traffic.json
+ONIONPI_NODE_AGENT_DIR=/opt/onionpi/current/agent
 ONIONPI_COUNTRY=$COUNTRY
 EOF
 chown root:onionpi /etc/onionpi/onionpi.env

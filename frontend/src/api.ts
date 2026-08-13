@@ -14,6 +14,10 @@ import type {
   OnionClientCreated,
   OnionState,
   OnboardingState,
+  RackEnrollment,
+  RackNode,
+  RackNodeRules,
+  RackPayload,
   SecurityAudit,
   Session,
   SpeedTestResult,
@@ -126,6 +130,47 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mac }),
     }),
+  rack: () => request<RackPayload>('/api/v1/rack'),
+  createRack: (body: { name: string; location: string; units: number }) =>
+    request<RackPayload>('/api/v1/rack/racks', { method: 'POST', body: JSON.stringify(body) }),
+  updateRack: (body: { id: string; name: string; location: string; units: number }) =>
+    request<RackPayload>('/api/v1/rack/racks/update', { method: 'POST', body: JSON.stringify(body) }),
+  removeRack: (id: string) =>
+    request<RackPayload>('/api/v1/rack/racks/remove', { method: 'POST', body: JSON.stringify({ id }) }),
+  createRackNode: (body: {
+    kind: 'local' | 'remote'
+    name: string
+    role: string
+    mac: string
+    onion: string
+    agent_port: number
+    notes: string
+  }) => request<RackNode>('/api/v1/rack/nodes', { method: 'POST', body: JSON.stringify(body) }),
+  updateRackNode: (body: {
+    id: string
+    name: string
+    role: string
+    onion: string
+    agent_port: number
+    notes: string
+  }) => request<RackNode>('/api/v1/rack/nodes/update', { method: 'POST', body: JSON.stringify(body) }),
+  removeRackNode: (id: string) =>
+    request<RackPayload>('/api/v1/rack/nodes/remove', { method: 'POST', body: JSON.stringify({ id }) }),
+  moveRackNode: (body: { id: string; rack_id: string; position: number }) =>
+    request<RackPayload>('/api/v1/rack/nodes/move', { method: 'POST', body: JSON.stringify(body) }),
+  setRackNodeRules: (id: string, rules: RackNodeRules) =>
+    request<RackNode>('/api/v1/rack/nodes/rules', { method: 'POST', body: JSON.stringify({ id, rules }) }),
+  refreshRackNode: (id: string) =>
+    request<RackNode>('/api/v1/rack/nodes/refresh', { method: 'POST', body: JSON.stringify({ id }) }),
+  runRackNodeAction: (id: string, verb: string, unit = '') =>
+    request<{ verb: string; result: Record<string, unknown> }>('/api/v1/rack/nodes/action', {
+      method: 'POST',
+      body: JSON.stringify({ id, verb, unit }),
+    }),
+  rackNodeEnrollment: (id: string) =>
+    request<RackEnrollment>('/api/v1/rack/nodes/enrollment', { method: 'POST', body: JSON.stringify({ id }) }),
+  rotateRackNodeToken: (id: string) =>
+    request<RackEnrollment>('/api/v1/rack/nodes/rotate-token', { method: 'POST', body: JSON.stringify({ id }) }),
   securityAudit: () => request<SecurityAudit>('/api/v1/security/audit'),
   dnsFilter: () => request<DnsFilterState>('/api/v1/dns-filter'),
   setDnsFilter: (body: { profiles: string[]; custom_blocked: string[]; allowed: string[] }) =>

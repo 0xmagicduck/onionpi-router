@@ -4,6 +4,7 @@ import {
   HardDrive,
   Logs,
   MessageCircle,
+  Server,
   Settings,
   Shield,
   ShieldBan,
@@ -19,6 +20,7 @@ export type Page =
   | 'tor'
   | 'bridges'
   | 'devices'
+  | 'rack'
   | 'protection'
   | 'security'
   | 'files'
@@ -54,6 +56,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'tor', label: 'Tor', icon: Shield, hint: 'Circuits, identité de sortie, service onion', keywords: 'circuit identite oignon onion relais' },
       { id: 'bridges', label: 'Contournement', icon: Waypoints, hint: 'Ponts, transports enfichables, Snowflake', keywords: 'pont bridge obfs4 snowflake censure' },
       { id: 'devices', label: 'Appareils', icon: HardDrive, hint: 'Clients connectés, pauses et plages horaires', keywords: 'clients mac ip telephone ordinateur pause horaire plage couvre-feu' },
+      { id: 'rack', label: 'Baie virtuelle', icon: Server, hint: 'Machines locales et distantes, emplacements et règles', keywords: 'rack baie datacenter vps serveur noeud agent distant emplacement u topologie' },
     ],
   },
   {

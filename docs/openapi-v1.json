@@ -474,6 +474,278 @@
         "title": "NetworkStatus",
         "type": "object"
       },
+      "NodeActionRequest": {
+        "properties": {
+          "id": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Id",
+            "type": "string"
+          },
+          "unit": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Unit",
+            "type": "string"
+          },
+          "verb": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Verb",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "verb"
+        ],
+        "title": "NodeActionRequest",
+        "type": "object"
+      },
+      "NodeCreateRequest": {
+        "properties": {
+          "agent_port": {
+            "default": 9080,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Agent Port",
+            "type": "integer"
+          },
+          "kind": {
+            "pattern": "^(local|remote)$",
+            "title": "Kind",
+            "type": "string"
+          },
+          "mac": {
+            "default": "",
+            "maxLength": 17,
+            "title": "Mac",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 48,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Notes",
+            "type": "string"
+          },
+          "onion": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Onion",
+            "type": "string"
+          },
+          "role": {
+            "default": "",
+            "maxLength": 32,
+            "title": "Role",
+            "type": "string"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NodeRulesDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "title": "NodeCreateRequest",
+        "type": "object"
+      },
+      "NodeIdRequest": {
+        "properties": {
+          "id": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "NodeIdRequest",
+        "type": "object"
+      },
+      "NodeMoveRequest": {
+        "properties": {
+          "id": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Id",
+            "type": "string"
+          },
+          "position": {
+            "default": 0,
+            "maximum": 42.0,
+            "minimum": 0.0,
+            "title": "Position",
+            "type": "integer"
+          },
+          "rack_id": {
+            "default": "",
+            "maxLength": 8,
+            "title": "Rack Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "NodeMoveRequest",
+        "type": "object"
+      },
+      "NodeRulesDocument": {
+        "properties": {
+          "access": {
+            "default": "allowed",
+            "maxLength": 16,
+            "title": "Access",
+            "type": "string"
+          },
+          "egress": {
+            "default": "tor-only",
+            "maxLength": 16,
+            "title": "Egress",
+            "type": "string"
+          },
+          "exit_country": {
+            "default": "",
+            "maxLength": 2,
+            "title": "Exit Country",
+            "type": "string"
+          },
+          "keep_open_ports": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "title": "Keep Open Ports",
+            "type": "array"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NodeScheduleRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "NodeRulesDocument",
+        "type": "object"
+      },
+      "NodeRulesRequest": {
+        "properties": {
+          "id": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Id",
+            "type": "string"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/NodeRulesDocument"
+          }
+        },
+        "required": [
+          "id",
+          "rules"
+        ],
+        "title": "NodeRulesRequest",
+        "type": "object"
+      },
+      "NodeScheduleRequest": {
+        "properties": {
+          "days": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 7,
+            "title": "Days",
+            "type": "array"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "end": {
+            "default": "",
+            "maxLength": 5,
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "default": "",
+            "maxLength": 5,
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "title": "NodeScheduleRequest",
+        "type": "object"
+      },
+      "NodeUpdateRequest": {
+        "properties": {
+          "agent_port": {
+            "default": 0,
+            "maximum": 65535.0,
+            "minimum": 0.0,
+            "title": "Agent Port",
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 16,
+            "minLength": 16,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 48,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Notes",
+            "type": "string"
+          },
+          "onion": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Onion",
+            "type": "string"
+          },
+          "role": {
+            "default": "",
+            "maxLength": 32,
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "NodeUpdateRequest",
+        "type": "object"
+      },
       "OnionClientRequest": {
         "properties": {
           "name": {
@@ -636,6 +908,84 @@
           "metrics"
         ],
         "title": "ProtectionStatus",
+        "type": "object"
+      },
+      "RackIdRequest": {
+        "properties": {
+          "id": {
+            "maxLength": 8,
+            "minLength": 8,
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RackIdRequest",
+        "type": "object"
+      },
+      "RackRequest": {
+        "properties": {
+          "location": {
+            "default": "",
+            "maxLength": 48,
+            "title": "Location",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 48,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "units": {
+            "default": 12,
+            "maximum": 42.0,
+            "minimum": 1.0,
+            "title": "Units",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RackRequest",
+        "type": "object"
+      },
+      "RackUpdateRequest": {
+        "properties": {
+          "id": {
+            "maxLength": 8,
+            "minLength": 8,
+            "title": "Id",
+            "type": "string"
+          },
+          "location": {
+            "default": "",
+            "maxLength": 48,
+            "title": "Location",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 48,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "units": {
+            "default": 12,
+            "maximum": 42.0,
+            "minimum": 1.0,
+            "title": "Units",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "id"
+        ],
+        "title": "RackUpdateRequest",
         "type": "object"
       },
       "RecoveryRequest": {
@@ -2549,6 +2899,739 @@
           }
         },
         "summary": "Rotate Onion"
+      }
+    },
+    "/api/v1/rack": {
+      "get": {
+        "operationId": "rack_state_api_v1_rack_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rack State Api V1 Rack Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rack State"
+      }
+    },
+    "/api/v1/rack/agent-bundle": {
+      "get": {
+        "description": "The installer to run on the node, as a tar.gz built on the fly.\n\nHanding out an archive rather than a `curl … | sh` one-liner is\ndeliberate: the operator reads four short files before running them as\nroot on a machine this appliance is about to control.",
+        "operationId": "agent_bundle_api_v1_rack_agent_bundle_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Agent Bundle"
+      }
+    },
+    "/api/v1/rack/nodes": {
+      "post": {
+        "operationId": "create_node_api_v1_rack_nodes_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Node Api V1 Rack Nodes Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Node"
+      }
+    },
+    "/api/v1/rack/nodes/action": {
+      "post": {
+        "operationId": "run_action_api_v1_rack_nodes_action_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Run Action Api V1 Rack Nodes Action Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Action"
+      }
+    },
+    "/api/v1/rack/nodes/enrollment": {
+      "post": {
+        "operationId": "enrollment_api_v1_rack_nodes_enrollment_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Enrollment Api V1 Rack Nodes Enrollment Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enrollment"
+      }
+    },
+    "/api/v1/rack/nodes/move": {
+      "post": {
+        "operationId": "move_node_api_v1_rack_nodes_move_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeMoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Move Node Api V1 Rack Nodes Move Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move Node"
+      }
+    },
+    "/api/v1/rack/nodes/refresh": {
+      "post": {
+        "operationId": "refresh_node_api_v1_rack_nodes_refresh_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Refresh Node Api V1 Rack Nodes Refresh Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Node"
+      }
+    },
+    "/api/v1/rack/nodes/remove": {
+      "post": {
+        "operationId": "remove_node_api_v1_rack_nodes_remove_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Node Api V1 Rack Nodes Remove Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Node"
+      }
+    },
+    "/api/v1/rack/nodes/rotate-token": {
+      "post": {
+        "operationId": "rotate_token_api_v1_rack_nodes_rotate_token_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rotate Token Api V1 Rack Nodes Rotate Token Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Token"
+      }
+    },
+    "/api/v1/rack/nodes/rules": {
+      "post": {
+        "operationId": "set_rules_api_v1_rack_nodes_rules_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeRulesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Rules Api V1 Rack Nodes Rules Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Rules"
+      }
+    },
+    "/api/v1/rack/nodes/update": {
+      "post": {
+        "operationId": "update_node_api_v1_rack_nodes_update_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Node Api V1 Rack Nodes Update Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Node"
+      }
+    },
+    "/api/v1/rack/racks": {
+      "post": {
+        "operationId": "create_rack_api_v1_rack_racks_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Rack Api V1 Rack Racks Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Rack"
+      }
+    },
+    "/api/v1/rack/racks/remove": {
+      "post": {
+        "operationId": "remove_rack_api_v1_rack_racks_remove_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RackIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Rack Api V1 Rack Racks Remove Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Rack"
+      }
+    },
+    "/api/v1/rack/racks/update": {
+      "post": {
+        "operationId": "update_rack_api_v1_rack_racks_update_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RackUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Rack Api V1 Rack Racks Update Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Rack"
       }
     },
     "/api/v1/relay/snowflake": {

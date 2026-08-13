@@ -106,6 +106,62 @@ export type NetworkStatus = {
   "channel": string
 }
 
+export type NodeActionRequest = {
+  "id": string
+  "verb": string
+  "unit"?: string
+}
+
+export type NodeCreateRequest = {
+  "kind": string
+  "name": string
+  "role"?: string
+  "mac"?: string
+  "onion"?: string
+  "agent_port"?: number
+  "notes"?: string
+  "rules"?: NodeRulesDocument | null
+}
+
+export type NodeIdRequest = {
+  "id": string
+}
+
+export type NodeMoveRequest = {
+  "id": string
+  "rack_id"?: string
+  "position"?: number
+}
+
+export type NodeRulesDocument = {
+  "access"?: string
+  "egress"?: string
+  "exit_country"?: string
+  "keep_open_ports"?: Array<number>
+  "schedule"?: NodeScheduleRequest | null
+}
+
+export type NodeRulesRequest = {
+  "id": string
+  "rules": NodeRulesDocument
+}
+
+export type NodeScheduleRequest = {
+  "enabled"?: boolean
+  "days"?: Array<number>
+  "start"?: string
+  "end"?: string
+}
+
+export type NodeUpdateRequest = {
+  "id": string
+  "name": string
+  "role"?: string
+  "onion"?: string
+  "agent_port"?: number
+  "notes"?: string
+}
+
 export type OnionClientRequest = {
   "name": string
 }
@@ -141,6 +197,23 @@ export type ProtectionStatus = {
   "summary": string
   "checks": Array<ProtectionCheck>
   "metrics": ProtectionMetrics
+}
+
+export type RackIdRequest = {
+  "id": string
+}
+
+export type RackRequest = {
+  "name": string
+  "location"?: string
+  "units"?: number
+}
+
+export type RackUpdateRequest = {
+  "name": string
+  "location"?: string
+  "units"?: number
+  "id": string
 }
 
 export type RecoveryRequest = {

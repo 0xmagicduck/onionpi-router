@@ -35,6 +35,7 @@ def test_versioned_api_handlers_live_in_route_modules() -> None:
         "onionpi.routes.files",
         "onionpi.routes.network",
         "onionpi.routes.protection",
+        "onionpi.routes.rack",
         "onionpi.routes.updates",
     }
     assert app.state.route_context.services is services

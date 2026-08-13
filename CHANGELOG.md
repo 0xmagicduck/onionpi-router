@@ -7,6 +7,39 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- **Baie virtuelle.** Une page **Baie virtuelle** range les machines dans des
+  cadres et des emplacements numérotés en U : clients du Wi-Fi d’un côté,
+  machines distantes de l’autre. Créer, déplacer, isoler, régler — la
+  topologie est décrite ici, l’application des règles reste chez ceux qui la
+  faisaient déjà. Pour un client du Wi-Fi, une règle de baie est déléguée à
+  `DeviceGuard` et `DeviceAccessManager` : **aucun verbe privilégié n’a été
+  ajouté sur la Pi**. Un index unique partiel garantit côté SQLite qu’un
+  emplacement ne porte jamais deux machines ; un déplacement vers un U occupé
+  échange les deux au lieu d’en écraser une.
+- **Agent de nœud installable** (`packaging/agent/`). Un VPS, un serveur ou une
+  seconde Pi rejoignent la baie en installant un agent qui n’écoute que sur
+  `127.0.0.1` et se publie comme service onion v3. Aucun port n’est ouvert sur
+  Internet. Sur le nœud, la même architecture que sur la Pi : l’agent est sans
+  privilège, dépose une requête, une unité `.path` réveille un service root qui
+  revalide le verbe et n’extrait aucun argument du fichier.
+- **Sortie forcée par Tor sur les nœuds distants.** La politique par défaut
+  poussée à un nœud interdit toute sortie qui n’appartient pas au démon Tor,
+  laisse le port 22 joignable en entrée, et — quand le nœud est isolé — retire
+  aux applications l’accès au port SOCKS local sans couper ni l’agent ni le
+  service onion. Le rendu du jeu de règles nftables est fait par un programme
+  root qui revalide chaque champ avant d’écrire une ligne.
+- **Deux verrous indépendants sur le canal d’administration.** L’autorisation
+  client onion v3 (`ONION_CLIENT_AUTH_ADD`, réenregistrée au démarrage comme
+  l’est le service onion) rend l’adresse d’un nœud irrésoluble sans la clé de
+  la baie ; la signature HMAC-SHA256 de chaque appel couvre le verbe, un
+  horodatage, un nonce et l’empreinte du corps, et l’agent refuse un
+  horodatage décalé ou un nonce déjà vu, avec une mémoire bornée.
+- **Aucune identification de nœud stockée.** Le jeton d’un nœud et sa clé
+  x25519 sont dérivés d’un secret maître (`/var/lib/onionpi/rack.key`, 0600),
+  de l’identifiant du nœud et d’un compteur de rotation. Une copie de la base,
+  un export de configuration ou une sauvegarde n’en contient rien ; renouveler
+  un nœud est un incrément qui invalide d’un coup l’ancien jeton et l’ancienne
+  clé.
 - **Trafic par appareil.** Le pare-feu compte désormais les octets de chaque
   client dans deux ensembles nftables dynamiques, et une minuterie root
   (`onionpi-accounting.timer`, toutes les 15 s) publie ces compteurs dans

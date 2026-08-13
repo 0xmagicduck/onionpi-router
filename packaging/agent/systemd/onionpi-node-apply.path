@@ -1,0 +1,9 @@
+[Unit]
+Description=Surveille les requêtes privilégiées de l’agent OnionPi
+
+[Path]
+PathChanged=/var/lib/onionpi-node/apply.request
+Unit=onionpi-node-apply.service
+
+[Install]
+WantedBy=multi-user.target

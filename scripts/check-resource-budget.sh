@@ -16,6 +16,14 @@ grep -Fqx 'ONIONPI_UPDATE_MAX_ARCHIVE_BYTES=268435456' \
 grep -Fqx 'MAX_RULES = 128' "$PROJECT_ROOT/backend/onionpi/access.py"
 grep -Fqx 'MAX_CLIENTS = 8' "$PROJECT_ROOT/backend/onionpi/onion.py"
 grep -Fqx 'MAX_TRACKED_DEVICES = 256' "$PROJECT_ROOT/backend/onionpi/accounting.py"
+# Virtual rack: the ceilings, and the shape of the monitoring sweep. Polling a
+# node holds a Tor circuit open, so the batch and the worker count are as much
+# part of the budget as the node limit itself.
+grep -Fqx 'MAX_RACKS = 8' "$PROJECT_ROOT/backend/onionpi/rack.py"
+grep -Fqx 'MAX_NODES = 64' "$PROJECT_ROOT/backend/onionpi/rack.py"
+grep -Fqx 'MONITOR_BATCH = 6' "$PROJECT_ROOT/backend/onionpi/rack.py"
+grep -Fqx 'MONITOR_WORKERS = 3' "$PROJECT_ROOT/backend/onionpi/rack.py"
+grep -Fqx 'MemoryMax=128M' "$PROJECT_ROOT/packaging/agent/systemd/onionpi-node-agent.service"
 # Two counter sets, each bounded on the kernel side as well: a full set stops
 # accepting elements instead of growing.
 [[ "$(grep -c '^    size 512$' "$PROJECT_ROOT/packaging/templates/onionpi.nft")" == 2 ]]

@@ -64,6 +64,7 @@ class Settings:
     frontend_dir: Path
     tor_control_host: str
     tor_control_port: int
+    tor_socks_port: int
     tor_cookie_path: Path
     tor_config_dir: Path
     relay_state_path: Path
@@ -133,6 +134,18 @@ class Settings:
         return self.data_dir / "blocked-macs.txt"
 
     @property
+    def rack_key_path(self) -> Path:
+        """Master secret every rack node credential is derived from.
+
+        Nothing about a node is stored as a secret: its agent token and its
+        onion client-authorisation key are recomputed from this file, the node
+        identifier and a rotation counter. A configuration export or a database
+        copy therefore carries no credential at all, and rotating one node is a
+        counter increment rather than a key exchange.
+        """
+        return self.data_dir / "rack.key"
+
+    @property
     def agent_request_path(self) -> Path:
         return self.data_dir / "agent.request"
 
@@ -163,6 +176,21 @@ class Settings:
         return Path(
             os.getenv("ONIONPI_MAINTENANCE_STATE", self.data_dir / "maintenance.state")
         ).resolve()
+
+    @property
+    def node_agent_dir(self) -> Path:
+        """Installer handed out for rack nodes, read-only and never executed here.
+
+        install.sh copies packaging/agent/ next to the backend of the release it
+        promotes, so a deployed appliance serves the agent matching its own
+        version rather than whatever is current on GitHub.
+        """
+        return Path(
+            os.getenv(
+                "ONIONPI_NODE_AGENT_DIR",
+                Path(__file__).resolve().parents[2] / "packaging" / "agent",
+            )
+        )
 
     @property
     def firewall_rules_path(self) -> Path:
@@ -255,6 +283,9 @@ def get_settings() -> Settings:
         ).resolve(),
         tor_control_host=os.getenv("ONIONPI_TOR_CONTROL_HOST", "127.0.0.1"),
         tor_control_port=_bounded_int("ONIONPI_TOR_CONTROL_PORT", 9051, 1, 65535),
+        # Every outbound request the appliance makes on its own behalf — DNS
+        # blocklists, speed test, rack node agents — goes through this port.
+        tor_socks_port=_bounded_int("ONIONPI_TOR_SOCKS_PORT", 9050, 1, 65535),
         tor_cookie_path=Path(
             os.getenv("ONIONPI_TOR_COOKIE", "/run/tor/control.authcookie")
         ),
