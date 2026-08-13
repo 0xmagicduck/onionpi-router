@@ -1,0 +1,32 @@
+packaging/tests/wifi-security.sh
+  s_51ea59c5dd827b::t_8360053ff507a7 1-30,36-45
+  s_51ea59c5dd827b::t_1e74cfbd9e3739 31-35
+AGENTS.md
+  s_51ea59c5dd827b::t_8360053ff507a7 1-46
+packaging/install.sh
+  s_51ea59c5dd827b::t_8360053ff507a7 881-885,903-909
+packaging/verify.sh
+  s_51ea59c5dd827b::t_8360053ff507a7 34-48
+scripts/check.sh
+  s_51ea59c5dd827b::t_8360053ff507a7 81
+README.md
+  s_51ea59c5dd827b::t_8360053ff507a7 22-23
+CHANGELOG.md
+  s_51ea59c5dd827b::t_8360053ff507a7 10-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9bbb40a74347e7d5d00cd6325d31cf8ccdaa6673",
+  "prompts": {},
+  "sessions": {
+    "s_51ea59c5dd827b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ffd05-d02b-7c61-8734-edb2a68c9a58",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "0xmagicduck <0xmagicduck@proton.me>"
+    }
+  }
+}
