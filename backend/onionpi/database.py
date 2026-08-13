@@ -96,6 +96,33 @@ CREATE TABLE IF NOT EXISTS rack_nodes (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rack_nodes_slot
     ON rack_nodes(rack_id, position) WHERE rack_id IS NOT NULL AND position > 0;
 CREATE INDEX IF NOT EXISTS idx_rack_nodes_rack ON rack_nodes(rack_id);
+
+-- A named rule sheet, applied to any number of nodes. It holds intent only:
+-- applying a profile writes the same rules the node form writes, through the
+-- same validation, so a profile can never express more than a node can.
+CREATE TABLE IF NOT EXISTS rack_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    rules TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+-- One row per reading of a node, kept so the interface can show availability
+-- rather than only the last answer. Deliberately narrow: an unreachable node
+-- records a row with reachable=0 and nothing else, and the table is trimmed
+-- per node on every insert.
+CREATE TABLE IF NOT EXISTS rack_samples (
+    id INTEGER PRIMARY KEY,
+    node_id TEXT NOT NULL REFERENCES rack_nodes(id) ON DELETE CASCADE,
+    at INTEGER NOT NULL,
+    reachable INTEGER NOT NULL DEFAULT 0,
+    load REAL NOT NULL DEFAULT 0,
+    memory_percent REAL NOT NULL DEFAULT 0,
+    storage_percent REAL NOT NULL DEFAULT 0,
+    bootstrap INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_rack_samples_node ON rack_samples(node_id, at);
 """
 
 MAX_MESSAGES = 2_000
@@ -118,7 +145,14 @@ COUNT_QUERIES = {
     "settings": "SELECT count(*) FROM settings",
     "racks": "SELECT count(*) FROM racks",
     "rack_nodes": "SELECT count(*) FROM rack_nodes",
+    "rack_profiles": "SELECT count(*) FROM rack_profiles",
+    "rack_samples": "SELECT count(*) FROM rack_samples",
 }
+
+#: Readings kept per node. At one sweep every ten minutes for a full rack, this
+#: is about two days of history — enough to read an availability figure, small
+#: enough that sixty-four nodes stay under twenty thousand rows.
+MAX_SAMPLES_PER_NODE = 288
 
 #: Mutable columns of a rack node, in the order both statements below use.
 #: Nothing outside this tuple is ever written from a caller's dictionary.
@@ -503,6 +537,69 @@ class Database:
                 )
                 return str(occupant["id"])
         return ""
+
+    def rack_profiles(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT id,name,rules,created_at,updated_at FROM rack_profiles "
+                "ORDER BY name COLLATE NOCASE, id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def rack_profile(self, profile_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT id,name,rules,created_at,updated_at FROM rack_profiles WHERE id=?",
+                (profile_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save_rack_profile(self, profile_id: str, name: str, rules: str) -> None:
+        """Creates or replaces one profile, keeping its original creation date."""
+        now = int(time.time())
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO rack_profiles(id,name,rules,created_at,updated_at) "
+                "VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                "name=excluded.name, rules=excluded.rules, updated_at=excluded.updated_at",
+                (profile_id, name, rules, now, now),
+            )
+
+    def delete_rack_profile(self, profile_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute("DELETE FROM rack_profiles WHERE id=?", (profile_id,))
+
+    def add_rack_sample(self, node_id: str, sample: dict[str, Any]) -> None:
+        """Records one reading and drops whatever falls out of the window."""
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO rack_samples("
+                "node_id,at,reachable,load,memory_percent,storage_percent,bootstrap"
+                ") VALUES(?,?,?,?,?,?,?)",
+                (
+                    node_id,
+                    int(sample.get("at", time.time())),
+                    1 if sample.get("reachable") else 0,
+                    float(sample.get("load", 0.0)),
+                    float(sample.get("memory_percent", 0.0)),
+                    float(sample.get("storage_percent", 0.0)),
+                    int(sample.get("bootstrap", 0)),
+                ),
+            )
+            connection.execute(
+                "DELETE FROM rack_samples WHERE node_id=? AND id NOT IN "
+                "(SELECT id FROM rack_samples WHERE node_id=? ORDER BY id DESC LIMIT ?)",
+                (node_id, node_id, MAX_SAMPLES_PER_NODE),
+            )
+
+    def rack_samples(self, node_id: str, since: int = 0) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT at,reachable,load,memory_percent,storage_percent,bootstrap "
+                "FROM rack_samples WHERE node_id=? AND at>=? ORDER BY at",
+                (node_id, since),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def activities(self, limit: int = 10) -> list[dict[str, Any]]:
         with self.connect() as connection:

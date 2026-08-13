@@ -23,6 +23,12 @@ export type BridgeStatus = {
   "known": boolean
 }
 
+export type BulkRequest = {
+  "operation": string
+  "ids": Array<string>
+  "profile_id"?: string
+}
+
 export type CircumventionRequest = {
   "mode": string
   "transport"?: string
@@ -86,6 +92,11 @@ export type FolderRequest = {
 
 export type HTTPValidationError = {
   "detail"?: Array<ValidationError>
+}
+
+export type ImportRequest = {
+  "macs": Array<string>
+  "rack_id"?: string
 }
 
 export type InterfaceConfirmationRequest = {
@@ -173,6 +184,16 @@ export type OnionRequest = {
 export type PasswordChangeRequest = {
   "current_password": string
   "new_password": string
+}
+
+export type ProfileIdRequest = {
+  "id": string
+}
+
+export type ProfileRequest = {
+  "id"?: string
+  "name": string
+  "rules": NodeRulesDocument
 }
 
 export type ProtectionCheck = {

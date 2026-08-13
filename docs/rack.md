@@ -99,6 +99,40 @@ celle voulue, la politique est repoussée automatiquement. Une règle refusée
 n’est donc jamais perdue : elle est stockée, la fiche affiche « Règles en
 attente d’application », et la prochaine vague réessaie.
 
+## Profils, actions groupées, import
+
+Une **feuille de règles nommée** — un profil — se pose sur autant de machines
+qu’on veut. Elle passe par la validation d’une fiche et par les mêmes managers :
+appliquer un profil, c’est écrire exactement ce qu’une fiche aurait écrit, et
+un profil ne peut donc rien exprimer de plus. Douze profils au plus.
+
+Les **actions groupées** (isoler, autoriser, interroger, sortir de la baie,
+appliquer un profil) sont la même opération répétée, jamais un chemin
+d’application différent. Elles ne sont pas transactionnelles, et c’est
+délibéré : une machine sur douze qui est hors ligne est le cas normal, ce qui a
+réussi tient, ce qui a échoué revient nommé.
+
+Les clients du Wi-Fi qu’aucune fiche ne décrit sont proposés à l’**ajout**, avec
+le nom que leur bail annonce — nettoyé comme un nom saisi à la main. L’ajout ne
+crée aucun droit : l’appareil était déjà routé par la Pi, il gagne une fiche,
+un emplacement et une feuille de règles qui ne bloque rien.
+
+## Disponibilité et alertes
+
+Chaque sondage d’un nœud distant laisse une lecture : horodatage, réponse ou
+non, charge, mémoire, disque, amorçage de Tor. La table est bornée à
+**288 lectures par nœud** — environ deux jours à raison d’une vague toutes les
+dix minutes — et une lecture chasse la plus ancienne.
+
+La disponibilité affichée est la **part des sondages qui ont répondu**, pas une
+part de temps. Un nœud est visité toutes les dix minutes environ ; prétendre
+savoir ce qu’il a fait entre deux circuits serait une invention.
+
+Les alertes d’une fiche sont dérivées de ce que la fiche contient déjà : nœud
+injoignable, règles non appliquées par le nœud, autorisation client onion
+absente, Tor non amorcé, unité arrêtée, mémoire ou disque au-delà de 90 %,
+sortie directe. Rien n’y est mesuré une seconde fois.
+
 ## Installer un nœud
 
 1. **Baie virtuelle → Ajouter un nœud → Machine distante.** Le nœud est créé
@@ -120,8 +154,9 @@ elle-même, donc rien ne s’enrôle sans qu’un opérateur l’ait vu.
   Pour un accès interactif, `torsocks ssh` vers le port laissé ouvert.
 * **Pas de trafic à travers la Pi.** Un nœud distant sort par son propre Tor.
   La baie l’administre, elle ne le route pas.
-* **Pas d’inventaire automatique.** Un nœud existe parce qu’un opérateur l’a
-  déclaré.
+* **Pas d’inventaire automatique.** Un client du Wi-Fi est *proposé*, jamais
+  ajouté tout seul, et un nœud distant n’existe que parce qu’un opérateur l’a
+  déclaré et lui a recopié son adresse.
 
 ## Points d’API
 
@@ -129,12 +164,17 @@ Tous sous `/api/v1/rack`, session obligatoire, jeton CSRF pour chaque mutation.
 
 | Méthode | Chemin | Rôle |
 | --- | --- | --- |
-| `GET` | `/rack` | Topologie complète : baies, nœuds, limites, verbes |
+| `GET` | `/rack` | Topologie complète : baies, nœuds, profils, appareils proposés, alertes, limites, verbes |
 | `POST` | `/rack/racks`, `/racks/update`, `/racks/remove` | Cadres |
+| `POST` | `/rack/racks/arrange` | Rangement des U, sans changer l’ordre |
 | `POST` | `/rack/nodes`, `/nodes/update`, `/nodes/remove` | Fiches |
 | `POST` | `/rack/nodes/move` | Emplacement, avec échange si le U est pris |
 | `POST` | `/rack/nodes/rules` | Feuille de règles, poussée dans la foulée |
 | `POST` | `/rack/nodes/refresh` | Interrogation immédiate |
+| `POST` | `/rack/nodes/bulk` | Une opération de fiche répétée, avec ses échecs nommés |
+| `POST` | `/rack/nodes/import` | Clients du Wi-Fi ajoutés comme nœuds locaux |
+| `GET` | `/rack/nodes/{id}/history` | Lectures conservées et disponibilité |
+| `POST` | `/rack/profiles`, `/profiles/remove` | Feuilles de règles nommées |
 | `POST` | `/rack/nodes/action` | Un verbe de la liste publiée |
 | `POST` | `/rack/nodes/enrollment`, `/nodes/rotate-token` | Identifiants dérivés |
 | `GET` | `/rack/agent-bundle` | `packaging/agent/` en tar.gz |

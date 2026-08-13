@@ -371,6 +371,11 @@ export type RackNodeState = {
   services?: Array<{ id: string; label: string; active: boolean }>
 }
 
+export type RackAlert = { level: 'info' | 'warning' | 'danger'; message: string }
+
+/** Ce que le Wi-Fi dit d’un nœud local. Absent pour une machine distante. */
+export type RackLink = { ip: string; online: boolean; download: number; upload: number }
+
 export type RackNode = {
   id: string
   rack_id: string
@@ -395,6 +400,8 @@ export type RackNode = {
   /** Empreinte de la politique voulue. Comparée à celle que le nœud applique. */
   policy_digest: string
   status: RackNodeStatus
+  link: RackLink | null
+  alerts: RackAlert[]
 }
 
 export type RackFrame = {
@@ -404,15 +411,61 @@ export type RackFrame = {
   units: number
   created_at: number
   occupied: number
+  alerts: number
 }
+
+export type RackProfile = {
+  id: string
+  name: string
+  rules: RackNodeRules
+  created_at: number
+  updated_at: number
+}
+
+/** Un client du Wi-Fi qui n’est pas encore un nœud de la baie. */
+export type RackDiscovered = { mac: string; name: string; ip: string; online: boolean }
 
 export type RackPayload = {
   racks: RackFrame[]
   nodes: RackNode[]
-  limits: { max_racks: number; max_nodes: number; max_units: number; default_units: number }
+  profiles: RackProfile[]
+  discovered: RackDiscovered[]
+  health: { warnings: number; failures: number }
+  limits: {
+    max_racks: number
+    max_nodes: number
+    max_units: number
+    default_units: number
+    max_profiles: number
+  }
   verbs: Array<{ id: string; label: string }>
   egress_modes: RackEgress[]
   now: number
+}
+
+export type RackBulkAnswer = {
+  snapshot: RackPayload
+  applied: number
+  failures: Array<{ id: string; name: string; message: string }>
+}
+
+export type RackSample = {
+  at: number
+  reachable: number
+  load: number
+  memory_percent: number
+  storage_percent: number
+  bootstrap: number
+}
+
+export type RackHistory = {
+  node_id: string
+  name: string
+  window: number
+  samples: RackSample[]
+  readings: number
+  /** Part des sondages ayant obtenu une réponse. `null` avant tout sondage. */
+  availability: number | null
 }
 
 /** Rendu à la demande, jamais stocké: le jeton est dérivé du secret de baie. */

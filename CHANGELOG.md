@@ -16,6 +16,24 @@ numérotation [SemVer](https://semver.org/lang/fr/).
   ajouté sur la Pi**. Un index unique partiel garantit côté SQLite qu’un
   emplacement ne porte jamais deux machines ; un déplacement vers un U occupé
   échange les deux au lieu d’en écraser une.
+- **Profils de règles, actions groupées et import du Wi-Fi dans la baie.** Une
+  feuille de règles peut être nommée et rejouée sur plusieurs machines d’un
+  coup — isoler, autoriser, interroger, sortir de la baie, appliquer un profil.
+  Un profil n’exprime rien qu’une fiche ne puisse exprimer : il passe par la
+  même validation et par les mêmes managers. Les clients du Wi-Fi que la baie
+  ne connaît pas encore sont proposés à l’ajout avec le nom de leur bail, et
+  une action groupée qui échoue sur une machine le dit au lieu de tout annuler.
+- **Disponibilité et points d’attention.** Chaque sondage d’un nœud distant
+  laisse une trace bornée (288 lectures par nœud), d’où une disponibilité
+  lisible sur 24 h : c’est la part des sondages qui ont obtenu une réponse, pas
+  une part de temps — la baie ne prétend pas savoir ce qui s’est passé entre
+  deux circuits. Chaque fiche porte ses alertes calculées (nœud injoignable,
+  règles non appliquées, autorisation client absente, Tor non amorcé, service
+  arrêté, mémoire ou disque saturés, sortie directe), et la page les compte.
+- **Baie plus maniable.** Recherche et filtres au-dessus du cadre, sélection
+  multiple, rangement des U en une action, choix de l’emplacement depuis la
+  fiche, adresse et volumes d’un client du Wi-Fi lus sur sa ligne, journal d’un
+  service au choix et redémarrage d’un nœud sous confirmation.
 - **Agent de nœud installable** (`packaging/agent/`). Un VPS, un serveur ou une
   seconde Pi rejoignent la baie en installant un agent qui n’écoute que sur
   `127.0.0.1` et se publie comme service onion v3. Aucun port n’est ouvert sur

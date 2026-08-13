@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from .access import DeviceAccessManager
 from .accounting import TrafficAccountant
@@ -27,7 +28,7 @@ from .onion import OnionService
 from .policy import TorPolicy
 from .rack import RackManager
 from .relay import SnowflakeRelay
-from .system import MetricsSampler
+from .system import MetricsSampler, connected_devices
 from .tor_control import TorController
 from .updates import UpdateManager
 
@@ -105,6 +106,18 @@ def build_app_services(settings: Settings) -> AppServices:
         demo_mode=settings.demo_mode,
         on_event=lambda kind, message: database.add_activity(kind, message),
     )
+    def wifi_view() -> list[dict[str, Any]]:
+        """The Wi-Fi as the rack reads it: leases plus what they moved.
+
+        `totals` rather than `update`: reading the page must not fold the
+        firewall counters, which is the devices endpoint's job and its alone.
+        """
+        totals = traffic.totals()
+        return [
+            {**device, **totals.get(str(device.get("mac", "")), {})}
+            for device in connected_devices(settings.wifi_interface, settings.demo_mode)
+        ]
+
     rack = RackManager(
         database,
         settings.rack_key_path,
@@ -114,6 +127,7 @@ def build_app_services(settings: Settings) -> AppServices:
         tor,
         demo_mode=settings.demo_mode,
         on_event=lambda kind, message: database.add_activity(kind, message),
+        wifi_view=wifi_view,
     )
     tor_policy = TorPolicy(
         database,
