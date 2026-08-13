@@ -5,7 +5,91 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Sécurité
+
+- **Les réponses des nœuds sont authentifiées (protocole d’agent v2).** Les
+  appels étaient signés, les réponses ne l’étaient pas. Un circuit Tor
+  authentifie le *service onion*, pas l’agent : tout ce qui parvenait à
+  répondre à cette adresse — un processus qui squatte le port local du nœud,
+  une adresse onion recopiée de travers dans une fiche — dictait à la baie
+  l’état de la machine, et ce sont ces lectures qui déclenchent les alertes,
+  l’historique et la repoussée automatique des règles. Le nœud signe désormais
+  ce qu’il répond, avec une clé dérivée séparément de celle des appels et liée
+  au nonce de l’appel. La baie refuse toute réponse qu’elle ne peut pas
+  attribuer, et **ne se rabat jamais sur la v1** : un repli déclenché par une
+  réponse est un repli offert à qui la fabrique.
+- **Le nonce n’est retenu qu’après vérification de la signature.** Il l’était
+  avant, si bien que n’importe quel appel non signé écrivait dans la mémoire
+  anti-rejeu. En la remplissant — 512 entrées — on évinçait la trace d’un appel
+  capturé, qui redevenait rejouable dans la fenêtre de deux minutes.
+- **L’identifiant du nœud entre dans la signature**, et la version du protocole
+  est vérifiée au lieu d’être seulement transmise.
+- **Le jeton d’enrôlement quitte la ligne de commande.** Il y était visible dans
+  `ps` par tout compte de la machine, et restait dans l’historique du shell —
+  au moment précis où une machine neuve est la moins connue. L’installateur le
+  lit sur le terminal (`--token-stdin`) ; l’interface l’affiche dans son propre
+  champ, à coller à l’invite.
+- **Le téléchargement de l’agent est épinglé.** La commande d’installation
+  vérifiait un `curl | bash` sur une branche mouvante. Elle vérifie maintenant
+  l’empreinte du bootstrap avant de le lancer, et le bootstrap refuse d’exécuter
+  une archive dont le `packaging/agent/` ne correspond pas exactement à celui
+  que l’appliance exécute. Les deux empreintes viennent de l’appliance, qui a
+  été installée depuis une publication signée. Sans copie de référence, il faut
+  passer `--unverified-bundle` explicitement.
+- **L’agent borne ce qu’on peut lui faire ouvrir** : 16 connexions simultanées
+  au lieu d’un thread par connexion sans plafond, délai de 30 s sur une
+  connexion muette, et la baie lit une réponse en flux plafonné au lieu de la
+  charger entière avant d’en juger la taille.
+- **La chaîne de publication ne partage plus son cache avec les pull requests.**
+  Le cache `pip`/`npm` de la construction signée était le même que celui des
+  vérifications de pull request, où une contribution peut écrire : une entrée
+  empoisonnée se retrouvait dans une archive qu’une Raspberry Pi installe seule
+  la nuit. La publication construit désormais à froid.
+- **Injection de gabarit dans le travail de signature.** `${{ … }}` était
+  interpolé directement dans un `run:` du travail qui détient la clé GPG. Le
+  contenu de `VERSION` est maintenant validé (`X.Y.Z`) avant de devenir un mot
+  du shell, et passe par une variable d’environnement.
+- **Actions GitHub épinglées à un commit**, `persist-credentials: false` sur
+  chaque `checkout`, permissions par travail. Une étiquette se déplace, et qui
+  la déplace exécute du code dans cette CI.
+
+> **Mise à jour des nœuds distants requise.** Un agent resté en v1 ne sait pas
+> signer ses réponses ; sa fiche affiche « réponse non authentifiée ».
+> Réinstallez-le depuis **Préparer l’installation** — la commande est
+> réaffichable, et l’adresse onion comme le jeton ne changent pas.
+
 ### Ajouté
+
+- **[`docs/onionmesh.md`](docs/onionmesh.md).** L’architecture du réseau
+  superposé visé : un réseau privé entre ses machines à la manière de
+  Tailscale, mais dont le transport est Tor — pas de port ouvert, pas de STUN,
+  pas de relais tiers, et un plan de contrôle qui n’apprend jamais où sont les
+  machines. Identités générées sur le nœud, adresses IPv6 dérivées des clés
+  donc auto-certifiantes, carte du réseau signée et protégée contre le rejeu,
+  plan de données Noise IK sur les flux onion, dorsale 802.11s promue en chemin
+  direct de ce même réseau. Les limites y sont écrites au même titre que le
+  reste : TCP dans TCP, débit et latence d’un circuit, ni UDP ni ICMP.
+- **CodeQL** (Python et TypeScript, requêtes `security-extended`), **zizmor** et
+  **actionlint** sur les workflows, et un fichier `CODEOWNERS`.
+- **`Makefile`** : `make setup`, `make demo`, `make check`, `make ui`. Chaque
+  cible appelle le script qui fait déjà autorité. Un conteneur de développement
+  (`.devcontainer/`) monte l’environnement complet.
+
+### Corrigé
+
+- **L’archive de publication n’emporte plus de cache de bytecode.** Les tests
+  chargent `packaging/agent/*.py` par chemin, et la construction suit le test :
+  un `__pycache__` voyageait jusqu’à `/opt/onionpi/current/agent`, entrait dans
+  l’empreinte qui épingle le téléchargement d’un nœud, et aucune archive GitHub
+  ne pouvait plus y correspondre. `build-release.sh` l’exclut et échoue s’il en
+  reste ; les tests n’en écrivent plus.
+- **La version du document de politique n’est plus celle du protocole d’appel.**
+  Une seule constante servait aux deux ; faire évoluer le protocole faisait
+  refuser la politique par les trois exécutants privilégiés, sans que rien ne le
+  dise.
+- **`scripts/check.sh` génère les types API avec le Python du `venv`**, au lieu
+  du `python3` que le PATH propose — qui est rarement celui où FastAPI est
+  installé, et dont l’échec se lisait comme un contrat rompu.
 
 - **Centre de données virtuel.** La baie devient un plan de contrôle du fabric
   Tor : couverture de sortie, amorçage des agents, autorisations client,

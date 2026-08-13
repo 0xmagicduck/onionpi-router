@@ -1,0 +1,31 @@
+{
+  "name": "OnionPi",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck && make setup && .venv/bin/pip install zizmor",
+  "forwardPorts": [8080, 5173],
+  "portsAttributes": {
+    "8080": { "label": "API OnionPi (mode démonstration)" },
+    "5173": { "label": "Interface Vite" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "charliermarsh.ruff",
+        "ms-python.python",
+        "dbaeumer.vscode-eslint",
+        "timonwong.shellcheck",
+        "editorconfig.editorconfig"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+        "files.trimTrailingWhitespace": true
+      }
+    }
+  },
+  "remoteEnv": {
+    "ONIONPI_DEMO_MODE": "1"
+  }
+}

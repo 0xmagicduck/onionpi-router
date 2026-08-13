@@ -78,6 +78,7 @@ export function RackNodeSheet({
   const [enrollment, setEnrollment] = useState<RackEnrollment>()
   const [installPlatform, setInstallPlatform] = useState<InstallPlatform>('linux')
   const [commandCopied, setCommandCopied] = useState(false)
+  const [tokenCopied, setTokenCopied] = useState(false)
   const [journal, setJournal] = useState<string[]>()
   const [journalUnit, setJournalUnit] = useState('tor')
   const [history, setHistory] = useState<RackHistory>()
@@ -520,9 +521,41 @@ export function RackNodeSheet({
                   <pre className="rack-enrollment" aria-label="Commande d’installation">
                     {enrollment.commands[installPlatform] ?? enrollment.command}
                   </pre>
+                  <div className="rack-command-head">
+                    <span>
+                      <strong>Jeton du nœud</strong>
+                      <small>
+                        L’installateur le demande sur le terminal : collez-le à l’invite.
+                        Il n’est pas dans la commande, donc il n’apparaît ni dans « ps »
+                        ni dans l’historique du shell de la machine.
+                      </small>
+                    </span>
+                    <button
+                      type="button"
+                      className="button button-small button-secondary"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(enrollment.token)
+                          setTokenCopied(true)
+                          window.setTimeout(() => setTokenCopied(false), 1800)
+                        } catch {
+                          notify('Copie refusée par le navigateur', true)
+                        }
+                      }}
+                    >
+                      {tokenCopied ? <Check size={14} /> : <Copy size={14} />}
+                      {tokenCopied ? 'Copié' : 'Copier'}
+                    </button>
+                  </div>
+                  <pre className="rack-enrollment" aria-label="Jeton du nœud">
+                    {enrollment.token}
+                  </pre>
                   <p className="rack-installer-note">
-                    Cette commande contient le jeton privé du nœud. Ne la collez que sur la
-                    machine à enrôler et renouvelez le jeton si elle a été partagée ailleurs.
+                    Ce jeton ouvre le nœud. Ne le collez que sur la machine à enrôler, et
+                    renouvelez-le s’il a été vu ailleurs.
+                    {enrollment.bundle_digest
+                      ? ' La commande épingle l’agent à celui que cette appliance exécute : un téléchargement modifié est refusé avant d’être lancé.'
+                      : ' Cette installation n’a pas de copie de référence de l’agent : la commande porte --unverified-bundle et le téléchargement n’est pas épinglé.'}
                   </p>
                 </div>
               )}

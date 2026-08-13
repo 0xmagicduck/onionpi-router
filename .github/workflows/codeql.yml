@@ -1,0 +1,58 @@
+name: CodeQL
+
+# Static analysis of what actually routes traffic. `scripts/check.sh` proves
+# the code does what it should; this looks for what it does as well — injection
+# into a subprocess, a path escaping its directory, a comparison on a secret
+# that is not constant time.
+#
+# The weekly run is not decoration: a rule published after a merge finds
+# nothing until something re-scans, and this repository builds images that
+# install themselves unattended.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyse ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@faaa5d804fc648d0fdb28822a8e36cf7d0a6132c # v4.37.7
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # security-extended adds the rules that are precise but slower —
+          # affordable on a repository this size, and this is the code path
+          # between a phone and an exit node.
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@faaa5d804fc648d0fdb28822a8e36cf7d0a6132c # v4.37.7
+        with:
+          category: /language:${{ matrix.language }}

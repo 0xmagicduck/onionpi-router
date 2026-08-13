@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Node,
-    [Parameter(Mandatory = $true)][string]$Token,
+    [string]$Token = "",
+    [switch]$TokenStdin,
     [int]$Port = 9080,
     [string]$ClientKey = "",
     [string]$ClientName = "baie",
@@ -13,6 +14,13 @@ $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "Ouvrez PowerShell en tant qu'administrateur."
+}
+if ($TokenStdin) {
+    if ($Token) { throw "Choisissez -Token ou -TokenStdin." }
+    $secure = Read-Host -AsSecureString "Jeton du noeud"
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try { $Token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
 }
 if ($Node -notmatch '^[0-9a-f]{16}$') { throw "Identifiant de noeud invalide." }
 if ($Token -notmatch '^[0-9a-f]{64}$') { throw "Jeton invalide." }

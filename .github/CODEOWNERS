@@ -1,0 +1,35 @@
+# Qui doit relire quoi.
+#
+# Utile seulement si la branche `main` exige la revue des propriétaires: voir
+# « Réglages à faire dans GitHub » dans CONTRIBUTING.md. Sans cette protection,
+# ce fichier ne fait que proposer des relecteurs.
+
+*                                   @0xmagicduck
+
+# Les frontières de sécurité. Un changement ici touche root sur une machine qui
+# se met à jour toute seule, ou le chemin qu'emprunte le trafic d'un vrai
+# téléphone.
+/packaging/onionpi-agent-apply.sh   @0xmagicduck
+/packaging/onionpi-firewall-apply.sh @0xmagicduck
+/packaging/onionpi-devices-apply.sh @0xmagicduck
+/packaging/onionpi-relay-apply.sh   @0xmagicduck
+/packaging/onionpi-mesh-apply.sh    @0xmagicduck
+/packaging/onionpi-update.sh        @0xmagicduck
+/packaging/install.sh               @0xmagicduck
+/packaging/uninstall.sh             @0xmagicduck
+/packaging/templates/               @0xmagicduck
+/packaging/keys/                    @0xmagicduck
+
+# L'agent tourne en root sur la machine de quelqu'un d'autre.
+/packaging/agent/                   @0xmagicduck
+
+# Le protocole entre la baie et ses nœuds: les deux moitiés doivent changer
+# ensemble ou plus rien ne s'authentifie.
+/backend/onionpi/nodeclient.py      @0xmagicduck
+/backend/onionpi/auth.py            @0xmagicduck
+/backend/onionpi/tor_control.py     @0xmagicduck
+/backend/onionpi/netcontrol.py      @0xmagicduck
+
+# La chaîne de publication: qui la modifie signe ce qu'une Pi installera à 4 h.
+/.github/workflows/                 @0xmagicduck
+/scripts/build-release.sh           @0xmagicduck
