@@ -420,7 +420,7 @@ for path in \
   /etc/tor/torrc /etc/dnsmasq.d/onionpi.conf /etc/nftables.conf \
   /etc/onionpi/firewall.nft /etc/nftables.d/onionpi.nft /etc/sysctl.d/70-onionpi.conf \
   /etc/NetworkManager/system-connections/onionpi-mesh.nmconnection \
-  /etc/nginx/sites-available/onionpi /etc/systemd/system/nginx.service.d/onionpi-mesh.conf \
+  /etc/nginx/sites-available/onionpi /etc/systemd/system/nginx.service.d/nginx-mesh.conf \
   /etc/onionpi/onionpi.env \
   /etc/nginx/sites-enabled/default /etc/avahi/hosts \
   /etc/modprobe.d/onionpi-regdom.conf /etc/onionpi/tor/bridges.conf \
@@ -786,9 +786,9 @@ install -m 0755 "$PROJECT_ROOT/packaging/uninstall.sh" /usr/local/sbin/onionpi-u
 if [[ -n "$MESH_INTERFACE" ]]; then
   install -d -m 0755 /etc/systemd/system/nginx.service.d
   install -m 0644 "$PROJECT_ROOT/packaging/systemd/nginx-mesh.conf" \
-    /etc/systemd/system/nginx.service.d/onionpi-mesh.conf
+    /etc/systemd/system/nginx.service.d/nginx-mesh.conf
 else
-  rm -f /etc/systemd/system/nginx.service.d/onionpi-mesh.conf
+  rm -f /etc/systemd/system/nginx.service.d/nginx-mesh.conf
 fi
 
 # --------------------------------------------------------- update client ----

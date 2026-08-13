@@ -185,7 +185,7 @@ ROOT_MUTATION_PATHS=(
   /etc/systemd/system/onionpi.service
   /etc/systemd/system/onionpi-ap.service
   /etc/systemd/system/onionpi-mesh.service
-  /etc/systemd/system/nginx.service.d/onionpi-mesh.conf
+  /etc/systemd/system/nginx.service.d/nginx-mesh.conf
   /etc/systemd/system/onionpi-firewall.service
   /etc/systemd/system/onionpi-relay.service
   /etc/systemd/system/onionpi-relay.path

@@ -58,7 +58,7 @@ ip link delete dev bat0 2>/dev/null || true
 
 rm -f /etc/systemd/system/onionpi.service /etc/systemd/system/onionpi-ap.service
 rm -f /etc/systemd/system/onionpi-mesh.service
-rm -f /etc/systemd/system/nginx.service.d/onionpi-mesh.conf
+rm -f /etc/systemd/system/nginx.service.d/nginx-mesh.conf
 rm -f /etc/systemd/system/onionpi-firewall.service
 rm -f /etc/systemd/system/onionpi-relay.service /etc/systemd/system/onionpi-relay.path
 rm -f /etc/systemd/system/onionpi-agent.service /etc/systemd/system/onionpi-agent.path
