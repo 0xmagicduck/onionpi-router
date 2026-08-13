@@ -501,6 +501,8 @@ export type RackEnrollment = {
   token_epoch: number
   agent_port: number
   client_public_key: string
+  /** Empreinte de l’agent que la baie exécute, vide sans copie de référence. */
+  bundle_digest: string
   onion: string
   command: string
   commands: {

@@ -34,7 +34,19 @@ install -d "$TREE"
 # of the interface, no design mockups, no local state.
 rsync -a --exclude '__pycache__' --exclude '.pytest_cache' --exclude 'tests' \
   backend "$TREE/"
-rsync -a packaging "$TREE/"
+# Same exclusions for packaging: the test suite loads packaging/agent/*.py by
+# path, so a build that follows a test run finds bytecode caches beside the
+# installer. They would travel into /opt/onionpi/current/agent, land in the
+# digest the appliance pins the node download to, and no GitHub archive would
+# ever match it — every node install refusing to run, correctly, for a reason
+# nobody could see.
+rsync -a --exclude '__pycache__' --exclude '.pytest_cache' packaging "$TREE/"
+
+# Cheap, and it fails the build rather than an operator's install.
+if find "$TREE/packaging" "$TREE/backend" -name '__pycache__' -print -quit | grep -q .; then
+  printf 'Cache de bytecode dans l’arborescence de publication.\n' >&2
+  exit 1
+fi
 install -d "$TREE/frontend"
 rsync -a frontend/dist "$TREE/frontend/"
 install -m 0644 README.md LICENSE "$TREE/"

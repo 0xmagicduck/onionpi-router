@@ -57,7 +57,7 @@ privilégié qui **revalide le verbe contre sa propre liste** et n’extrait auc
 argument du fichier. Sur le nœud comme ici, la frontière de sécurité est
 l’exécutant privilégié, pas l’agent.
 
-## Deux verrous indépendants
+## Trois verrous indépendants
 
 1. **Autorisation client onion (v3).** Le nœud chiffre le descripteur de son
    service pour la clé x25519 de cette baie. Sans elle, l’adresse ne se résout
@@ -65,10 +65,21 @@ l’exécutant privilégié, pas l’agent.
    `ONION_CLIENT_AUTH_ADD`, en mémoire : elle est réenregistrée au démarrage de
    l’application, comme le service onion est republié.
 2. **Signature de la requête.** Chaque appel porte un HMAC-SHA256 sur la
-   version du protocole, le verbe, un horodatage, un nonce et l’empreinte du
-   corps. L’agent refuse un horodatage décalé de plus de deux minutes et un
-   nonce déjà vu — sa mémoire de nonces est bornée, un rejeu ne la fait pas
-   croître.
+   version du protocole, l’identifiant du nœud, le verbe, un horodatage, un
+   nonce et l’empreinte du corps. L’agent refuse un horodatage décalé de plus
+   de deux minutes et un nonce déjà vu — sa mémoire de nonces est bornée, un
+   rejeu ne la fait pas croître, et un appel non signé n’y écrit rien.
+3. **Signature de la réponse.** Le nœud signe ce qu’il répond, avec une clé
+   dérivée séparément et le nonce de l’appel auquel il répond. Le circuit
+   authentifie le *service onion*, pas l’agent : sans cette signature, tout ce
+   qui parvient à répondre à cette adresse dicterait à la baie l’état du nœud,
+   et ce sont ces lectures qui déclenchent alertes, historique et repoussée
+   automatique des règles.
+
+La baie ne se rabat jamais sur le protocole v1, qui laissait les réponses non
+signées : un repli déclenché par une réponse est un repli offert à qui la
+fabrique. Un nœud resté en v1 affiche « réponse non authentifiée » et se
+répare en réinstallant son agent — la commande est réaffichable.
 
 ## Aucun secret stocké
 
@@ -183,10 +194,21 @@ sortie directe. Rien n’y est mesuré une seconde fois.
    sans adresse : il est « en attente », et rien ne lui est encore demandé.
 2. Ouvrir **Préparer l’installation**, choisir Linux, macOS ou Windows et
    copier la commande GitHub. L’archive hors ligne reste disponible.
-3. Lancer la commande sur la machine. Elle installe Tor et Python, publie le
-   service onion avec autorisation client, puis crée les services natifs
-   (systemd, launchd ou tâches Windows) et affiche l’adresse `.onion`.
-4. Recopier cette adresse dans la fiche, puis « Interroger ».
+3. Lancer la commande sur la machine. Elle vérifie l’empreinte du bootstrap,
+   qui vérifie à son tour que l’agent téléchargé est exactement celui que
+   l’appliance exécute, puis installe Tor et Python, publie le service onion
+   avec autorisation client, crée les services natifs (systemd, launchd ou
+   tâches Windows) et affiche l’adresse `.onion`.
+4. Coller le jeton à l’invite. Il n’est pas dans la commande : un argument est
+   lisible dans `ps` par tout compte de la machine et reste dans l’historique
+   du shell, et l’installation est justement le moment où une machine neuve
+   est la moins connue.
+5. Recopier l’adresse onion dans la fiche, puis « Interroger ».
+
+Les deux empreintes viennent de l’appliance, qui a été installée depuis une
+publication signée : elles sont la référence, GitHub ne l’est pas. Une
+installation sans copie de référence — développement, archive hors ligne —
+doit passer `--unverified-bundle` explicitement ; sans lui, rien ne s’exécute.
 
 L’adresse remonte à la main, et c’est voulu : la baie ne va pas la chercher
 elle-même, donc rien ne s’enrôle sans qu’un opérateur l’ait vu.

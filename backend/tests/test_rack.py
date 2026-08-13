@@ -13,13 +13,20 @@ from onionpi.database import (
     RACK_NODE_UPDATE,
     Database,
 )
-from onionpi.nodeclient import NodeClient, NodeError, sign
+from onionpi.nodeclient import (
+    NodeClient,
+    NodeError,
+    sign_request,
+    sign_response,
+    subkeys,
+)
 from onionpi.rack import (
     MAX_NODES,
     MAX_PROFILES,
     MAX_RACKS,
     RackError,
     RackManager,
+    bundle_digest,
     clean_onion,
     clean_rules,
     policy_document,
@@ -483,13 +490,69 @@ def test_credentials_are_derived_and_never_stored(manager: RackManager) -> None:
     assert "--platform macos" in bundle["commands"]["macos"]
     assert "curl.exe --proto '=https' --tlsv1.2 -fsSL" in bundle["commands"]["windows"]
     assert "if ($LASTEXITCODE -ne 0)" in bundle["commands"]["windows"]
-    assert bundle["token"] in bundle["commands"]["windows"]
     row = manager.database.rack_node(node["id"])
     assert row is not None
     assert bundle["token"] not in json.dumps(row)
     # Tor reads a client public key as unpadded base32: 52 characters, 32 bytes.
     assert len(bundle["client_public_key"]) == 52
     assert len(base64.b32decode(bundle["client_public_key"] + "====")) == 32
+
+
+def test_the_token_is_in_no_command_the_operator_pastes(manager: RackManager) -> None:
+    """A token in the command is a token in `ps` and in the shell history.
+
+    Every account on the node can read another process's arguments, and the
+    install is exactly the moment a fresh machine is least trusted. The
+    installer reads it from the terminal instead; the interface shows it in
+    its own field to paste at the prompt.
+    """
+    node = manager.create_node("remote", "vps", onion=ONION)
+    bundle = manager.enrollment(node["id"])
+    for platform, command in bundle["commands"].items():
+        assert bundle["token"] not in command, platform
+        assert "--token " not in command, platform
+        assert "-Token " not in command, platform
+    assert "--token-stdin" in bundle["commands"]["linux"]
+    assert "-TokenStdin" in bundle["commands"]["windows"]
+
+
+def test_the_enrolment_command_pins_what_it_downloads(
+    manager: RackManager, tmp_path: Path
+) -> None:
+    """Neither the bootstrap nor the archive it fetches is taken on trust."""
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "bootstrap-node.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (agent_dir / "onionpi-node-agent.py").write_text("x = 1\n", encoding="utf-8")
+    manager.agent_dir = agent_dir
+    manager.release_ref = "v9.9.9"
+
+    bundle = manager.enrollment(manager.create_node("remote", "vps", onion=ONION)["id"])
+    digest = hashlib.sha256((agent_dir / "bootstrap-node.sh").read_bytes()).hexdigest()
+    assert bundle["bundle_digest"] == bundle_digest(agent_dir)
+    for platform, checker in (("linux", "sha256sum -c -"), ("macos", "shasum -a 256 -c -")):
+        command = bundle["commands"][platform]
+        # The bootstrap is checked before it runs, and it is given the digest
+        # of the archive it will fetch: neither link is left unverified.
+        assert f"{digest} " in command
+        assert checker in command
+        assert f"--bundle-digest {bundle['bundle_digest']}" in command
+        assert "--ref v9.9.9" in command
+        assert "--unverified-bundle" not in command
+    assert f"-BundleDigest {bundle['bundle_digest']}" in bundle["commands"]["windows"]
+
+
+def test_without_a_reviewed_copy_the_command_says_so(manager: RackManager) -> None:
+    """A demo run or a source checkout has nothing to pin against.
+
+    It says `--unverified-bundle` out loud rather than letting the installer
+    quietly trust GitHub — and the installer refuses without that flag.
+    """
+    manager.agent_dir = None
+    bundle = manager.enrollment(manager.create_node("remote", "vps", onion=ONION)["id"])
+    assert bundle["bundle_digest"] == ""
+    assert "--unverified-bundle" in bundle["commands"]["linux"]
+    assert "-UnverifiedBundle" in bundle["commands"]["windows"]
 
 
 def test_rotation_invalidates_the_previous_token_and_key(manager: RackManager) -> None:
@@ -544,16 +607,187 @@ def test_deleting_a_node_revokes_its_onion_authorisation(manager: RackManager) -
 # --------------------------------------------------------------- protocol ---
 
 
-def test_the_signature_covers_the_verb_the_time_and_the_body() -> None:
+def test_the_signature_covers_the_node_the_verb_the_time_and_the_body() -> None:
     token = "f" * 64
+    node = "0" * 16
     body = b'{"a":1}'
-    reference = sign(token, "status", 1_700_000_000, "abcd", body)
-    assert reference != sign(token, "reboot", 1_700_000_000, "abcd", body)
-    assert reference != sign(token, "status", 1_700_000_001, "abcd", body)
-    assert reference != sign(token, "status", 1_700_000_000, "abce", body)
-    assert reference != sign(token, "status", 1_700_000_000, "abcd", b'{"a":2}')
-    assert reference != sign("e" * 64, "status", 1_700_000_000, "abcd", body)
+    reference = sign_request(token, node, "status", 1_700_000_000, "abcd", body)
+    assert reference != sign_request(token, "1" * 16, "status", 1_700_000_000, "abcd", body)
+    assert reference != sign_request(token, node, "reboot", 1_700_000_000, "abcd", body)
+    assert reference != sign_request(token, node, "status", 1_700_000_001, "abcd", body)
+    assert reference != sign_request(token, node, "status", 1_700_000_000, "abce", body)
+    assert reference != sign_request(token, node, "status", 1_700_000_000, "abcd", b'{"a":2}')
+    assert reference != sign_request("e" * 64, node, "status", 1_700_000_000, "abcd", body)
     assert hashlib.sha256(body).hexdigest() not in reference
+
+
+def test_a_captured_answer_is_not_a_ready_made_call() -> None:
+    """The two directions are keyed apart.
+
+    Without domain separation the MAC on an answer is a valid MAC on a call
+    with the same fields, and a node that only ever answers could mint orders
+    for itself out of its own replies.
+    """
+    token = "f" * 64
+    node = "0" * 16
+    body = b'{"a":1}'
+    request_key, response_key = subkeys(token)
+    assert request_key != response_key
+    assert request_key != token.encode()
+    assert sign_request(token, node, "status", 1_700_000_000, "abcd", body) != sign_response(
+        token, node, "status", 1_700_000_000, "abcd", 200, body
+    )
+
+
+def test_an_answer_is_bound_to_the_call_it_answers() -> None:
+    token = "f" * 64
+    node = "0" * 16
+    body = b'{"ok":true}'
+    reference = sign_response(token, node, "status", 1_700_000_000, "abcd", 200, body)
+    # A different nonce, status or body is a different answer: none of them can
+    # be lifted from one exchange and served in another.
+    assert reference != sign_response(token, node, "status", 1_700_000_000, "abce", 200, body)
+    assert reference != sign_response(token, node, "status", 1_700_000_000, "abcd", 500, body)
+    assert reference != sign_response(token, node, "journal", 1_700_000_000, "abcd", 200, body)
+    assert reference != sign_response(
+        token, node, "status", 1_700_000_000, "abcd", 200, b'{"ok":false}'
+    )
+
+
+class _Answer:
+    """One canned HTTP answer, shaped like the streamed response httpx gives."""
+
+    def __init__(self, status: int, body: bytes, headers: dict[str, str]) -> None:
+        self.status_code = status
+        self.headers = headers
+        self._body = body
+
+    def __enter__(self) -> _Answer:
+        return self
+
+    def __exit__(self, *_: object) -> bool:
+        return False
+
+    def iter_bytes(self) -> Any:
+        yield self._body
+
+
+def answering(
+    status: int = 200,
+    document: dict[str, Any] | None = None,
+    *,
+    sign_with: str | None = "f" * 64,
+    node_id: str = "0" * 16,
+) -> Any:
+    """An httpx.Client stand-in answering one call, signed or not."""
+    body = json.dumps(document if document is not None else {"ok": True}).encode()
+
+    class Client:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> Client:
+            return self
+
+        def __exit__(self, *_: object) -> bool:
+            return False
+
+        def stream(self, _method: str, _url: str, *, content: bytes, headers: dict) -> _Answer:
+            answered: dict[str, str] = {}
+            if sign_with is not None:
+                answered["X-OnionPi-Signature"] = sign_response(
+                    sign_with,
+                    node_id,
+                    "status",
+                    int(headers["X-OnionPi-Timestamp"]),
+                    headers["X-OnionPi-Nonce"],
+                    status,
+                    body,
+                )
+            return _Answer(status, body, answered)
+
+    return Client
+
+
+def probe(client_class: Any, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    monkeypatch.setattr("onionpi.nodeclient.httpx.Client", client_class)
+    return NodeClient(demo_mode=False).call(
+        node_id="0" * 16,
+        name="vps",
+        onion=ONION,
+        port=9080,
+        token="f" * 64,
+        verb="status",
+    )
+
+
+def test_a_signed_answer_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert probe(answering(document={"hostname": "vps"}), monkeypatch)["hostname"] == "vps"
+
+
+def test_an_unsigned_answer_is_not_a_fact_about_the_node(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tor authenticates the service, not the agent.
+
+    A squatter on the node's loopback port, or an onion address mistyped into
+    a node sheet, answers exactly like the agent would. Without a signature
+    the rack would file whatever it says — bootstrap, load, journal lines,
+    the policy digest it claims to be running — as a reading of the node.
+    """
+    with pytest.raises(NodeError, match="non authentifiée"):
+        probe(answering(document={"memory_percent": 1.0}, sign_with=None), monkeypatch)
+
+
+def test_an_answer_signed_with_the_wrong_token_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(NodeError, match="non authentifiée"):
+        probe(answering(sign_with="e" * 64), monkeypatch)
+
+
+def test_an_answer_signed_for_another_node_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(NodeError, match="non authentifiée"):
+        probe(answering(node_id="1" * 16), monkeypatch)
+
+
+def test_an_unsigned_refusal_names_the_stale_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(NodeError, match="refusé la signature"):
+        probe(answering(401, {"detail": "Signature refusée"}, sign_with=None), monkeypatch)
+
+
+def test_a_signed_error_is_reported_with_its_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(NodeError, match="Service non autorisé"):
+        probe(answering(400, {"detail": "Service non autorisé"}), monkeypatch)
+
+
+def test_an_oversized_answer_is_dropped_before_it_is_held(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A node is not trusted with this appliance's memory."""
+    from onionpi.nodeclient import MAX_RESPONSE_BYTES
+
+    class Flood:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> Flood:
+            return self
+
+        def __exit__(self, *_: object) -> bool:
+            return False
+
+        def stream(self, *_: object, **__: object) -> _Answer:
+            return _Answer(200, b"x" * (MAX_RESPONSE_BYTES + 1), {})
+
+    with pytest.raises(NodeError, match="anormalement longue"):
+        probe(Flood, monkeypatch)
 
 
 def test_an_unknown_verb_never_reaches_the_network() -> None:

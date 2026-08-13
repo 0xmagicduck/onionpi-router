@@ -110,9 +110,11 @@ CABLE_SPEEDS = ("100-mbps", "1-gbps", "10-gbps")
 
 POLICY_VERSION = 1
 
-# The bootstrap is deliberately fetched from GitHub while the credentials stay
-# in local command arguments. They never become query parameters, referrers or
-# server logs on the download host.
+# The bootstrap is fetched from GitHub, and nothing about that download is
+# trusted: the appliance pins it to the digest of its own copy of the agent
+# (see `bundle_digest`). Credentials never travel here at all — they are typed
+# into the installer's prompt, so they are not in the URL, in a referrer, in
+# the download host's logs, nor in the node's process list.
 NODE_BOOTSTRAP_ROOT = (
     "https://raw.githubusercontent.com/0xmagicduck/onionpi-router/"
     "main/packaging/agent"
@@ -126,6 +128,38 @@ DEFAULT_KEEP_OPEN_PORTS = (22,)
 
 class RackError(RuntimeError):
     pass
+
+
+def bundle_digest(root: Path) -> str:
+    """One digest over every file the node installer is made of.
+
+    `install.sh` copies `packaging/agent/` next to the backend of the release
+    it promotes, and that release was verified against a signed `SHA256SUMS`.
+    The appliance's own copy is therefore the reviewed one, and printing this
+    digest in the enrolment command pins the GitHub download to exactly that
+    content: the node installs what this appliance carries, or nothing.
+
+    Empty when the directory is missing, which is how a source checkout and a
+    demo run behave; the installer then refuses unless told to skip the check.
+    """
+    lines: list[str] = []
+    try:
+        files = sorted(
+            (path for path in root.rglob("*") if path.is_file()),
+            key=lambda path: path.relative_to(root).as_posix(),
+        )
+    except OSError:
+        return ""
+    for path in files:
+        try:
+            content = path.read_bytes()
+        except OSError:
+            return ""
+        name = path.relative_to(root).as_posix()
+        lines.append(f"{hashlib.sha256(content).hexdigest()}  {name}\n")
+    if not lines:
+        return ""
+    return hashlib.sha256("".join(lines).encode()).hexdigest()
 
 
 def _node_id() -> str:
@@ -245,9 +279,15 @@ class RackManager:
         demo_mode: bool = False,
         on_event: Callable[[str, str], None] | None = None,
         wifi_view: Callable[[], list[dict[str, Any]]] | None = None,
+        agent_dir: Path | None = None,
+        release_ref: str = "",
     ) -> None:
         self.database = database
         self.key_path = key_path
+        # The reviewed copy of the installer this appliance was released with:
+        # what the enrolment command pins the GitHub download to.
+        self.agent_dir = agent_dir
+        self.release_ref = release_ref
         self.guard = guard
         self.access = access
         self.client = client
@@ -1256,6 +1296,15 @@ class RackManager:
 
     # ------------------------------------------------------- enrolment -----
 
+    def _file_digest(self, name: str) -> str:
+        """SHA-256 of one file of the appliance's own agent copy, or empty."""
+        if not self.agent_dir:
+            return ""
+        try:
+            return hashlib.sha256((self.agent_dir / name).read_bytes()).hexdigest()
+        except OSError:
+            return ""
+
     def enrollment(self, node_id: str) -> dict[str, Any]:
         """Everything the installer on the node needs, and nothing more.
 
@@ -1271,35 +1320,68 @@ class RackManager:
         _, public = self.client_keypair(node_id, epoch)
         port = int(row["agent_port"] or 9080)
         token = self.token_for(node_id, epoch)
+        digest = bundle_digest(self.agent_dir) if self.agent_dir else ""
+        # `--token-stdin` is what keeps the shared secret out of the node's
+        # process list and shell history: the installer reads it from the
+        # terminal. The operator pastes it at the prompt from the field the
+        # interface shows beside this command.
         arguments = (
             f"--node {node_id}"
             f" --port {port}"
-            f" --token {token}"
             f" --client-key {public}"
+            " --token-stdin"
             " --yes"
         )
+        pins = ""
+        if digest:
+            pins = f" --bundle-digest {digest}"
+            if self.release_ref:
+                pins += f" --ref {self.release_ref}"
+        else:
+            # No reviewed copy to compare against — say so in the command
+            # rather than let the installer quietly trust the download.
+            pins = " --unverified-bundle"
         posix_bootstrap = f"{NODE_BOOTSTRAP_ROOT}/bootstrap-node.sh"
         windows_bootstrap = f"{NODE_BOOTSTRAP_ROOT}/bootstrap-node.ps1"
-        commands = {
-            "linux": (
-                f"curl --proto '=https' --tlsv1.2 -fsSL {posix_bootstrap} | "
-                f"bash -s -- --platform linux {arguments}"
-            ),
-            "macos": (
-                f"curl --proto '=https' --tlsv1.2 -fsSL {posix_bootstrap} | "
-                f"bash -s -- --platform macos {arguments}"
-            ),
-            "windows": (
-                "$p=Join-Path $env:TEMP 'onionpi-node.ps1'; "
-                "Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue; "
-                "curl.exe --proto '=https' --tlsv1.2 -fsSL "
-                f"{windows_bootstrap} -o $p; "
-                "if ($LASTEXITCODE -ne 0) { throw 'Telechargement GitHub refuse' }; "
-                "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p"
-                f" -Node {node_id} -Port {port} -Token {token}"
-                f" -ClientKey {public} -Yes"
-            ),
-        }
+        # Downloaded to a file rather than piped into a shell, because the
+        # bytes have to be weighed before they run. `mktemp` rather than a
+        # fixed /tmp name: on a shared machine a predictable path in a
+        # world-writable directory is somebody else's symlink.
+        #
+        # The bootstrap verifies the archive it downloads, so the command has
+        # to verify the bootstrap — otherwise the one file nobody checks is
+        # the file doing the checking. Both digests come from this appliance's
+        # own copy, which arrived in a signed release.
+        checkers = {"linux": "sha256sum -c -", "macos": "shasum -a 256 -c -"}
+        bootstrap_digest = self._file_digest("bootstrap-node.sh")
+        commands = {}
+        for platform, checker in checkers.items():
+            fetch = (
+                's="$(mktemp)" && curl --proto \'=https\' --tlsv1.2 -fsSL '
+                f'{posix_bootstrap} -o "$s"'
+            )
+            if bootstrap_digest:
+                fetch += f" && printf '%s  %s' {bootstrap_digest} \"$s\" | {checker}"
+            commands[platform] = (
+                f'{fetch} && bash "$s" --platform {platform}{pins} {arguments}; rm -f "$s"'
+            )
+        windows_pins = ""
+        if digest:
+            windows_pins = f" -BundleDigest {digest}"
+            if self.release_ref:
+                windows_pins += f" -Ref {self.release_ref}"
+        else:
+            windows_pins = " -UnverifiedBundle"
+        commands["windows"] = (
+            "$p=Join-Path $env:TEMP 'onionpi-node.ps1'; "
+            "Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue; "
+            "curl.exe --proto '=https' --tlsv1.2 -fsSL "
+            f"{windows_bootstrap} -o $p; "
+            "if ($LASTEXITCODE -ne 0) { throw 'Telechargement GitHub refuse' }; "
+            "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p"
+            f" -Node {node_id} -Port {port}"
+            f" -ClientKey {public} -TokenStdin{windows_pins} -Yes"
+        )
         return {
             "node_id": node_id,
             "name": str(row["name"]),
@@ -1307,6 +1389,7 @@ class RackManager:
             "token_epoch": epoch,
             "agent_port": port,
             "client_public_key": public,
+            "bundle_digest": digest,
             "onion": str(row["onion"] or ""),
             # Kept for clients predating the multi-platform installer.
             "command": commands["linux"],

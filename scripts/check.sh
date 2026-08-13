@@ -3,8 +3,10 @@ set -Eeuo pipefail
 
 # Everything the CI runs, in one command, in the order that fails fastest.
 #
-#   ./scripts/check.sh          tout
-#   ./scripts/check.sh backend  un seul groupe
+#   ./scripts/check.sh            tout
+#   ./scripts/check.sh backend    un seul groupe
+#
+# Groupes: meta | backend | frontend | shell | workflows
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
@@ -32,7 +34,10 @@ if [[ "$ONLY" == all || "$ONLY" == meta ]]; then
   step "Cohérence des versions" ./scripts/check-version.sh
   step "Secrets" ./scripts/check-secrets.sh
   step "Budget Raspberry Pi" ./scripts/check-resource-budget.sh
-  step "Types API générés" ./scripts/generate-api-types.py
+  # Through "$PYTHON", not the shebang: the shebang picks whatever python3 the
+  # PATH offers, which on a developer's machine is rarely the one that has
+  # FastAPI installed — and the failure then reads as a broken contract.
+  step "Types API générés" "$PYTHON" ./scripts/generate-api-types.py
   # A workflow that does not parse fails in zero seconds with "workflow file
   # issue" and no log to read, so it is worth catching here.
   step "YAML des workflows" "$PYTHON" - <<'PY'
@@ -83,6 +88,26 @@ if [[ "$ONLY" == all || "$ONLY" == shell ]]; then
   for script in $(git ls-files '*.sh'); do
     bash -n "$script" || failed+=("bash -n $script")
   done
+fi
+
+if [[ "$ONLY" == all || "$ONLY" == workflows ]]; then
+  # Ces deux-là lisent les workflows comme du code: injection de gabarit dans un
+  # `run:`, action non épinglée, jeton laissé dans le dépôt cloné. La chaîne de
+  # publication détient la clé de signature, donc une faille y vaut toutes les
+  # appliances qui se mettent à jour la nuit.
+  if command -v actionlint >/dev/null; then
+    step "actionlint" actionlint -color
+  else
+    printf '\nactionlint absent: brew install actionlint\n' >&2
+  fi
+  ZIZMOR="$PROJECT_ROOT/.venv/bin/zizmor"
+  [[ -x "$ZIZMOR" ]] || ZIZMOR="$(command -v zizmor || true)"
+  if [[ -n "$ZIZMOR" ]]; then
+    step "zizmor" "$ZIZMOR" --config .github/zizmor.yml --persona=regular \
+      --no-progress .github/workflows
+  else
+    printf '\nzizmor absent: .venv/bin/pip install zizmor\n' >&2
+  fi
 fi
 
 printf '\n'

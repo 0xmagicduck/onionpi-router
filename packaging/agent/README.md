@@ -16,7 +16,7 @@ l’interface puisse vous le remettre.
 | `render-policy.py` | Traduit la politique reçue en règles nftables, après revalidation. Exécuté sous root. |
 | `onionpi-node-apply.sh` | Exécutant privilégié. Revalide le verbe, n’accepte aucun argument depuis le fichier de requête. |
 | `systemd/` | Les trois unités: l’agent, l’unité `.path` qui surveille la file, le service root qu’elle déclenche. |
-| `bootstrap-node.sh` / `.ps1` | Télécharge la source depuis GitHub sans placer les identifiants dans l’URL. |
+| `bootstrap-node.sh` / `.ps1` | Télécharge la source depuis GitHub et refuse de l’exécuter tant qu’elle ne correspond pas à l’empreinte fournie par la baie. |
 | `install-node-agent.sh` | Installation Linux (Debian, Ubuntu, Raspberry Pi OS). |
 | `install-node-agent-macos.sh` | Installation macOS avec Homebrew, launchd et PF. |
 | `install-node-agent-windows.ps1` | Installation Windows avec tâches système ; sortie directe sûre tant qu’un tunnel TUN manque. |
@@ -28,14 +28,29 @@ ouvrez la fiche, choisissez Linux, macOS ou Windows, puis copiez la commande
 proposée. Elle télécharge le bootstrap depuis GitHub, récupère le dépôt et
 installe Tor, Python, le service onion et l’agent.
 
-Les identifiants restent des arguments de la commande locale : ils ne sont
-jamais ajoutés à l’URL GitHub. Pour examiner chaque fichier avant exécution,
-utilisez **Archive hors ligne**, puis sous Linux :
+Rien de ce qui vient de GitHub n’est exécuté sur la foi du téléchargement :
+
+1. la commande vérifie l’empreinte du bootstrap avant de le lancer ;
+2. le bootstrap vérifie que le `packaging/agent/` extrait de l’archive est
+   exactement celui que la baie exécute (`--bundle-digest`), et s’arrête sinon.
+
+Les deux empreintes viennent de l’appliance, installée depuis une publication
+signée : elles sont la référence, le téléchargement ne l’est pas. Sans
+appliance de référence — développement, installation hors ligne — il faut
+passer `--unverified-bundle` explicitement ; sans lui le bootstrap refuse.
+
+Le jeton n’est **pas** dans la commande. L’installateur le demande sur le
+terminal (`--token-stdin`), donc il n’apparaît ni dans `ps`, où tout compte de
+la machine pourrait le lire, ni dans l’historique du shell. L’interface
+l’affiche dans son propre champ, à coller à l’invite.
+
+Pour examiner chaque fichier avant exécution, utilisez **Archive hors ligne**,
+puis sous Linux :
 
 ```bash
 tar xzf onionpi-node-agent.tar.gz
 cd onionpi-node-agent
-sudo ./install-node-agent.sh --node <id> --token <jeton> --client-key <clé>
+sudo ./install-node-agent.sh --node <id> --token-stdin --client-key <clé>
 ```
 
 Le script affiche l’adresse `.onion` du nœud à la fin. Recopiez-la dans la
@@ -59,18 +74,35 @@ fiche du nœud : la baie ne peut pas la deviner, et c’est voulu.
 
 ## Comment la baie le joint
 
-La baie compose l’adresse `.onion` du nœud à travers son propre Tor. Deux
+La baie compose l’adresse `.onion` du nœud à travers son propre Tor. Trois
 verrous indépendants la protègent :
 
 1. **Autorisation client v3.** Le descripteur du service est chiffré pour la
    clé x25519 de la baie. Sans elle, l’adresse ne se résout même pas.
-2. **Signature.** Chaque appel porte un HMAC-SHA256 sur le verbe, un
-   horodatage, un nonce et l’empreinte du corps. Horodatage périmé ou nonce
-   déjà vu : refusé.
+2. **Signature de l’appel.** Chaque appel porte un HMAC-SHA256 sur la version
+   du protocole, l’identifiant du nœud, le verbe, un horodatage, un nonce et
+   l’empreinte du corps. Horodatage périmé ou nonce déjà vu : refusé. Le nonce
+   n’est retenu qu’après vérification de la signature, sinon un inconnu videra
+   la mémoire des nonces avec des appels non signés.
+3. **Signature de la réponse.** Le nœud signe ce qu’il répond, avec une clé
+   distincte et le nonce de l’appel. Tor authentifie le *service*, pas
+   l’agent : sans cette signature, ce qui répond à l’adresse — un squatteur du
+   port local, une adresse onion recopiée de travers dans une fiche — pourrait
+   inventer une charge, un amorçage Tor ou un journal, et la baie les
+   classerait comme des faits.
 
 Le jeton et la clé sont dérivés du secret de baie ; ils ne sont stockés nulle
 part côté OnionPi. Renouveler un nœud incrémente un compteur, ce qui invalide
 d’un coup l’ancien jeton et l’ancienne clé.
+
+### Protocole v2
+
+La signature des réponses et l’identifiant du nœud dans le canonique arrivent
+avec la **version 2** du protocole, et un agent v1 ne sait pas les produire.
+Une appliance à jour affiche alors « réponse non authentifiée » sur les nœuds
+restés en v1 : réinstallez leur agent depuis **Préparer l’installation**, la
+commande est réaffichable. La baie ne se rabat jamais sur la v1 — un repli
+déclenché par une réponse est un repli offert à qui la fabrique.
 
 ## Le pare-feu du nœud
 

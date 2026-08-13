@@ -375,7 +375,11 @@ nommée en profil et rejouée sur une sélection entière, les clients du Wi-Fi
 qu’aucune fiche ne décrit sont proposés à l’ajout avec le nom de leur bail, et
 chaque fiche porte sa disponibilité sur 24 h — la part des sondages qui ont
 répondu — ainsi que les points d’attention que ses propres lectures justifient.
-Détails dans [`docs/rack.md`](docs/rack.md).
+Détails dans [`docs/rack.md`](docs/rack.md). Là où la baie va —
+un réseau privé entre ses propres machines, à la manière de Tailscale mais
+dont le transport est Tor, sans port ouvert, sans STUN et sans plan de
+contrôle qui apprenne où sont les machines — est décrit dans
+[`docs/onionmesh.md`](docs/onionmesh.md), limites comprises.
 
 ## Audit de sécurité
 

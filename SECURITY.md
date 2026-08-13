@@ -32,7 +32,14 @@ qui reçoit les correctifs.
 - contournement de l’authentification, de la protection CSRF ou de la
   limitation des tentatives de connexion ;
 - exposition d’un secret : PSK Wi-Fi, condensat administrateur, clé du service
-  onion, cookie de session.
+  onion, cookie de session, jeton d’un nœud de baie ;
+- contournement du protocole d’agent de baie : appel accepté sans signature
+  valide, rejeu dans la fenêtre d’horodatage, ou **réponse acceptée par la baie
+  sans signature du nœud** — le circuit onion authentifie le service, pas
+  l’agent, et une lecture forgée pilote alertes, historique et repoussée des
+  règles ;
+- installation d’un agent de nœud dont l’archive ne correspond pas à
+  l’empreinte annoncée par l’appliance.
 
 ## Ce qui n’en est pas
 

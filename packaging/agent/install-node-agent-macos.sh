@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 NODE_ID=""
 TOKEN=""
+TOKEN_STDIN=0
 PORT=9080
 CLIENT_KEY=""
 CLIENT_NAME="baie"
@@ -11,10 +12,13 @@ ASSUME_YES=0
 
 usage() {
   cat <<'USAGE'
-Usage: sudo ./install-node-agent-macos.sh --node <id> --token <jeton> [options]
+Usage: sudo ./install-node-agent-macos.sh --node <id> --token-stdin [options]
 
   --node <id>          Identifiant du nœud, 16 caractères hexadécimaux.
-  --token <jeton>      Jeton partagé, 64 caractères hexadécimaux.
+  --token-stdin        Lire le jeton sur l'entrée standard, ou le demander sur
+                       le terminal. Un jeton passé en argument est lisible dans
+                       « ps » et reste dans l'historique du shell.
+  --token <jeton>      Jeton partagé, 64 caractères hexadécimaux. Déconseillé.
   --port <port>        Port local de l'agent (défaut: 9080).
   --client-key <clé>   Clé publique x25519 de la baie, en base32.
   --client-name <nom>  Nom de l'autorisation (défaut: baie).
@@ -26,6 +30,7 @@ while (($#)); do
   case "$1" in
     --node) NODE_ID="${2:-}"; shift 2 ;;
     --token) TOKEN="${2:-}"; shift 2 ;;
+    --token-stdin) TOKEN_STDIN=1; shift ;;
     --port) PORT="${2:-}"; shift 2 ;;
     --client-key) CLIENT_KEY="${2:-}"; shift 2 ;;
     --client-name) CLIENT_NAME="${2:-}"; shift 2 ;;
@@ -37,8 +42,23 @@ done
 
 (( EUID == 0 )) || { printf 'À lancer avec sudo.\n' >&2; exit 1; }
 [[ "$(uname -s)" == Darwin ]] || { printf 'Cet installateur exige macOS.\n' >&2; exit 1; }
+
+if (( TOKEN_STDIN )); then
+  [[ -z "$TOKEN" ]] || { printf 'Choisissez --token ou --token-stdin.\n' >&2; exit 2; }
+  if [[ -t 0 ]]; then
+    printf 'Jeton du nœud (collé depuis « Préparer l’installation »): ' >&2
+    read -rs TOKEN
+    printf '\n' >&2
+  else
+    read -r TOKEN
+  fi
+elif [[ -n "$TOKEN" ]]; then
+  printf 'Attention: --token place le jeton dans « ps » et dans\n' >&2
+  printf 'l’historique du shell. Préférez --token-stdin.\n' >&2
+fi
+
 [[ "$NODE_ID" =~ ^[0-9a-f]{16}$ ]] || { printf '%s\n' '--node invalide.' >&2; exit 2; }
-[[ "$TOKEN" =~ ^[0-9a-f]{64}$ ]] || { printf '%s\n' '--token invalide.' >&2; exit 2; }
+[[ "$TOKEN" =~ ^[0-9a-f]{64}$ ]] || { printf '%s\n' 'Jeton invalide.' >&2; exit 2; }
 [[ "$PORT" =~ ^[0-9]{1,5}$ ]] && (( PORT >= 1 && PORT <= 65535 )) \
   || { printf '%s\n' '--port invalide.' >&2; exit 2; }
 [[ -z "$CLIENT_KEY" || "$CLIENT_KEY" =~ ^[A-Z2-7]{52}$ ]] \

@@ -1,0 +1,15 @@
+# Exceptions à l'audit des workflows, chacune avec sa raison.
+#
+# Une exception sans justification est une règle désactivée en douce. Si celle
+# ci-dessous cesse d'être vraie — parce que la publication remet un cache, ou
+# parce que zizmor apprend à lire l'entrée `cache` — elle doit sauter.
+
+rules:
+  cache-poisoning:
+    ignore:
+      # release.yml n'active aucun cache: `setup-python` n'a pas d'entrée
+      # `cache`, `setup-node` a `cache: ''`, qui est son interrupteur. L'audit
+      # signale l'étape sans lire l'entrée. Le vrai risque — un cache écrit par
+      # une pull request et relu par la construction qu'on signe — est traité en
+      # n'ayant pas de cache du tout dans cette chaîne.
+      - release.yml

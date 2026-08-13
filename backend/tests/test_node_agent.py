@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import importlib.util
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -20,8 +21,8 @@ from types import ModuleType
 from typing import Any
 
 import pytest
-from onionpi.nodeclient import PROTOCOL_VERSION, sign
-from onionpi.rack import clean_rules, policy_document
+from onionpi.nodeclient import PROTOCOL_VERSION, sign_request, sign_response
+from onionpi.rack import bundle_digest, clean_rules, policy_document
 
 AGENT_DIR = Path(__file__).resolve().parents[2] / "packaging" / "agent"
 
@@ -31,7 +32,16 @@ def load(name: str, filename: str) -> ModuleType:
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    # No __pycache__ beside the installer. It is content the release would
+    # carry into the appliance's agent copy, and the digest that pins a node's
+    # download is taken over every file in that directory: a bytecode cache
+    # there is an install that fails closed for a reason nobody can see.
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
     return module
 
 
@@ -55,16 +65,35 @@ def macos_renderer() -> ModuleType:
 
 def test_both_halves_compute_the_same_signature(agent: ModuleType) -> None:
     token = "a" * 64
+    node = "0" * 16
     body = json.dumps({"digest": "0" * 64}, separators=(",", ":")).encode()
     timestamp = int(time.time())
     nonce = "b" * 16
     canonical = (
-        f"{agent.PROTOCOL_VERSION}\napply-policy\n{timestamp}\n{nonce}\n"
+        f"{agent.PROTOCOL_VERSION}\n{node}\napply-policy\n{timestamp}\n{nonce}\n"
         f"{hashlib.sha256(body).hexdigest()}"
     )
-    expected = hmac.new(token.encode(), canonical.encode(), hashlib.sha256).hexdigest()
-    assert sign(token, "apply-policy", timestamp, nonce, body) == expected
+    key = hmac.new(token.encode(), b"onionpi-node/2/request", hashlib.sha256).digest()
+    expected = hmac.new(key, canonical.encode(), hashlib.sha256).hexdigest()
+    assert sign_request(token, node, "apply-policy", timestamp, nonce, body) == expected
+    assert agent.sign_request(token, node, "apply-policy", timestamp, nonce, body) == expected
     assert agent.PROTOCOL_VERSION == PROTOCOL_VERSION
+
+
+def test_both_halves_compute_the_same_answer_signature(agent: ModuleType) -> None:
+    token = "a" * 64
+    node = "0" * 16
+    body = b'{"ok":true}'
+    assert agent.sign_response(token, node, "status", 1_700_000_000, "b" * 16, 200, body) == (
+        sign_response(token, node, "status", 1_700_000_000, "b" * 16, 200, body)
+    )
+
+
+def test_the_policy_document_version_is_not_the_protocol_version(agent: ModuleType) -> None:
+    """The two used to be one constant, and bumping the protocol silently made
+    every privileged renderer refuse the policy it was handed."""
+    assert agent.POLICY_VERSION == 1
+    assert agent.PROTOCOL_VERSION != agent.POLICY_VERSION
 
 
 def test_a_nonce_is_accepted_once(agent: ModuleType) -> None:
@@ -76,6 +105,187 @@ def test_a_nonce_is_accepted_once(agent: ModuleType) -> None:
     for index in range(8):
         guard.accept(f"nonce-{index}")
     assert len(guard._seen) <= 4
+
+
+def call_headers(
+    agent: ModuleType,
+    *,
+    token: str,
+    node: str,
+    verb: str,
+    body: bytes,
+    nonce: str,
+    signature: str | None = None,
+    timestamp: int | None = None,
+) -> dict[str, str]:
+    stamp = int(time.time()) if timestamp is None else timestamp
+    return {
+        "X-OnionPi-Version": str(agent.PROTOCOL_VERSION),
+        "X-OnionPi-Node": node,
+        "X-OnionPi-Timestamp": str(stamp),
+        "X-OnionPi-Nonce": nonce,
+        "X-OnionPi-Signature": (
+            signature
+            if signature is not None
+            else agent.sign_request(token, node, verb, stamp, nonce, body)
+        ),
+    }
+
+
+def authenticator(agent: ModuleType, token: str, node: str) -> Any:
+    """A handler with no socket under it: only `authenticate` is exercised."""
+    agent.Handler.config = {"NODE_ID": node, "TOKEN": token}
+    agent.Handler.replay = agent.ReplayGuard(size=8)
+
+    def authenticate(headers: dict[str, str], verb: str, body: bytes) -> Any:
+        handler = agent.Handler.__new__(agent.Handler)
+        handler.headers = headers
+        return handler.authenticate(verb, body)
+
+    return authenticate
+
+
+def test_an_unsigned_call_does_not_spend_the_nonce(agent: ModuleType) -> None:
+    """The replay memory is a resource, and it used to be spendable for free.
+
+    `accept()` ran before the signature was checked, so anyone able to reach
+    the onion could push 512 invented nonces through, evict the record of a
+    captured call, and replay it inside the clock window. Nothing an
+    unauthenticated caller sends may touch that memory.
+    """
+    token, node, body = "a" * 64, "0" * 16, b"{}"
+    authenticate = authenticator(agent, token, node)
+    nonce = "c" * 16
+
+    forged = call_headers(
+        agent, token=token, node=node, verb="status", body=body, nonce=nonce,
+        signature="0" * 64,
+    )
+    assert authenticate(forged, "status", body) is None
+
+    # The genuine call reusing that nonce still goes through: the failed one
+    # never got to record it.
+    genuine = call_headers(
+        agent, token=token, node=node, verb="status", body=body, nonce=nonce
+    )
+    assert authenticate(genuine, "status", body) is not None
+    # And now it is spent, once.
+    assert authenticate(genuine, "status", body) is None
+
+
+def test_a_call_signed_for_another_node_is_refused(agent: ModuleType) -> None:
+    token, node, body = "a" * 64, "0" * 16, b"{}"
+    authenticate = authenticator(agent, token, node)
+    stamp = int(time.time())
+    headers = call_headers(
+        agent, token=token, node=node, verb="status", body=body, nonce="d" * 16,
+        signature=agent.sign_request(token, "1" * 16, "status", stamp, "d" * 16, body),
+        timestamp=stamp,
+    )
+    assert authenticate(headers, "status", body) is None
+
+
+def test_a_call_signed_for_another_verb_is_refused(agent: ModuleType) -> None:
+    token, node, body = "a" * 64, "0" * 16, b"{}"
+    authenticate = authenticator(agent, token, node)
+    stamp = int(time.time())
+    headers = call_headers(
+        agent, token=token, node=node, verb="status", body=body, nonce="e" * 16,
+        signature=agent.sign_request(token, node, "reboot", stamp, "e" * 16, body),
+        timestamp=stamp,
+    )
+    assert authenticate(headers, "status", body) is None
+
+
+def test_a_stale_call_is_refused(agent: ModuleType) -> None:
+    token, node, body = "a" * 64, "0" * 16, b"{}"
+    authenticate = authenticator(agent, token, node)
+    stale = int(time.time()) - agent.MAX_CLOCK_SKEW - 1
+    headers = call_headers(
+        agent, token=token, node=node, verb="status", body=body, nonce="f" * 16,
+        timestamp=stale,
+    )
+    assert authenticate(headers, "status", body) is None
+
+
+def test_a_version_1_call_is_refused(agent: ModuleType) -> None:
+    """Version 1 left the answer unsigned. Accepting it here would let a node
+    be talked down to a protocol whose replies nobody can attribute."""
+    token, node, body = "a" * 64, "0" * 16, b"{}"
+    authenticate = authenticator(agent, token, node)
+    headers = call_headers(
+        agent, token=token, node=node, verb="status", body=body, nonce="a" * 16
+    )
+    headers["X-OnionPi-Version"] = "1"
+    assert authenticate(headers, "status", body) is None
+
+
+# ------------------------------------------------------- bundle pinning ---
+
+
+def shell_bundle_digest(directory: Path) -> str:
+    result = subprocess.run(
+        [
+            "bash",
+            str(AGENT_DIR / "bootstrap-node.sh"),
+            "--print-bundle-digest",
+            str(directory),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def test_the_shell_and_the_appliance_hash_a_bundle_the_same_way() -> None:
+    """Two implementations of one manifest that drift apart verify nothing.
+
+    The appliance prints the digest of its own reviewed copy of the installer;
+    the bootstrap recomputes it on the node from the archive it just fetched.
+    If the two ever disagree on ordering, on the separator or on which files
+    count, every install fails closed — and the next fix is to weaken the
+    check.
+    """
+    assert shell_bundle_digest(AGENT_DIR) == bundle_digest(AGENT_DIR)
+
+
+def test_a_bundle_digest_notices_a_changed_file(tmp_path: Path) -> None:
+    tree = tmp_path / "agent"
+    (tree / "systemd").mkdir(parents=True)
+    (tree / "onionpi-node-agent.py").write_text("print('a')\n", encoding="utf-8")
+    (tree / "systemd" / "unit.service").write_text("[Unit]\n", encoding="utf-8")
+    before = bundle_digest(tree)
+    assert before == shell_bundle_digest(tree)
+
+    (tree / "onionpi-node-agent.py").write_text("print('b')\n", encoding="utf-8")
+    after = bundle_digest(tree)
+    assert after != before
+    assert after == shell_bundle_digest(tree)
+
+    # A file added anywhere in the tree is a different bundle: a payload
+    # dropped beside the installer is exactly what this catches.
+    (tree / "systemd" / "extra.service").write_text("[Unit]\n", encoding="utf-8")
+    assert bundle_digest(tree) not in (before, after)
+    assert bundle_digest(tree) == shell_bundle_digest(tree)
+
+
+def test_a_bundle_digest_is_empty_without_a_reviewed_copy(tmp_path: Path) -> None:
+    assert bundle_digest(tmp_path / "absent") == ""
+    (tmp_path / "vide").mkdir()
+    assert bundle_digest(tmp_path / "vide") == ""
+
+
+def test_the_bootstrap_refuses_to_run_unpinned() -> None:
+    """No digest and no explicit opt-out means nothing is executed."""
+    result = subprocess.run(
+        ["bash", str(AGENT_DIR / "bootstrap-node.sh"), "--platform", "linux"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "empreinte" in result.stderr.lower()
 
 
 def test_the_agent_and_the_appliance_share_one_vocabulary(agent: ModuleType) -> None:

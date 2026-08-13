@@ -6,15 +6,22 @@ published as its own v3 onion service. Nothing about it is reachable from the
 Internet — the agent has no port on any public interface — and this appliance
 reaches it by dialling that address through Tor's SOCKS port.
 
-Two independent locks guard the channel:
+Three independent locks guard the channel:
 
 1. **Onion client authorisation.** The node encrypts its descriptor for the
    x25519 key of this appliance alone. Someone who learns the address, and even
    someone watching the directory system, cannot resolve it.
 2. **A signed request.** Every call carries an HMAC-SHA256 signature over the
-   verb, a timestamp, a nonce and the digest of the body. The agent refuses a
-   stale timestamp and a repeated nonce, so a captured request cannot be
-   replayed.
+   protocol version, the node identifier, the verb, a timestamp, a nonce and
+   the digest of the body. The agent refuses a stale timestamp and a repeated
+   nonce, so a captured request cannot be replayed.
+3. **A signed answer.** The node signs its response over the same nonce and
+   timestamp plus the status code and the digest of the answer. Without it the
+   circuit authenticates the *service*, not the agent: anything that manages to
+   answer on that address — a squatter on the node's loopback port, an onion
+   address mistyped into a node sheet — could feed this appliance invented
+   readings, journal lines and policy digests, and the rack would file them as
+   fact.
 
 The verbs below are the whole vocabulary. The agent keeps the same list and
 re-validates against its own copy: this one exists to fail early and to keep
@@ -51,7 +58,10 @@ AGENT_VERBS: dict[str, tuple[str, float]] = {
 #: as a free-form command carrying a body chosen at the other end of a form.
 MANUAL_VERBS = ("status", "new-identity", "restart-tor", "journal", "reboot")
 
-PROTOCOL_VERSION = 1
+#: Version 2 signs the answer as well as the call, and binds both to the node
+#: identifier. A version 1 agent cannot verify it and must be reinstalled — the
+#: enrolment command is re-displayable, so that is one command per node.
+PROTOCOL_VERSION = 2
 MAX_RESPONSE_BYTES = 256 * 1024
 
 
@@ -59,11 +69,61 @@ class NodeError(RuntimeError):
     """The node could not be reached, or refused the call."""
 
 
-def sign(token: str, verb: str, timestamp: int, nonce: str, body: bytes) -> str:
-    """The signature both halves compute. Keep in step with the agent."""
-    digest = hashlib.sha256(body).hexdigest()
-    canonical = f"{PROTOCOL_VERSION}\n{verb}\n{timestamp}\n{nonce}\n{digest}"
-    return hmac.new(token.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+def subkeys(token: str) -> tuple[bytes, bytes]:
+    """(request key, response key) derived from the shared token.
+
+    Domain separation, so the two directions never accept each other's
+    signatures: without it a captured answer is a ready-made call.
+    """
+    root = token.encode()
+    return (
+        hmac.new(root, b"onionpi-node/2/request", hashlib.sha256).digest(),
+        hmac.new(root, b"onionpi-node/2/response", hashlib.sha256).digest(),
+    )
+
+
+def sign_request(
+    token: str, node_id: str, verb: str, timestamp: int, nonce: str, body: bytes
+) -> str:
+    """The call signature both halves compute. Keep in step with the agent."""
+    key, _ = subkeys(token)
+    canonical = "\n".join(
+        (
+            str(PROTOCOL_VERSION),
+            node_id,
+            verb,
+            str(timestamp),
+            nonce,
+            hashlib.sha256(body).hexdigest(),
+        )
+    )
+    return hmac.new(key, canonical.encode(), hashlib.sha256).hexdigest()
+
+
+def sign_response(
+    token: str,
+    node_id: str,
+    verb: str,
+    timestamp: int,
+    nonce: str,
+    status: int,
+    body: bytes,
+) -> str:
+    """The answer signature. Bound to the call's own nonce and timestamp, so an
+    answer cannot be lifted from one exchange and served in another."""
+    _, key = subkeys(token)
+    canonical = "\n".join(
+        (
+            str(PROTOCOL_VERSION),
+            node_id,
+            verb,
+            str(timestamp),
+            nonce,
+            str(status),
+            hashlib.sha256(body).hexdigest(),
+        )
+    )
+    return hmac.new(key, canonical.encode(), hashlib.sha256).hexdigest()
 
 
 def _demo_status(name: str) -> dict[str, Any]:
@@ -123,40 +183,71 @@ class NodeClient:
             "X-OnionPi-Node": node_id,
             "X-OnionPi-Timestamp": str(timestamp),
             "X-OnionPi-Nonce": nonce,
-            "X-OnionPi-Signature": sign(token, verb, timestamp, nonce, body),
+            "X-OnionPi-Signature": sign_request(
+                token, node_id, verb, timestamp, nonce, body
+            ),
         }
         url = f"http://{onion}.onion:{port}/agent/v1/{verb}"
         try:
             with httpx.Client(
                 proxy=f"socks5h://127.0.0.1:{self.socks_port}", timeout=timeout
             ) as client:
-                response = client.post(url, content=body, headers=headers)
+                # Streamed, so a hostile answer cannot be held in memory in full
+                # before its length is judged.
+                with client.stream(
+                    "POST", url, content=body, headers=headers
+                ) as response:
+                    raw = self._read_capped(response, label)
+                    status = response.status_code
+                    signature = response.headers.get("X-OnionPi-Signature", "")
+        except NodeError:
+            raise
         except Exception as error:  # httpx raises a whole family of transport errors
             # The address, the circuit and the agent all fail the same way from
             # here, and the distinction is not one an operator can act on.
             raise NodeError(f"{label}: nœud injoignable via Tor.") from error
-        return self._decode(response, label)
-
-    @staticmethod
-    def _decode(response: httpx.Response, label: str) -> dict[str, Any]:
-        raw = response.content[: MAX_RESPONSE_BYTES + 1]
-        if len(raw) > MAX_RESPONSE_BYTES:
-            raise NodeError(f"{label}: réponse anormalement longue, ignorée.")
+        expected = sign_response(token, node_id, verb, timestamp, nonce, status, raw)
+        if not hmac.compare_digest(signature, expected):
+            # Nothing below this line may look at the body: an answer this
+            # appliance cannot attribute to the agent is not a fact about the
+            # node, whatever it claims about itself.
+            raise NodeError(self._unattributed(label, status, bool(signature)))
         try:
             document = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise NodeError(f"{label}: réponse illisible du nœud.") from error
         if not isinstance(document, dict):
             raise NodeError(f"{label}: réponse illisible du nœud.")
-        if response.status_code == 401:
-            raise NodeError(
+        if status != 200:
+            detail = str(document.get("detail", ""))[:200]
+            raise NodeError(f"{label}: {detail or f'erreur {status}'}")
+        return document
+
+    @staticmethod
+    def _read_capped(response: httpx.Response, label: str) -> bytes:
+        chunks: list[bytes] = []
+        size = 0
+        for chunk in response.iter_bytes():
+            size += len(chunk)
+            if size > MAX_RESPONSE_BYTES:
+                raise NodeError(f"{label}: réponse anormalement longue, ignorée.")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    @staticmethod
+    def _unattributed(label: str, status: int, signed: bool) -> str:
+        if status == 401 and not signed:
+            # The agent leaves its refusal unsigned on purpose: it has no reason
+            # to mint a signature for a caller it just failed to recognise.
+            return (
                 f"{label}: le nœud a refusé la signature. Le jeton a peut-être "
                 "été renouvelé sans être réinstallé."
             )
-        if response.status_code != 200:
-            detail = str(document.get("detail", ""))[:200]
-            raise NodeError(f"{label}: {detail or f'erreur {response.status_code}'}")
-        return document
+        return (
+            f"{label}: réponse non authentifiée (agent trop ancien pour le "
+            "protocole v2, ou adresse onion qui n’est pas celle de ce nœud). "
+            "Réinstallez l’agent depuis « Préparer l’installation »."
+        )
 
     def _demo_call(self, name: str, verb: str, payload: dict[str, Any]) -> dict[str, Any]:
         if verb == "status":
