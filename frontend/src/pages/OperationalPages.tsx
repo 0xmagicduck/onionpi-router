@@ -163,7 +163,7 @@ export function TorPage({ status, busy, onNewIdentity, onOpenBridges, notify }: 
   const bridges = status?.tor.bridges
   const blocked = status !== undefined && !status.tor.connected
   return (
-    <div className="page operational-page">
+    <div className="page operational-page status-page tor-page">
       <div className="page-title"><h1>Tor</h1><p>Circuits, identité de sortie et état de bootstrap.</p></div>
       {status && <TorStatus status={status} busy={busy} onNewIdentity={onNewIdentity} />}
       {blocked && (
@@ -172,7 +172,7 @@ export function TorPage({ status, busy, onNewIdentity, onOpenBridges, notify }: 
           <div className="action-grid"><button className="button button-primary" onClick={onOpenBridges}>Configurer un pont</button></div>
         </Panel>
       )}
-      <div className="two-column">
+      <div className="two-column tor-overview-grid">
         <Panel title={status?.protection.label ?? 'Protection'}>
           <ul className="check-list">
             {status?.protection.checks.map((check) => (

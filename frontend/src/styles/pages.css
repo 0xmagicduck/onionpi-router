@@ -438,16 +438,25 @@
   background: var(--surface-raised);
   box-shadow: var(--shadow-1), var(--panel-sheen);
 }
-.protection-hero > svg { width: 40px; height: 40px; color: var(--success); }
+.protection-hero-icon {
+  display: grid; place-items: center; width: 52px; height: 52px;
+  border: 1px solid var(--success-line); border-radius: var(--radius-md);
+  background: var(--success-soft); color: var(--success);
+}
+.protection-hero-icon svg { width: 28px; height: 28px; }
 .protection-hero h2 { margin: var(--space-1) 0; font-size: var(--text-2xl); }
 .protection-hero p { color: var(--text-secondary); font-size: var(--text-base); }
 .protection-hero small { display: block; margin-top: var(--space-3); color: var(--text-tertiary); font-size: var(--text-xs); }
 .protection-degraded { border-left-color: var(--danger); }
-.protection-degraded > svg { color: var(--danger); }
+.protection-degraded .protection-hero-icon {
+  border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger);
+}
 .protection-contained,
 .protection-demo { border-left-color: var(--warning); }
-.protection-contained > svg,
-.protection-demo > svg { color: var(--warning); }
+.protection-contained .protection-hero-icon,
+.protection-demo .protection-hero-icon {
+  border-color: var(--warning-line); background: var(--warning-soft); color: var(--warning);
+}
 .protection-actions { display: grid; gap: var(--space-2); }
 
 .protection-check-grid {
@@ -511,12 +520,15 @@
   grid-template-columns: 24px minmax(0, 1fr) auto;
   gap: var(--space-3);
   padding: var(--space-4);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-soft); border-left-width: 3px;
   border-radius: var(--radius-md);
   background: var(--surface-inset);
 }
 .audit-icon svg { width: 20px; height: 20px; color: var(--warning); }
 .audit-critical { border-color: var(--danger-line); background: var(--danger-soft); }
+.audit-high, .audit-medium { border-left-color: var(--warning); }
+.audit-low { border-left-color: var(--border-strong); }
+.audit-ok { border-left-color: var(--success-line); }
 .audit-critical .audit-icon svg { color: var(--danger); }
 .audit-low .audit-icon svg { color: var(--text-tertiary); }
 .audit-ok .audit-icon svg { color: var(--success); }
@@ -577,6 +589,10 @@
 }
 .circuit-id { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-tertiary); font-size: var(--text-2xs); }
 .circuit-path { color: var(--text-primary); font-size: var(--text-sm); overflow-wrap: anywhere; }
+
+.tor-utility-grid { grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); }
+.tor-detail-grid { grid-template-columns: minmax(0, 1.08fr) minmax(340px, .92fr); }
+.tor-overview-grid > .panel { height: 100%; }
 
 /* ---------------------------------------------------------------- journaux */
 .terminal {
@@ -807,13 +823,14 @@
  * L'élévation se lit de haut en bas, U1 en haut. Un vrai rack se numérote
  * dans l'autre sens, mais l'écran se lit dans celui-ci, et l'étiquette de
  * chaque emplacement lève l'ambiguïté. */
-.rack-page { display: grid; gap: var(--space-4); overflow-x: hidden; }
+.rack-page { display: grid; gap: var(--space-5); overflow-x: hidden; }
 .rack-page .page-title { min-height: auto; }
 .rack-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .rack-hero {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: var(--space-5); min-width: 0;
 }
+.rack-hero .page-title { margin-bottom: 0; }
 .rack-hero-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
 
 .rack-summary {
@@ -841,11 +858,12 @@
 .rack-summary-add { align-self: center; margin: 0 var(--space-4); }
 
 .rack-controlbar {
-  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--border-soft);
 }
 .rack-tabs { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-4) var(--space-5) 0; }
-.rack-controlbar .rack-tabs { flex: 0 1 auto; flex-wrap: nowrap; max-width: 42%; padding: 0; overflow-x: auto; }
+.rack-controlbar .rack-tabs { flex-wrap: nowrap; max-width: min(34vw, 420px); padding: 0; overflow-x: auto; }
 .rack-new-frame { flex: 0 0 auto; white-space: nowrap; }
 .rack-tab {
   display: grid; gap: 2px; padding: var(--space-2) var(--space-4);
@@ -1250,7 +1268,42 @@
   border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
   background: var(--surface-inset); color: var(--text-secondary);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-xs);
-  white-space: pre-wrap; word-break: break-all;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+.rack-installer {
+  display: grid; gap: var(--space-3); padding: var(--space-4);
+  border: 1px solid var(--accent-line); border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--accent-soft), transparent 70%), var(--surface-inset);
+}
+.rack-platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.rack-platform {
+  display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-raised); color: var(--text-tertiary); text-align: left; cursor: pointer;
+}
+.rack-platform > span { display: grid; gap: 2px; min-width: 0; }
+.rack-platform strong { color: var(--text-primary); font-size: var(--text-xs); }
+.rack-platform small { color: var(--text-tertiary); font-size: 9px; line-height: 1.35; }
+.rack-platform-active { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-text); }
+.rack-command-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.rack-command-head > span { display: grid; gap: 2px; }
+.rack-command-head strong { color: var(--text-primary); font-size: var(--text-sm); }
+.rack-command-head small { color: var(--text-tertiary); font-size: var(--text-xs); }
+.rack-installer .rack-enrollment { margin: 0; max-height: 180px; background: var(--surface-page); color: var(--success-text); }
+.rack-installer-note {
+  padding-left: var(--space-3); border-left: 2px solid var(--warning);
+  color: var(--text-secondary); font-size: var(--text-xs); line-height: var(--leading-snug);
+}
+
+@media (max-width: 1180px) {
+  .rack-controlbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .rack-controlbar .rack-tabs { max-width: none; }
+  .rack-controlbar .rack-filters { grid-column: 1 / -1; grid-row: 2; }
+  .rack-new-frame { grid-column: 2; grid-row: 1; }
+  .rack-workspace { grid-template-columns: minmax(0, 1fr); }
+  .rack-vdc-rail { max-height: none; overflow: visible; border-top: 1px solid var(--border-soft); border-left: 0; }
+  .tor-advanced-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 1050px) {
@@ -1260,8 +1313,6 @@
 }
 
 @media (max-width: 900px) {
-  .rack-workspace { grid-template-columns: minmax(0, 1fr); }
-  .rack-vdc-rail { max-height: none; overflow: visible; border-top: 1px solid var(--border-soft); border-left: 0; }
   .rack-connection-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -1272,6 +1323,7 @@
   .rack-summary-item { min-height: 68px; padding: var(--space-3); }
   .rack-summary-item small { font-size: 9px; }
   .rack-controlbar { align-items: stretch; flex-direction: column; padding: var(--space-3); }
+  .rack-controlbar { display: flex; }
   .rack-controlbar .rack-tabs { max-width: none; }
   .rack-controlbar .rack-filters { flex-basis: auto; }
   .rack-tabs, .rack-filters { padding-right: var(--space-3); padding-left: var(--space-3); }
@@ -1290,6 +1342,8 @@
   .rack-port > i { width: 22px; height: 17px; }
   .rack-frame-head { flex-direction: column; align-items: flex-start; }
   .rack-connection-list { grid-template-columns: minmax(0, 1fr); }
+  .rack-platforms { grid-template-columns: minmax(0, 1fr); }
+  .rack-command-head { align-items: flex-start; }
   .rack-cable-legend { align-items: flex-start; }
   .rack-node-table { min-width: 0; table-layout: fixed; }
   .rack-node-table th:nth-child(3), .rack-node-table td:nth-child(3),

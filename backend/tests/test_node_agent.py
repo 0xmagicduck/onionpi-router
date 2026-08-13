@@ -45,6 +45,11 @@ def renderer() -> ModuleType:
     return load("onionpi_render_policy", "render-policy.py")
 
 
+@pytest.fixture(scope="module")
+def macos_renderer() -> ModuleType:
+    return load("onionpi_render_policy_macos", "render-policy-macos.py")
+
+
 # --------------------------------------------------------------- protocol ---
 
 
@@ -188,3 +193,35 @@ def test_a_node_without_tor_is_never_left_half_filtered(
     path.write_text(json.dumps(policy_document(clean_rules({}), False)), encoding="utf-8")
     with pytest.raises(SystemExit):
         renderer.render(renderer.load(path), 9050)
+
+
+def test_macos_policy_blocks_direct_output_and_keeps_tor(
+    macos_renderer: ModuleType, tmp_path: Path
+) -> None:
+    path = tmp_path / "p.json"
+    path.write_text(json.dumps(policy_document(clean_rules({}), False)), encoding="utf-8")
+    ruleset = macos_renderer.render(macos_renderer.load(path))
+    assert "block return out all" in ruleset
+    assert "pass out quick inet proto { tcp, udp } user _onionpi-node" in ruleset
+    assert "pass in quick proto tcp to port { 22 }" in ruleset
+
+
+def test_macos_isolation_precedes_the_loopback_allow(
+    macos_renderer: ModuleType, tmp_path: Path
+) -> None:
+    path = tmp_path / "p.json"
+    path.write_text(
+        json.dumps(policy_document(clean_rules({"access": "blocked"}), True)),
+        encoding="utf-8",
+    )
+    ruleset = macos_renderer.render(macos_renderer.load(path))
+    isolation = "block return quick on lo0 proto tcp to port 9050 user != _onionpi-node"
+    assert ruleset.index(isolation) < ruleset.index("pass quick on lo0 all")
+
+
+def test_windows_kill_switch_suspends_and_restores_existing_output_rules() -> None:
+    script = (AGENT_DIR / "onionpi-node-apply-windows.ps1").read_text(encoding="utf-8")
+    assert "Disable-NetFirewallRule -Name $ruleName" in script
+    assert "Set-NetFirewallProfile -All -DefaultOutboundAction Block" in script
+    assert "Enable-NetFirewallRule -Name $ruleName" in script
+    assert 'New-NetFirewallRule -DisplayName "OnionPi Node — Tor"' in script
