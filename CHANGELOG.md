@@ -7,6 +7,14 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- **Centre de données virtuel.** La baie devient un plan de contrôle du fabric
+  Tor : couverture de sortie, amorçage des agents, autorisations client,
+  synchronisation des politiques et alertes sont visibles au même endroit. Le
+  bouton « Tester le fabric » interroge réellement tous les agents enrôlés par
+  l’action groupée existante ; la table des nœuds n’invente aucun service et
+  reprend exclusivement la télémétrie publiée par chaque agent. L’élévation est
+  scrollable, les câbles restent alignés, et la vue mobile ne déborde plus.
+
 - **Baie virtuelle.** Une page **Baie virtuelle** range les machines dans des
   cadres et des emplacements numérotés en U : clients du Wi-Fi d’un côté,
   machines distantes de l’autre. Créer, déplacer, isoler, régler — la

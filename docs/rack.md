@@ -1,5 +1,29 @@
 # Baie virtuelle
 
+## Centre de données virtuel
+
+L’interface présente désormais la baie comme un petit plan de contrôle de
+centre de données. Les quatre indicateurs restent entièrement dérivés de l’état
+déjà connu par `RackManager` : nœuds joignables, sorties forcées par Tor,
+empreintes de politique synchronisées et alertes. Le panneau **Fabric Tor**
+rend explicite le canal utilisé pour administrer une machine distante :
+
+```
+OnionPi → circuit Tor → service onion autorisé → agent local
+```
+
+« Tester le fabric » exécute l’opération groupée `refresh` sur les seuls nœuds
+distants qui possèdent une adresse onion. Cela ouvre de vrais circuits et
+actualise la dernière lecture de chaque agent ; aucune latence ou disponibilité
+n’est fabriquée côté navigateur. La table **Nœuds et services** reprend de la
+même façon les unités déclarées actives dans `state.services`.
+
+Cette vue ressemble à un réseau privé maillé dans son expérience de gestion,
+mais la frontière technique reste volontairement nette : Tor transporte le
+plan de contrôle et les flux explicitement proxifiés, pas un sous-réseau IP
+transparent. Le câblage visuel documente donc la topologie ; il ne crée jamais
+de route L2/L3 entre deux appareils.
+
 La baie virtuelle donne à OnionPi une vue de salle machine : des cadres, des
 emplacements numérotés en U, une machine par emplacement, et une feuille de
 règles attachée à chaque machine. Elle couvre deux mondes à la fois.

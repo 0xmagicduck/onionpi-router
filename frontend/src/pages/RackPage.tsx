@@ -2,12 +2,14 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 're
 import {
   AlertTriangle,
   ArrowDownUp,
-  Ban,
   Cable,
+  CheckCircle2,
   CircleSlash,
+  Gauge,
   Laptop,
   Plus,
   RefreshCw,
+  Route,
   Search,
   Server,
   ServerCog,
@@ -34,6 +36,11 @@ import type {
 } from '../types'
 import { CableInspector, RackCableLayer } from './RackCabling'
 import { RackNodeSheet } from './RackNodeSheet'
+import {
+  DatacenterOperations,
+  FabricPanel,
+  summarizeFabric,
+} from './RackOperations'
 import { DEFAULT_RULES, EGRESS_LABELS, STATUS } from './rackShared'
 
 type Props = {
@@ -160,6 +167,19 @@ export function RackPage({ notify }: Props) {
     [nodes],
   )
 
+  const fabric = useMemo(() => summarizeFabric(nodes), [nodes])
+
+  const alertEntries = useMemo(
+    () =>
+      nodes
+        .flatMap((node) => node.alerts.map((alert) => ({ node, alert })))
+        .sort((left, right) => {
+          const rank = { danger: 0, warning: 1, info: 2 }
+          return rank[left.alert.level] - rank[right.alert.level]
+        }),
+    [nodes],
+  )
+
   const run = useCallback(
     async (action: () => Promise<unknown>, message: string) => {
       setBusy(true)
@@ -273,92 +293,106 @@ export function RackPage({ notify }: Props) {
 
   if (!payload && !error) return <LoadingPanel height={360} label="Chargement de la baie" />
 
+  const testFabric = () => {
+    const ids = fabric.remote.filter((node) => Boolean(node.address)).map((node) => node.id)
+    if (!ids.length) {
+      notify('Aucun agent distant enrôlé à interroger', true)
+      return
+    }
+    void runBulk(() => api.bulkRackNodes('refresh', ids), 'Test du fabric')
+  }
+
   return (
     <div className="page rack-page">
-      <div className="page-title">
-        <h1>Baie virtuelle</h1>
-        <p>
-          Visualisez, organisez et câblez vos appareils. Les règles restent appliquées par
-          OnionPi et les agents distants ; les liaisons documentent votre topologie réseau.
-        </p>
-      </div>
+      <header className="rack-hero">
+        <div className="page-title">
+          <h1>Centre de données virtuel</h1>
+          <p>Pilotez vos nœuds privés à travers Tor, sans exposer de port d’administration sur Internet.</p>
+        </div>
+        <div className="rack-hero-actions">
+          <button className="button button-primary" onClick={() => setDrafting(true)}>
+            <Plus size={16} /> Ajouter un nœud
+          </button>
+          <button
+            className="button button-secondary"
+            disabled={busy || fabric.enrolled === 0}
+            onClick={testFabric}
+          >
+            <Gauge size={16} /> Tester le fabric
+          </button>
+          <button
+            className={`button ${cabling ? 'button-primary' : 'button-secondary'}`}
+            aria-pressed={cabling}
+            disabled={!current}
+            onClick={() => {
+              setCabling((value) => !value)
+              setCableStart(undefined)
+            }}
+          >
+            <Cable size={16} /> {cabling ? 'Quitter le câblage' : 'Câbler'}
+          </button>
+        </div>
+      </header>
 
       {error && <p className="global-warning" role="status">{error}</p>}
 
       <div className="rack-summary" aria-label="État de la baie">
-        <RackSummaryItem icon={<ShieldCheck />} label="Nœuds en ligne" value={counts.online} tone="good" />
-        <RackSummaryItem icon={<CircleSlash />} label="Nœuds isolés" value={counts.isolated} tone={counts.isolated ? 'warn' : undefined} />
-        <RackSummaryItem icon={<Ban />} label="Injoignables" value={counts.unreachable} tone={counts.unreachable ? 'bad' : undefined} />
-        <RackSummaryItem icon={<AlertTriangle />} label="Points d’attention" value={(payload?.health.warnings ?? 0) + (payload?.health.failures ?? 0)} tone={payload?.health.failures ? 'bad' : payload?.health.warnings ? 'warn' : undefined} />
-        <button className="button button-primary rack-summary-add" onClick={() => setDrafting(true)}>
-          <Plus size={16} /> Ajouter un nœud
-        </button>
+        <RackSummaryItem icon={<ShieldCheck />} label="Nœuds en ligne" value={`${counts.online} / ${nodes.length}`} note={`${counts.isolated} isolé${counts.isolated > 1 ? 's' : ''}`} tone={counts.online === nodes.length && nodes.length ? 'good' : undefined} />
+        <RackSummaryItem icon={<Route />} label="Couverture Tor" value={`${fabric.coverage} %`} note={`${fabric.torReady}/${fabric.remote.length} agents amorcés`} tone={fabric.coverage === 100 ? 'good' : 'warn'} />
+        <RackSummaryItem icon={<CheckCircle2 />} label="Règles synchronisées" value={`${fabric.synchronized} / ${fabric.remote.length}`} note={`${fabric.authenticated} autorisation${fabric.authenticated > 1 ? 's' : ''} client`} tone={fabric.remote.length > 0 && fabric.syncRate === 100 ? 'good' : 'warn'} />
+        <RackSummaryItem icon={<AlertTriangle />} label="Alertes" value={(payload?.health.warnings ?? 0) + (payload?.health.failures ?? 0)} note={`${counts.unreachable} injoignable${counts.unreachable > 1 ? 's' : ''}`} tone={payload?.health.failures ? 'bad' : payload?.health.warnings ? 'warn' : undefined} />
       </div>
 
-      <Panel
-        title={current?.name ?? 'Baies'}
-        subtitle={current ? `${current.location || 'Emplacement non précisé'} · ${current.occupied} / ${current.units} U occupés` : undefined}
-        action={
-          <div className="rack-toolbar">
-            <button
-              className={`button button-small ${cabling ? 'button-primary' : 'button-secondary'}`}
-              aria-pressed={cabling}
-              onClick={() => {
-                setCabling((value) => !value)
-                setCableStart(undefined)
-              }}
-            >
-              <Cable size={15} /> {cabling ? 'Quitter le câblage' : 'Câbler'}
-            </button>
-            <button className="button button-small button-secondary" onClick={() => setEditingRack('new')}>
+      <Panel>
+        {(racks.length > 0 || nodes.length > 0) && (
+          <div className="rack-controlbar">
+            {racks.length > 0 && (
+              <div className="rack-tabs" role="tablist" aria-label="Baies">
+                {racks.map((rack) => (
+                  <button
+                    key={rack.id}
+                    role="tab"
+                    aria-selected={rack.id === current?.id}
+                    className={`rack-tab ${rack.id === current?.id ? 'rack-tab-active' : ''}`}
+                    onClick={() => setSelectedRack(rack.id)}
+                  >
+                    <strong>{rack.name}</strong>
+                    <span>
+                      {rack.location || `${rack.units} U`}
+                      {rack.alerts > 0 && <em className="rack-tab-alerts"> · {rack.alerts} ⚠</em>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {nodes.length > 0 && (
+              <div className="rack-filters">
+                <label className="rack-search">
+                  <Search size={14} />
+                  <input
+                    value={query}
+                    placeholder="Chercher un nom, un rôle, une adresse…"
+                    aria-label="Chercher un nœud"
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                </label>
+                <div className="rack-chips" role="group" aria-label="Filtrer les nœuds">
+                  {FILTERS.map((item) => (
+                    <button
+                      key={item.id}
+                      className={`rack-chip ${filter === item.id ? 'rack-chip-active' : ''}`}
+                      aria-pressed={filter === item.id}
+                      onClick={() => setFilter(item.id)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button className="button button-small button-secondary rack-new-frame" onClick={() => setEditingRack('new')}>
               <Plus size={14} /> Nouvelle baie
             </button>
-          </div>
-        }
-      >
-        {racks.length > 0 && (
-          <div className="rack-tabs" role="tablist" aria-label="Baies">
-            {racks.map((rack) => (
-              <button
-                key={rack.id}
-                role="tab"
-                aria-selected={rack.id === current?.id}
-                className={`rack-tab ${rack.id === current?.id ? 'rack-tab-active' : ''}`}
-                onClick={() => setSelectedRack(rack.id)}
-              >
-                <strong>{rack.name}</strong>
-                <span>
-                  {rack.location || `${rack.units} U`}
-                  {rack.alerts > 0 && <em className="rack-tab-alerts"> · {rack.alerts} ⚠</em>}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {nodes.length > 0 && (
-          <div className="rack-filters">
-            <label className="rack-search">
-              <Search size={14} />
-              <input
-                value={query}
-                placeholder="Chercher un nom, un rôle, une adresse…"
-                aria-label="Chercher un nœud"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <div className="rack-chips" role="group" aria-label="Filtrer les nœuds">
-              {FILTERS.map((item) => (
-                <button
-                  key={item.id}
-                  className={`rack-chip ${filter === item.id ? 'rack-chip-active' : ''}`}
-                  aria-pressed={filter === item.id}
-                  onClick={() => setFilter(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
           </div>
         )}
 
@@ -460,19 +494,32 @@ export function RackPage({ notify }: Props) {
               </div>
               <CableLegend />
             </div>
-            <CableInspector
-              cables={currentCables}
-              nodes={nodes}
-              selected={selectedCable}
-              cabling={cabling}
-              start={cableStart}
-              busy={busy}
-              onSelect={setSelectedCable}
-              onRemove={(id) => void removeCable(id)}
-            />
+            <div className="rack-vdc-rail">
+              <FabricPanel fabric={fabric} onOpenNode={setOpenNode} />
+              <CableInspector
+                cables={currentCables}
+                nodes={nodes}
+                selected={selectedCable}
+                cabling={cabling}
+                start={cableStart}
+                busy={busy}
+                onSelect={setSelectedCable}
+                onRemove={(id) => void removeCable(id)}
+              />
+            </div>
           </div>
         )}
       </Panel>
+
+      <DatacenterOperations
+        nodes={visible}
+        alerts={alertEntries}
+        busy={busy}
+        onOpenNode={setOpenNode}
+        onRefreshNode={(node) =>
+          void run(() => api.refreshRackNode(node.id), `${node.name} interrogé`)
+        }
+      />
 
       {selected.length > 0 && (
         <div className="rack-bulk" role="region" aria-label="Actions groupées">
@@ -773,16 +820,18 @@ function RackSummaryItem({
   icon,
   label,
   value,
+  note,
   tone,
 }: {
   icon: React.ReactNode
   label: string
-  value: number
+  value: number | string
+  note?: string
   tone?: 'good' | 'warn' | 'bad'
 }) {
   return (
     <span className={`rack-summary-item ${tone ? `rack-summary-${tone}` : ''}`}>
-      <i>{icon}</i><span><small>{label}</small><strong>{value}</strong></span>
+      <i>{icon}</i><span><small>{label}</small><strong>{value}</strong>{note && <em>{note}</em>}</span>
     </span>
   )
 }
