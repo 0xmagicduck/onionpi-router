@@ -78,6 +78,7 @@ fi
 if [[ "$ONLY" == all || "$ONLY" == shell ]]; then
   step "Exécution d’une version publiée" packaging/tests/release-runtime.sh
   step "Mise à niveau non interactive" packaging/tests/upgrade-noninteractive.sh
+  step "Sécurité WPA2 du point d’accès" packaging/tests/wifi-security.sh
   step "Matrice d’interruption" packaging/tests/update-interruption-matrix.sh
   if command -v shellcheck >/dev/null; then
     # shellcheck disable=SC2046

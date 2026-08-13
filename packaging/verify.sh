@@ -31,6 +31,21 @@ if [[ -n "$MESH_INTERFACE" ]]; then
     && ok 'onionpi-mesh' || fail 'onionpi-mesh est arrêté'
 fi
 
+printf 'Wi-Fi\n'
+wifi_key_mgmt="$(nmcli -g 802-11-wireless-security.key-mgmt connection show onionpi-ap 2>/dev/null || true)"
+wifi_proto="$(nmcli -g 802-11-wireless-security.proto connection show onionpi-ap 2>/dev/null || true)"
+wifi_pairwise="$(nmcli -g 802-11-wireless-security.pairwise connection show onionpi-ap 2>/dev/null || true)"
+wifi_group="$(nmcli -g 802-11-wireless-security.group connection show onionpi-ap 2>/dev/null || true)"
+[[ "$wifi_key_mgmt" == "wpa-psk" ]] \
+  && ok 'authentification WPA2 personnelle' \
+  || fail "authentification Wi-Fi inattendue (${wifi_key_mgmt:-absente})"
+[[ "$wifi_proto" == "rsn" ]] \
+  && ok 'protocole limité à WPA2/RSN' \
+  || fail "protocole Wi-Fi non limité à WPA2/RSN (${wifi_proto:-automatique})"
+[[ "$wifi_pairwise" == "ccmp" && "$wifi_group" == "ccmp" ]] \
+  && ok 'chiffrement AES-CCMP sans TKIP' \
+  || fail "chiffrement Wi-Fi faible ou inattendu (pairwise=${wifi_pairwise:-automatique}, groupe=${wifi_group:-automatique})"
+
 printf 'Noyau\n'
 [[ "$(sysctl -n net.ipv4.ip_forward)" == "1" ]] \
   && ok 'routage IPv4 actif' || fail 'net.ipv4.ip_forward est désactivé'
