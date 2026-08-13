@@ -184,6 +184,8 @@ ROOT_MUTATION_PATHS=(
   /etc/issue /etc/issue.net /etc/motd
   /etc/systemd/system/onionpi.service
   /etc/systemd/system/onionpi-ap.service
+  /etc/systemd/system/onionpi-mesh.service
+  /etc/systemd/system/nginx.service.d/nginx-mesh.conf
   /etc/systemd/system/onionpi-firewall.service
   /etc/systemd/system/onionpi-relay.service
   /etc/systemd/system/onionpi-relay.path
@@ -196,6 +198,7 @@ ROOT_MUTATION_PATHS=(
   /etc/systemd/system/multi-user.target.wants/onionpi-update-recover.service
   /etc/systemd/system/onionpi-update.timer.d
   /usr/local/sbin/onionpi-firewall-apply
+  /usr/local/sbin/onionpi-mesh-apply
   /usr/local/sbin/onionpi-devices-apply
   /usr/local/sbin/onionpi-relay-apply
   /usr/local/sbin/onionpi-agent-apply
@@ -634,6 +637,9 @@ restore_backup() {
   if (( restart_services )); then
     systemctl restart tor
     systemctl restart onionpi-firewall
+    if systemctl is-enabled --quiet onionpi-mesh.service 2>/dev/null; then
+      systemctl restart onionpi-mesh.service
+    fi
     systemctl restart dnsmasq nginx onionpi
   fi
 }

@@ -53,6 +53,7 @@ sed \
   -e 's/__WIFI_INTERFACE__/lan0/g' \
   -e 's|__LAN_NETWORK__|10.42.0.0/24|g' \
   -e 's|__LAN_SSH_RULE__|# SSH désactivé|g' \
+  -e 's|__MESH_SSH_RULE__|# SSH mesh désactivé|g' \
   "$PROJECT_ROOT/packaging/templates/onionpi.nft" >"$work/onionpi.nft"
 ip netns exec "$router" nft --file "$work/onionpi.nft"
 
@@ -113,4 +114,8 @@ ip netns exec "$router" nft list chain inet onionpi kill_switch | grep -q 'iifna
 # failure; this dependency is part of the fail-closed contract.
 grep -q '^Requires=.*onionpi-firewall.service' "$PROJECT_ROOT/packaging/systemd/onionpi-ap.service"
 grep -q '^BindsTo=onionpi-firewall.service' "$PROJECT_ROOT/packaging/systemd/onionpi-ap.service"
+grep -q '^Requires=.*onionpi-firewall.service' "$PROJECT_ROOT/packaging/systemd/onionpi-mesh.service"
+grep -q '^BindsTo=onionpi-firewall.service' "$PROJECT_ROOT/packaging/systemd/onionpi-mesh.service"
+grep -q '^Requires=onionpi-mesh.service' "$PROJECT_ROOT/packaging/systemd/nginx-mesh.conf"
+grep -q 'iifname \$onionpi_mesh_if counter drop' "$PROJECT_ROOT/packaging/templates/onionpi.nft"
 printf 'Matrice fail-closed Tor/DNS/nftables validée.\n'

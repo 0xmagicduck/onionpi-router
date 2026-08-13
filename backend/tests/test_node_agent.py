@@ -195,12 +195,22 @@ def test_a_node_without_tor_is_never_left_half_filtered(
         renderer.render(renderer.load(path), 9050)
 
 
-def test_macos_policy_blocks_direct_output_and_keeps_tor(
+def test_macos_policy_redirects_tcp_and_dns_then_blocks_direct_output(
     macos_renderer: ModuleType, tmp_path: Path
 ) -> None:
     path = tmp_path / "p.json"
     path.write_text(json.dumps(policy_document(clean_rules({}), False)), encoding="utf-8")
-    ruleset = macos_renderer.render(macos_renderer.load(path), 19050)
+    ruleset = macos_renderer.render(macos_renderer.load(path), 19050, 19052, 19053)
+    assert "rdr on lo0 inet proto tcp" in ruleset
+    assert "port 19052" in ruleset
+    assert "rdr on lo0 inet proto udp" in ruleset
+    assert "port 19053" in ruleset
+    assert "route-to (lo0 127.0.0.1) inet proto tcp" in ruleset
+    assert "to any port 53 user != _onionpi-node" in ruleset
+    assert "to <onionpi_tor_virtual4> user != _onionpi-node" in ruleset
+    assert ruleset.index("to any port 53 user != _onionpi-node") < ruleset.index(
+        "pass out quick inet to <onionpi_local4>"
+    )
     assert "block return out all" in ruleset
     assert "pass out quick inet proto { tcp, udp } user _onionpi-node" in ruleset
     assert "pass in quick proto tcp to port { 22 }" in ruleset
@@ -214,22 +224,28 @@ def test_macos_isolation_precedes_the_loopback_allow(
         json.dumps(policy_document(clean_rules({"access": "blocked"}), True)),
         encoding="utf-8",
     )
-    ruleset = macos_renderer.render(macos_renderer.load(path), 19050)
+    ruleset = macos_renderer.render(macos_renderer.load(path), 19050, 19052, 19053)
     isolation = "block return quick on lo0 proto tcp to port 19050 user != _onionpi-node"
     assert ruleset.index(isolation) < ruleset.index("pass quick on lo0 all")
 
 
-def test_windows_kill_switch_suspends_and_restores_existing_output_rules() -> None:
-    script = (AGENT_DIR / "onionpi-node-apply-windows.ps1").read_text(encoding="utf-8")
-    assert "Disable-NetFirewallRule -Name $ruleName" in script
-    assert "Set-NetFirewallProfile -All -DefaultOutboundAction Block" in script
-    assert "Enable-NetFirewallRule -Name $ruleName" in script
-    assert 'New-NetFirewallRule -DisplayName "OnionPi Node — Tor"' in script
+def test_windows_refuses_tor_only_instead_of_cutting_the_machine_off() -> None:
+    script = (AGENT_DIR / "onionpi-node-apply-windows.ps1").read_text(encoding="ascii")
+    refusal = 'Tor-only indisponible sur Windows: aucune interface TUN configuree'
+    assert refusal in script
+    assert "DefaultOutboundAction Block" not in script
+    installer = (AGENT_DIR / "install-node-agent-windows.ps1").read_text(encoding="ascii")
+    assert "DefaultOutboundAction $profile.DefaultOutboundAction" in installer
+    assert 'Get-NetFirewallRule -Group "OnionPi Node"' in installer
+    assert "Windows reste en sortie directe" in installer
 
 
-def test_windows_bootstrap_is_ascii_and_adds_a_bom_before_execution() -> None:
-    bootstrap = (AGENT_DIR / "bootstrap-node.ps1").read_bytes()
-    text = bootstrap.decode("ascii")
-    assert "[Text.UTF8Encoding]::new($true)" in text
-    assert "[IO.File]::WriteAllText($_.FullName, $scriptText, $utf8WithBom)" in text
-    assert text.index("WriteAllText") < text.index("& $installer.FullName")
+def test_every_windows_script_is_ascii_and_bootstrap_parses_from_memory() -> None:
+    scripts = list(AGENT_DIR.glob("*.ps1"))
+    assert scripts
+    for path in scripts:
+        path.read_bytes().decode("ascii")
+    bootstrap = (AGENT_DIR / "bootstrap-node.ps1").read_text(encoding="ascii")
+    assert "[IO.File]::ReadAllBytes($installer.FullName)" in bootstrap
+    assert "[ScriptBlock]::Create($installerText)" in bootstrap
+    assert bootstrap.index("ScriptBlock]::Create") < bootstrap.index("& $installerBlock")

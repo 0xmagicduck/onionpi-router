@@ -4,6 +4,7 @@ param(
     [int]$Port = 9080,
     [string]$ClientKey = "",
     [string]$ClientName = "baie",
+    [string]$SourceRoot = "",
     [switch]$Yes
 )
 
@@ -11,20 +12,22 @@ $ErrorActionPreference = "Stop"
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "Ouvrez PowerShell en tant qu’administrateur."
+    throw "Ouvrez PowerShell en tant qu'administrateur."
 }
-if ($Node -notmatch '^[0-9a-f]{16}$') { throw "Identifiant de nœud invalide." }
+if ($Node -notmatch '^[0-9a-f]{16}$') { throw "Identifiant de noeud invalide." }
 if ($Token -notmatch '^[0-9a-f]{64}$') { throw "Jeton invalide." }
 if ($Port -lt 1 -or $Port -gt 65535) { throw "Port invalide." }
-if ($ClientKey -and $ClientKey -notmatch '^[A-Z2-7]{52}$') { throw "Clé client invalide." }
+if ($ClientKey -and $ClientKey -notmatch '^[A-Z2-7]{52}$') { throw "Cle client invalide." }
 if ($ClientName -notmatch '^[A-Za-z0-9_-]{1,32}$') { throw "Nom client invalide." }
 
 if (-not $Yes) {
-    $reply = Read-Host "Installer Tor, Python et l’agent OnionPi sur cette machine ? [o/N]"
+    $reply = Read-Host "Installer Tor, Python et l'agent OnionPi sur cette machine ? [o/N]"
     if ($reply -notmatch '^[oOyY]$') { Write-Host "Abandon."; exit 0 }
 }
 
-$source = Split-Path -Parent $MyInvocation.MyCommand.Path
+$source = $SourceRoot
+if (-not $source) { $source = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $source -or -not (Test-Path -LiteralPath $source)) { throw "Source de l'agent absente." }
 $base = Join-Path $env:ProgramData "OnionPi Node"
 $lib = Join-Path $base "lib"
 $state = Join-Path $base "state"
@@ -35,7 +38,23 @@ $torData = Join-Path $base "tor-data"
 $hiddenService = Join-Path $base "hidden-service"
 $config = Join-Path $base "agent.env"
 
-Write-Host "▸ Python"
+# Releases before 0.4.2 could leave Windows with DefaultOutboundAction=Block
+# even though no transparent transport existed. A reinstall is an explicit
+# recovery action: restore the snapshot before doing anything that needs the
+# network, then remove the obsolete rules.
+$savedFirewall = Join-Path $result "firewall-profiles.json"
+if (Test-Path -LiteralPath $savedFirewall) {
+    $saved = Get-Content -LiteralPath $savedFirewall -Raw | ConvertFrom-Json
+    foreach ($profile in @($saved.Profiles)) {
+        Set-NetFirewallProfile -Name $profile.Name -DefaultOutboundAction $profile.DefaultOutboundAction
+    }
+    foreach ($ruleName in @($saved.OutboundAllowRules)) {
+        Enable-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
+    }
+}
+Get-NetFirewallRule -Group "OnionPi Node" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+
+Write-Host "> Python"
 function Resolve-SystemPython {
     if (Get-Command py.exe -ErrorAction SilentlyContinue) {
         $candidate = (& py.exe -3 -c "import sys; print(sys.executable)").Trim()
@@ -57,31 +76,31 @@ if (-not $python -or -not (Test-Path -LiteralPath $python)) {
     }
     & winget.exe install --id Python.Python.3.13 -e --source winget --scope machine `
         --accept-package-agreements --accept-source-agreements --silent
-    if ($LASTEXITCODE -notin @(0, 3010)) { throw "Installation de Python refusée." }
+    if ($LASTEXITCODE -notin @(0, 3010)) { throw "Installation de Python refusee." }
     $python = Resolve-SystemPython
 }
 if (-not (Test-Path -LiteralPath $python)) { throw "Python reste introuvable." }
 
-Write-Host "▸ Tor Expert Bundle officiel"
+Write-Host "> Tor Expert Bundle officiel"
 New-Item -ItemType Directory -Force -Path $base, $lib, $state, $result, $logDir, $torRoot, $torData, $hiddenService | Out-Null
 $torVersion = "15.0.19"
 $torArchive = Join-Path $env:TEMP "tor-expert-bundle-$torVersion.tar.gz"
 $torUrl = "https://archive.torproject.org/tor-package-archive/torbrowser/$torVersion/tor-expert-bundle-windows-x86_64-$torVersion.tar.gz"
 $torSha256 = "6ac067402c7b4a3dc37887ed3754b3914b67fdc220c966190683e9ccf91abf0f"
 & curl.exe --proto '=https' --tlsv1.2 -fsSL $torUrl -o $torArchive
-if ($LASTEXITCODE -ne 0) { throw "Téléchargement de Tor refusé." }
+if ($LASTEXITCODE -ne 0) { throw "Telechargement de Tor refuse." }
 if ((Get-FileHash -LiteralPath $torArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $torSha256) {
-    throw "L’archive Tor ne correspond pas à l’empreinte attendue."
+    throw "L'archive Tor ne correspond pas a l'empreinte attendue."
 }
 Remove-Item -LiteralPath $torRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $torRoot | Out-Null
 & tar.exe -xzf $torArchive -C $torRoot
 Remove-Item -LiteralPath $torArchive -Force
 $tor = Get-ChildItem -Path $torRoot -Filter tor.exe -Recurse | Select-Object -First 1
-if (-not $tor) { throw "tor.exe est absent de l’archive officielle." }
+if (-not $tor) { throw "tor.exe est absent de l'archive officielle." }
 Set-Content -LiteralPath (Join-Path $base "tor-path.txt") -Value $tor.FullName -Encoding ASCII
 
-Write-Host "▸ Agent et identité"
+Write-Host "> Agent et identite"
 Copy-Item -LiteralPath (Join-Path $source "onionpi-node-agent.py") -Destination $lib -Force
 Copy-Item -LiteralPath (Join-Path $source "onionpi-node-apply-windows.ps1") -Destination $lib -Force
 @("NODE_ID=$Node", "TOKEN=$Token", "PORT=$Port") | Set-Content -LiteralPath $config -Encoding ASCII
@@ -129,7 +148,7 @@ $torLogConfig = (Join-Path $logDir "tor.log").Replace('\', '/')
 & icacls.exe $logDir /grant:r '*S-1-5-19:(OI)(CI)M' | Out-Null
 & icacls.exe $result /grant:r '*S-1-5-19:(OI)(CI)RX' | Out-Null
 
-Write-Host "▸ Services Windows"
+Write-Host "> Services Windows"
 $torAction = New-ScheduledTaskAction -Execute $tor.FullName -Argument "-f `"$torrc`"" -WorkingDirectory $tor.DirectoryName
 $startup = New-ScheduledTaskTrigger -AtStartup
 $systemPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
@@ -141,7 +160,7 @@ $cookie = Join-Path $torData "control.authcookie"
 for ($index = 0; $index -lt 60 -and -not (Test-Path -LiteralPath $cookie); $index++) {
     Start-Sleep -Seconds 1
 }
-if (-not (Test-Path -LiteralPath $cookie)) { throw "Tor n’a pas créé son cookie de contrôle." }
+if (-not (Test-Path -LiteralPath $cookie)) { throw "Tor n'a pas cree son cookie de controle." }
 & icacls.exe $cookie /grant:r '*S-1-5-19:R' | Out-Null
 
 $agentWrapper = Join-Path $base "agent.cmd"
@@ -172,19 +191,19 @@ Register-ScheduledTask -TaskName "OnionPi Node Apply" -Action $applyAction -Trig
 Start-ScheduledTask -TaskName "OnionPi Node Apply"
 Start-ScheduledTask -TaskName "OnionPi Node Agent"
 
-Write-Host "▸ Publication"
+Write-Host "> Publication"
 $hostname = Join-Path $hiddenService "hostname"
 for ($index = 0; $index -lt 60 -and -not (Test-Path -LiteralPath $hostname); $index++) {
     Start-Sleep -Seconds 1
 }
-if (-not (Test-Path -LiteralPath $hostname)) { throw "Tor n’a pas encore publié l’adresse onion." }
+if (-not (Test-Path -LiteralPath $hostname)) { throw "Tor n'a pas encore publie l'adresse onion." }
 $address = (Get-Content -LiteralPath $hostname -Raw).Trim()
 
 Write-Host ""
-Write-Host "Agent installé sur Windows."
+Write-Host "Agent installe sur Windows."
 Write-Host ""
-Write-Host "  Adresse du nœud : $address"
-Write-Host "  Port de l’agent : $Port"
+Write-Host "  Adresse du noeud : $address"
+Write-Host "  Port de l'agent : $Port"
 Write-Host ""
-Write-Host "Recopiez cette adresse dans « Baie virtuelle », puis actualisez le nœud."
-Write-Host "Le coupe-circuit sortant sera activé à la première synchronisation."
+Write-Host "Recopiez cette adresse dans Baie virtuelle, puis actualisez le noeud."
+Write-Host "Windows reste en sortie directe; Tor-only est refuse sans tunnel TUN verifie."

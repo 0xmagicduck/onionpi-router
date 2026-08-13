@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import random
 import re
 import shutil
@@ -113,6 +115,8 @@ def service_states(demo_mode: bool = False) -> list[dict[str, Any]]:
         ("dnsmasq", "DNS"),
         ("onionpi-firewall", "Pare-feu"),
     ]
+    if os.environ.get("ONIONPI_MESH_INTERFACE", "").strip():
+        services.append(("onionpi-mesh", "Maillage"))
     if demo_mode:
         return [{"id": service, "label": label, "active": True} for service, label in services]
     return [
@@ -222,7 +226,114 @@ def connected_devices(interface: str, demo_mode: bool = False) -> list[dict[str,
     return devices
 
 
-def wifi_details(interface: str, upstream: str, gateway_ip: str, demo_mode: bool) -> dict[str, Any]:
+def _mesh_peers(mesh_device: str) -> list[dict[str, Any]]:
+    """Reads batman-adv originators without making their text format an API.
+
+    batctl's columns have changed names across Raspberry Pi OS releases, while
+    the useful row shape has stayed stable: originator, age, optional link
+    throughput, next hop and hard interface. Unknown columns are deliberately
+    ignored so a diagnostic upgrade cannot break /status.
+    """
+    output = _run(["batctl", "-m", mesh_device, "originators"], timeout=4)
+    peers: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for line in output.splitlines():
+        macs = re.findall(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", line, re.I)
+        if not macs:
+            continue
+        originator = macs[0].lower()
+        if originator in seen:
+            continue
+        seen.add(originator)
+        age = re.search(r"\b(?:\d+\.\d+|\d+)s\b", line)
+        # B.A.T.M.A.N. V prints the estimated MBit/s in parentheses. Ignore
+        # the TQ value used by older algorithms: it has no bandwidth unit.
+        throughput = re.search(r"\(\s*(\d+(?:\.\d+)?)\s*MBit\)", line, re.I)
+        peers.append(
+            {
+                "mac": originator,
+                "last_seen": age.group(0) if age else "inconnu",
+                "throughput_mbps": float(throughput.group(1)) if throughput else None,
+                "next_hop": macs[1].lower() if len(macs) > 1 else originator,
+            }
+        )
+    return peers[:128]
+
+
+def mesh_details(
+    radio_interface: str,
+    mesh_device: str,
+    mesh_id: str,
+    mesh_address: str,
+    demo_mode: bool,
+) -> dict[str, Any]:
+    enabled = bool(radio_interface)
+    if not enabled:
+        return {
+            "enabled": False,
+            "active": False,
+            "mesh_id": "",
+            "radio_interface": "",
+            "interface": mesh_device,
+            "address": "",
+            "peers": [],
+            "peer_count": 0,
+        }
+    if demo_mode:
+        peers = [
+            {
+                "mac": "02:42:ac:11:00:02",
+                "last_seen": "0.4s",
+                "throughput_mbps": 144.4,
+                "next_hop": "02:42:ac:11:00:02",
+            },
+            {
+                "mac": "02:42:ac:11:00:03",
+                "last_seen": "0.8s",
+                "throughput_mbps": 72.2,
+                "next_hop": "02:42:ac:11:00:02",
+            },
+        ]
+        return {
+            "enabled": True,
+            "active": True,
+            "mesh_id": mesh_id or "OnionPi-Mesh",
+            "radio_interface": radio_interface,
+            "interface": mesh_device,
+            "address": mesh_address or "10.43.0.1/16",
+            "peers": peers,
+            "peer_count": len(peers),
+        }
+    raw_link = _run(["ip", "-j", "link", "show", "dev", mesh_device])
+    try:
+        link = json.loads(raw_link)[0]
+        active = "UP" in link.get("flags", []) and str(link.get("operstate", "")) != "DOWN"
+    except (json.JSONDecodeError, IndexError, KeyError, TypeError):
+        active = False
+    peers = _mesh_peers(mesh_device) if active else []
+    return {
+        "enabled": True,
+        "active": active,
+        "mesh_id": mesh_id,
+        "radio_interface": radio_interface,
+        "interface": mesh_device,
+        "address": mesh_address,
+        "peers": peers,
+        "peer_count": len(peers),
+    }
+
+
+def wifi_details(
+    interface: str,
+    upstream: str,
+    gateway_ip: str,
+    demo_mode: bool,
+    mesh_interface: str = "",
+    mesh_device: str = "bat0",
+    mesh_id: str = "",
+    mesh_address: str = "",
+) -> dict[str, Any]:
+    mesh = mesh_details(mesh_interface, mesh_device, mesh_id, mesh_address, demo_mode)
     if demo_mode:
         return {
             "ssid": "OnionPi Wi-Fi",
@@ -230,6 +341,7 @@ def wifi_details(interface: str, upstream: str, gateway_ip: str, demo_mode: bool
             "upstream_interface": upstream,
             "gateway_ip": gateway_ip,
             "channel": "7",
+            "mesh": mesh,
         }
     ssid = _run(["nmcli", "-g", "802-11-wireless.ssid", "connection", "show", "onionpi-ap"])
     channel = _run(["nmcli", "-g", "802-11-wireless.channel", "connection", "show", "onionpi-ap"])
@@ -239,6 +351,7 @@ def wifi_details(interface: str, upstream: str, gateway_ip: str, demo_mode: bool
         "upstream_interface": upstream,
         "gateway_ip": gateway_ip,
         "channel": channel or "auto",
+        "mesh": mesh,
     }
 
 

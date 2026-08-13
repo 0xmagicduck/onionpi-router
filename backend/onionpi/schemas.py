@@ -47,12 +47,31 @@ class TorStatus(BaseModel):
     bridges: BridgeStatus
 
 
+class MeshPeer(BaseModel):
+    mac: str
+    last_seen: str
+    throughput_mbps: float | None
+    next_hop: str
+
+
+class MeshStatus(BaseModel):
+    enabled: bool
+    active: bool
+    mesh_id: str
+    radio_interface: str
+    interface: str
+    address: str
+    peers: list[MeshPeer]
+    peer_count: int
+
+
 class NetworkStatus(BaseModel):
     ssid: str
     wifi_interface: str
     upstream_interface: str
     gateway_ip: str
     channel: str
+    mesh: MeshStatus
 
 
 class ProtectionCheck(BaseModel):

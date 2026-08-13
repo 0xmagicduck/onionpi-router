@@ -141,6 +141,7 @@ function ServiceBadge({ active, upLabel, downLabel }: { active?: boolean; upLabe
 export function NetworkPage({ status, devices }: { status?: StatusPayload; devices: Device[] }) {
   const accessPoint = serviceActive(status, 'onionpi-ap')
   const firewall = serviceActive(status, 'onionpi-firewall')
+  const mesh = status?.network.mesh
   return (
     <div className="page operational-page">
       <div className="page-title"><h1>Réseau</h1><p>Le point d’accès local et sa connexion amont.</p></div>
@@ -154,6 +155,33 @@ export function NetworkPage({ status, devices }: { status?: StatusPayload; devic
           <div className={`callout ${firewall === false ? 'callout-danger' : ''}`}><ShieldCheck size={20} /><p><strong>{firewall === false ? 'Coupe-circuit arrêté' : 'Coupe-circuit actif'}</strong>{firewall === false ? 'Le service onionpi-firewall ne tourne pas : vérifiez-le avant de laisser des appareils se connecter.' : 'Le trafic client non redirigé vers Tor est bloqué par nftables.'}</p></div>
         </Panel>
       </div>
+      <Panel title="Maillage OnionPi">
+        {!mesh?.enabled ? (
+          <div className="callout">
+            <Wifi size={20} />
+            <p><strong>Mesh désactivé</strong>Ajoutez une radio Wi-Fi dédiée puis réinstallez avec <code>--mesh INTERFACE</code>. Les téléphones et ordinateurs restent clients du point d’accès ; ce sont les nœuds OnionPi qui relaient le trafic entre eux.</p>
+          </div>
+        ) : (
+          <>
+            <div className="feature-status">
+              <span className="feature-icon"><Wifi /></span>
+              <div><strong>{mesh.mesh_id}</strong><p>{mesh.radio_interface} → {mesh.interface} · {mesh.address}</p></div>
+              <ServiceBadge active={mesh.active} upLabel={`${mesh.peer_count} pair${mesh.peer_count > 1 ? 's' : ''}`} downLabel="Arrêté" />
+            </div>
+            {mesh.peers.length > 0 ? (
+              <dl className="details-list">
+                {mesh.peers.map((peer) => (
+                  <div key={peer.mac}>
+                    <dt className="mono">{peer.mac}</dt>
+                    <dd>{peer.throughput_mbps === null ? 'débit inconnu' : `${peer.throughput_mbps} Mbit/s`} · vu il y a {peer.last_seen}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : <p className="prose">Aucun autre nœud n’est actuellement visible. Tous doivent utiliser le même identifiant, le même mot de passe et le même canal 802.11s.</p>}
+            <div className="callout"><ShieldCheck size={20} /><p><strong>Plan local fail-closed</strong>Le mesh transporte l’administration et les données locales multi-saut. Il n’offre aucune route Internet directe : chaque OnionPi conserve sa propre sortie Tor et son coupe-circuit.</p></div>
+          </>
+        )}
+      </Panel>
       <DeviceTable devices={devices} />
     </div>
   )

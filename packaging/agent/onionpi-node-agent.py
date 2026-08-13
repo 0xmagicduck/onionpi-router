@@ -37,7 +37,7 @@ from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 PROTOCOL_VERSION = 1
 
 STATE_DIR = Path(os.environ.get("ONIONPI_NODE_STATE", "/var/lib/onionpi-node"))
@@ -235,8 +235,8 @@ def read_status(tor: TorControl) -> dict[str, object]:
             "machine": platform.machine()[:32],
             "policy_mode": (
                 "complet" if PLATFORM == "linux" else
-                "pf" if PLATFORM == "darwin" else
-                "sortie uniquement" if PLATFORM == "windows" else
+                "transparent Tor (PF)" if PLATFORM == "darwin" else
+                "direct uniquement" if PLATFORM == "windows" else
                 "non pris en charge"
             ),
         },

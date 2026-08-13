@@ -153,7 +153,13 @@ def build_app_services(settings: Settings) -> AppServices:
     if settings.demo_mode:
         firewall: FirewallBackend = DemoFirewallBackend()
         access_point: AccessPointBackend = DemoAccessPointBackend(
-            settings.wifi_interface, settings.upstream_interface, settings.gateway_ip
+            settings.wifi_interface,
+            settings.upstream_interface,
+            settings.gateway_ip,
+            settings.mesh_interface,
+            settings.mesh_device,
+            settings.mesh_id,
+            settings.mesh_address,
         )
     else:
         firewall = RaspberryPiFirewallBackend(agent)
@@ -162,6 +168,10 @@ def build_app_services(settings: Settings) -> AppServices:
             settings.wifi_interface,
             settings.upstream_interface,
             settings.gateway_ip,
+            settings.mesh_interface,
+            settings.mesh_device,
+            settings.mesh_id,
+            settings.mesh_address,
         )
     maintenance = MaintenanceWindow(settings.maintenance_state_path, settings.demo_mode)
     onboarding = OnboardingManager(database, settings, firewall, maintenance)

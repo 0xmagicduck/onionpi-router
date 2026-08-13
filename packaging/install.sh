@@ -22,6 +22,11 @@ DHCP_START="10.42.0.20"
 DHCP_END="10.42.0.200"
 WIFI_BAND="bg"
 WIFI_CHANNEL=""
+MESH_INTERFACE=""
+MESH_ID="OnionPi-Mesh"
+MESH_ADDRESS=""
+MESH_BAND="a"
+MESH_CHANNEL=""
 LAN_SSH=1
 ASSUME_YES=0
 UPGRADE=0
@@ -42,6 +47,11 @@ Usage: sudo ./packaging/install.sh [options]
   --country CODE       code pays Wi-Fi ISO à deux lettres (défaut: BE)
   --band bg|a          bande du point d'accès, bg=2,4 GHz a=5 GHz (défaut: bg)
   --channel N          canal du point d'accès (défaut: 7 en bg, 36 en a)
+  --mesh INTERFACE     radio Wi-Fi dédiée au maillage 802.11s (désactivé par défaut)
+  --mesh-id NOM        identifiant partagé du mesh (défaut: OnionPi-Mesh)
+  --mesh-address CIDR  adresse unique du nœud dans 10.43.0.0/16 (dérivée de la MAC)
+  --mesh-band bg|a     bande du backhaul mesh (défaut: a, 5 GHz)
+  --mesh-channel N     canal commun à tous les nœuds (défaut: 36 en a, 7 en bg)
   --no-lan-ssh         interdire SSH depuis le Wi-Fi OnionPi
   --yes                ne pas demander la confirmation finale
   -h, --help           afficher cette aide
@@ -57,7 +67,8 @@ Mise à niveau immuable (utilisée par onionpi-update):
   --upgrade            conserve mots de passe, Wi-Fi et comptes existants
 
 Les mots de passe ne sont jamais acceptés en argument. Utilisez les invites
-interactives, ou ONIONPI_WIFI_PASSWORD et ONIONPI_ADMIN_PASSWORD en mode automatisé.
+interactives, ou ONIONPI_WIFI_PASSWORD, ONIONPI_ADMIN_PASSWORD et, si le mesh
+est activé, ONIONPI_MESH_PASSWORD en mode automatisé.
 EOF
 }
 
@@ -69,6 +80,11 @@ while (($#)); do
     --country) COUNTRY="${2:?code pays manquant}"; shift 2 ;;
     --band) WIFI_BAND="${2:?bande manquante}"; shift 2 ;;
     --channel) WIFI_CHANNEL="${2:?canal manquant}"; shift 2 ;;
+    --mesh) MESH_INTERFACE="${2:?interface mesh manquante}"; shift 2 ;;
+    --mesh-id) MESH_ID="${2:?identifiant mesh manquant}"; shift 2 ;;
+    --mesh-address) MESH_ADDRESS="${2:?adresse mesh manquante}"; shift 2 ;;
+    --mesh-band) MESH_BAND="${2:?bande mesh manquante}"; shift 2 ;;
+    --mesh-channel) MESH_CHANNEL="${2:?canal mesh manquant}"; shift 2 ;;
     --no-lan-ssh) LAN_SSH=0; shift ;;
     --update-repo) UPDATE_REPOSITORY="${2:?dépôt manquant}"; shift 2 ;;
     --update-channel) UPDATE_CHANNEL="${2:?canal manquant}"; shift 2 ;;
@@ -97,6 +113,11 @@ if (( UPGRADE )); then
   GATEWAY_IP="${ONIONPI_GATEWAY_IP:-$GATEWAY_IP}"
   GATEWAY_CIDR="${GATEWAY_IP}/24"
   LAN_NETWORK="${ONIONPI_LAN_NETWORK:-$LAN_NETWORK}"
+  MESH_INTERFACE="${ONIONPI_MESH_INTERFACE:-$MESH_INTERFACE}"
+  MESH_ID="${ONIONPI_MESH_ID:-$MESH_ID}"
+  MESH_ADDRESS="${ONIONPI_MESH_ADDRESS:-$MESH_ADDRESS}"
+  MESH_BAND="${ONIONPI_MESH_BAND:-$MESH_BAND}"
+  MESH_CHANNEL="${ONIONPI_MESH_CHANNEL:-$MESH_CHANNEL}"
   if [[ -r /etc/onionpi/onionpi.env ]]; then
     existing_country="$(sed -n 's/^ONIONPI_COUNTRY=//p' /etc/onionpi/onionpi.env | head -n 1)"
     [[ "$existing_country" =~ ^[A-Z]{2}$ ]] && COUNTRY="$existing_country"
@@ -148,7 +169,8 @@ if [[ "${ID:-}" != "debian" && "${ID:-}" != "raspbian" ]]; then
   exit 1
 fi
 
-if [[ ! "$WAN_INTERFACE" =~ ^[a-zA-Z0-9_.:-]{1,32}$ || ! "$WIFI_INTERFACE" =~ ^[a-zA-Z0-9_.:-]{1,32}$ ]]; then
+if [[ ! "$WAN_INTERFACE" =~ ^[a-zA-Z0-9_.:-]{1,32}$ || ! "$WIFI_INTERFACE" =~ ^[a-zA-Z0-9_.:-]{1,32}$ \
+  || ( -n "$MESH_INTERFACE" && ! "$MESH_INTERFACE" =~ ^[a-zA-Z0-9_.:-]{1,32}$ ) ]]; then
   printf 'Nom d’interface invalide.\n' >&2
   exit 1
 fi
@@ -156,7 +178,13 @@ if [[ "$WAN_INTERFACE" == "$WIFI_INTERFACE" ]]; then
   printf 'Les interfaces WAN et Wi-Fi doivent être différentes.\n' >&2
   exit 1
 fi
-for interface in "$WAN_INTERFACE" "$WIFI_INTERFACE"; do
+if [[ -n "$MESH_INTERFACE" && ( "$MESH_INTERFACE" == "$WAN_INTERFACE" || "$MESH_INTERFACE" == "$WIFI_INTERFACE" ) ]]; then
+  printf 'La radio mesh doit être distincte des interfaces WAN et point d’accès.\n' >&2
+  exit 1
+fi
+interfaces=("$WAN_INTERFACE" "$WIFI_INTERFACE")
+[[ -z "$MESH_INTERFACE" ]] || interfaces+=("$MESH_INTERFACE")
+for interface in "${interfaces[@]}"; do
   if [[ ! -d "/sys/class/net/$interface" ]]; then
     printf 'Interface absente: %s\n' "$interface" >&2
     exit 1
@@ -179,6 +207,39 @@ if [[ ! "$WIFI_CHANNEL" =~ ^[0-9]{1,3}$ ]]; then
   printf 'Canal Wi-Fi invalide: %s\n' "$WIFI_CHANNEL" >&2
   exit 1
 fi
+case "$MESH_BAND" in
+  bg) MESH_CHANNEL="${MESH_CHANNEL:-7}" ;;
+  a) MESH_CHANNEL="${MESH_CHANNEL:-36}" ;;
+  *) printf 'Bande mesh invalide: %s (attendu bg ou a).\n' "$MESH_BAND" >&2; exit 1 ;;
+esac
+if [[ ! "$MESH_CHANNEL" =~ ^[0-9]{1,3}$ ]]; then
+  printf 'Canal mesh invalide: %s\n' "$MESH_CHANNEL" >&2
+  exit 1
+fi
+if [[ ! "$MESH_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$ ]]; then
+  printf 'L’identifiant mesh doit contenir 1 à 32 lettres, chiffres, points, tirets ou soulignés.\n' >&2
+  exit 1
+fi
+if [[ -n "$MESH_INTERFACE" ]]; then
+  if [[ -z "$MESH_ADDRESS" ]]; then
+    mesh_mac="$(tr -d ':' <"/sys/class/net/$MESH_INTERFACE/address")"
+    mesh_host=$((16#${mesh_mac: -4}))
+    (( mesh_host == 0 )) && mesh_host=1
+    (( mesh_host == 65535 )) && mesh_host=65534
+    MESH_ADDRESS="10.43.$((mesh_host / 256)).$((mesh_host % 256))/16"
+  fi
+  if [[ ! "$MESH_ADDRESS" =~ ^10\.43\.([0-9]{1,3})\.([0-9]{1,3})/16$ ]]; then
+    printf 'Adresse mesh invalide: %s (attendu 10.43.X.Y/16).\n' "$MESH_ADDRESS" >&2
+    exit 1
+  fi
+  for octet in "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"; do
+    ((10#$octet <= 255)) || { printf 'Adresse mesh hors plage: %s\n' "$MESH_ADDRESS" >&2; exit 1; }
+  done
+  [[ "$MESH_ADDRESS" != "10.43.0.0/16" && "$MESH_ADDRESS" != "10.43.255.255/16" ]] || {
+    printf 'Adresse mesh réservée: %s\n' "$MESH_ADDRESS" >&2
+    exit 1
+  }
+fi
 
 # A prebuilt image ships precomputed secrets instead of plaintext: WIFI_PSK is
 # the PBKDF2 result of the passphrase, ADMIN_PASSWORD_HASH an scrypt digest.
@@ -187,6 +248,8 @@ WIFI_PASSWORD="${ONIONPI_WIFI_PASSWORD:-}"
 WIFI_PSK="${ONIONPI_WIFI_PSK:-}"
 ADMIN_PASSWORD="${ONIONPI_ADMIN_PASSWORD:-}"
 ADMIN_PASSWORD_HASH="${ONIONPI_ADMIN_PASSWORD_HASH:-}"
+MESH_INTERFACE="${MESH_INTERFACE:-}"
+MESH_PASSWORD="${ONIONPI_MESH_PASSWORD:-}"
 if (( UPGRADE )); then
   # Nothing to ask and nothing to rewrite: the Wi-Fi PSK stays in
   # NetworkManager and the administrator digest stays in the database. An
@@ -196,6 +259,7 @@ if (( UPGRADE )); then
   WIFI_PSK=""
   ADMIN_PASSWORD=""
   ADMIN_PASSWORD_HASH=""
+  MESH_PASSWORD=""
 else
   if [[ -n "$WIFI_PSK" ]]; then
     if [[ ! "$WIFI_PSK" =~ ^[0-9a-fA-F]{64}$ ]]; then
@@ -223,12 +287,24 @@ else
     read -r -s -p 'Mot de passe administrateur (12 caractères minimum): ' ADMIN_PASSWORD
     printf '\n'
   fi
+  if [[ -n "$MESH_INTERFACE" && -z "$MESH_PASSWORD" ]]; then
+    if [[ ! -t 0 ]]; then
+      printf 'Définissez ONIONPI_MESH_PASSWORD quand --mesh est utilisé en mode non interactif.\n' >&2
+      exit 1
+    fi
+    read -r -s -p 'Mot de passe du mesh (12 caractères minimum, identique sur chaque nœud): ' MESH_PASSWORD
+    printf '\n'
+  fi
   if [[ -z "$WIFI_PSK" ]] && (( ${#WIFI_PASSWORD} < 12 || ${#WIFI_PASSWORD} > 63 )); then
     printf 'Le mot de passe Wi-Fi doit contenir entre 12 et 63 caractères.\n' >&2
     exit 1
   fi
   if [[ -z "$ADMIN_PASSWORD_HASH" ]] && (( ${#ADMIN_PASSWORD} < 12 )); then
     printf 'Le mot de passe administrateur doit contenir au moins 12 caractères.\n' >&2
+    exit 1
+  fi
+  if [[ -n "$MESH_INTERFACE" ]] && (( ${#MESH_PASSWORD} < 12 || ${#MESH_PASSWORD} > 63 )); then
+    printf 'Le mot de passe mesh doit contenir entre 12 et 63 caractères.\n' >&2
     exit 1
   fi
 fi
@@ -245,6 +321,11 @@ else
   printf '  Internet : %s\n  Point d’accès : %s (%s)\n  Réseau local : %s\n' \
     "$WAN_INTERFACE" "$WIFI_INTERFACE" "$SSID" "$LAN_NETWORK"
   printf '  Le trafic TCP et le DNS des clients passeront par Tor. UDP/QUIC et IPv6 seront bloqués.\n'
+  if [[ -n "$MESH_INTERFACE" ]]; then
+    printf '  Mesh 802.11s : %s (%s, %s, canal %s) → bat0 %s\n' \
+      "$MESH_INTERFACE" "$MESH_ID" "$MESH_BAND" "$MESH_CHANNEL" "$MESH_ADDRESS"
+    printf '  Le mesh relie les nœuds OnionPi; chaque point d’accès garde sa propre sortie Tor.\n'
+  fi
   printf '  La connexion Wi-Fi actuelle sur %s sera interrompue.\n\n' "$WIFI_INTERFACE"
 fi
 if (( ! ASSUME_YES )); then
@@ -259,6 +340,9 @@ if (( ! UPGRADE )); then
     tor nftables dnsmasq network-manager nginx openssl avahi-daemon curl iw \
     python3 python3-venv python3-pip rsync ca-certificates systemd-timesyncd dnsutils \
     gnupg gpgv
+  if [[ -n "$MESH_INTERFACE" ]]; then
+    apt-get install -y --no-install-recommends batctl
+  fi
 else
   for command in python3 rsync nft tor dnsmasq nginx gpgv; do
     command -v "$command" >/dev/null 2>&1 || {
@@ -266,6 +350,14 @@ else
       exit 1
     }
   done
+  if [[ -n "$MESH_INTERFACE" ]]; then
+    for command in nmcli ip batctl modprobe; do
+      command -v "$command" >/dev/null 2>&1 || {
+        printf 'Mise à niveau du mesh impossible: %s est absent.\n' "$command" >&2
+        exit 1
+      }
+    done
+  fi
 fi
 
 # Circumvention. obfs4proxy also provides meek_lite. snowflake-client lets the
@@ -300,6 +392,20 @@ if ! iw list | sed -n '/Supported interface modes:/,/Band /p' | grep -qE '^[[:sp
   printf 'La carte Wi-Fi ne déclare pas le mode point d’accès (AP).\n' >&2
   exit 1
 fi
+if [[ -n "$MESH_INTERFACE" ]]; then
+  mesh_phy_path="$(readlink -f "/sys/class/net/$MESH_INTERFACE/phy80211" 2>/dev/null || true)"
+  mesh_phy="$(basename -- "$mesh_phy_path")"
+  if [[ -z "$mesh_phy" ]] || ! iw phy "$mesh_phy" info \
+    | sed -n '/Supported interface modes:/,/Band /p' \
+    | grep -qE '^[[:space:]]*\*[[:space:]]+mesh point$'; then
+    printf 'La radio %s ne déclare pas le mode maillé 802.11s.\n' "$MESH_INTERFACE" >&2
+    exit 1
+  fi
+  modprobe batman-adv || {
+    printf 'Le noyau ne fournit pas batman-adv; installez le module Raspberry Pi correspondant.\n' >&2
+    exit 1
+  }
+fi
 
 BACKUP_DIR="/var/backups/onionpi-$(date -u +%Y%m%dT%H%M%SZ)"
 install -d -m 0700 "$BACKUP_DIR"
@@ -313,7 +419,9 @@ backup_file() {
 for path in \
   /etc/tor/torrc /etc/dnsmasq.d/onionpi.conf /etc/nftables.conf \
   /etc/onionpi/firewall.nft /etc/nftables.d/onionpi.nft /etc/sysctl.d/70-onionpi.conf \
-  /etc/nginx/sites-available/onionpi /etc/onionpi/onionpi.env \
+  /etc/NetworkManager/system-connections/onionpi-mesh.nmconnection \
+  /etc/nginx/sites-available/onionpi /etc/systemd/system/nginx.service.d/nginx-mesh.conf \
+  /etc/onionpi/onionpi.env \
   /etc/nginx/sites-enabled/default /etc/avahi/hosts \
   /etc/modprobe.d/onionpi-regdom.conf /etc/onionpi/tor/bridges.conf \
   /etc/onionpi/tor/policy.conf /etc/issue /etc/issue.net /etc/motd; do
@@ -399,7 +507,7 @@ if [[ ! -f "$RELEASE_DIR/.complete" ]]; then
     [[ -z "${RELEASE_STAGE:-}" ]] || rm -rf -- "$RELEASE_STAGE"
   }
   trap cleanup_release_stage EXIT
-  install -d -m 0755 "$RELEASE_STAGE/backend" "$RELEASE_STAGE/frontend"
+  install -d -m 0755 "$RELEASE_STAGE/backend" "$RELEASE_STAGE/frontend" "$RELEASE_STAGE/docs"
   rsync -a --delete --exclude '__pycache__' --exclude '.pytest_cache' \
     "$PROJECT_ROOT/backend/" "$RELEASE_STAGE/backend/"
   python3 -m venv "$RELEASE_STAGE/venv"
@@ -426,6 +534,7 @@ if [[ ! -f "$RELEASE_DIR/.complete" ]]; then
   # l'agent de la version qu'elle exécute.
   rsync -a --delete "$PROJECT_ROOT/packaging/agent/" "$RELEASE_STAGE/agent/"
   install -m 0644 "$PROJECT_ROOT/README.md" "$RELEASE_STAGE/README.md"
+  install -m 0644 "$PROJECT_ROOT/docs/mesh.md" "$RELEASE_STAGE/docs/mesh.md"
   install -m 0644 "$PROJECT_ROOT/VERSION" "$RELEASE_STAGE/VERSION"
   : >"$RELEASE_STAGE/.complete"
   chown -R root:root "$RELEASE_STAGE"
@@ -454,6 +563,10 @@ ONIONPI_FRONTEND_DIR=/opt/onionpi/current/frontend/dist
 ONIONPI_GATEWAY_IP=$GATEWAY_IP
 ONIONPI_WIFI_INTERFACE=$WIFI_INTERFACE
 ONIONPI_UPSTREAM_INTERFACE=$WAN_INTERFACE
+ONIONPI_MESH_INTERFACE=$MESH_INTERFACE
+ONIONPI_MESH_DEVICE=bat0
+ONIONPI_MESH_ID=$MESH_ID
+ONIONPI_MESH_ADDRESS=$MESH_ADDRESS
 ONIONPI_COOKIE_SECURE=1
 ONIONPI_SESSION_SECRET=$SESSION_SECRET
 ONIONPI_DEVICE_NAME=OnionPi
@@ -480,6 +593,12 @@ ONIONPI_WAN_INTERFACE=$WAN_INTERFACE
 ONIONPI_WIFI_INTERFACE=$WIFI_INTERFACE
 ONIONPI_GATEWAY_IP=$GATEWAY_IP
 ONIONPI_LAN_NETWORK=$LAN_NETWORK
+ONIONPI_MESH_INTERFACE=$MESH_INTERFACE
+ONIONPI_MESH_DEVICE=bat0
+ONIONPI_MESH_ID=$MESH_ID
+ONIONPI_MESH_ADDRESS=$MESH_ADDRESS
+ONIONPI_MESH_BAND=$MESH_BAND
+ONIONPI_MESH_CHANNEL=$MESH_CHANNEL
 ONIONPI_BACKUP_DIR=$BACKUP_DIR
 EOF
 chmod 0644 /etc/onionpi/install.conf
@@ -580,13 +699,16 @@ chmod 0644 /etc/dnsmasq.d/onionpi.conf
 
 if (( LAN_SSH )); then
   LAN_SSH_RULE='    tcp dport 22 accept'
+  MESH_SSH_RULE='    ip saddr $onionpi_mesh_net tcp dport 22 accept'
 else
   LAN_SSH_RULE='    # SSH depuis le Wi-Fi refusé (--no-lan-ssh)'
+  MESH_SSH_RULE='    # SSH depuis le mesh refusé (--no-lan-ssh)'
 fi
 sed \
   -e "s/__WIFI_INTERFACE__/$WIFI_INTERFACE/g" \
   -e "s|__LAN_NETWORK__|$LAN_NETWORK|g" \
   -e "s|__LAN_SSH_RULE__|$LAN_SSH_RULE|g" \
+  -e "s|__MESH_SSH_RULE__|$MESH_SSH_RULE|g" \
   "$PROJECT_ROOT/packaging/templates/onionpi.nft" >/etc/onionpi/firewall.nft
 chmod 0644 /etc/onionpi/firewall.nft
 # Migration from the early development layout. The file belongs exclusively
@@ -597,16 +719,38 @@ sed "s/__WIFI_INTERFACE__/$WIFI_INTERFACE/g" \
   "$PROJECT_ROOT/packaging/templates/sysctl.onionpi" >/etc/sysctl.d/70-onionpi.conf
 chmod 0644 /etc/sysctl.d/70-onionpi.conf
 
-if [[ ! -s /etc/onionpi/tls/onionpi.key || ! -s /etc/onionpi/tls/onionpi.crt ]]; then
+MESH_IP="${MESH_ADDRESS%/*}"
+RENEW_TLS=0
+if [[ -n "$MESH_INTERFACE" && -s /etc/onionpi/tls/onionpi.crt ]] \
+  && ! openssl x509 -in /etc/onionpi/tls/onionpi.crt -noout -ext subjectAltName 2>/dev/null \
+    | grep -Fq "IP Address:$MESH_IP"; then
+  RENEW_TLS=1
+fi
+if [[ ! -s /etc/onionpi/tls/onionpi.key || ! -s /etc/onionpi/tls/onionpi.crt || "$RENEW_TLS" == 1 ]]; then
+  TLS_ALT_NAMES="DNS:onionpi.local,IP:$GATEWAY_IP"
+  [[ -z "$MESH_INTERFACE" ]] || TLS_ALT_NAMES+=",IP:$MESH_IP"
   openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 825 \
     -subj '/CN=onionpi.local/O=OnionPi local appliance' \
-    -addext "subjectAltName=DNS:onionpi.local,IP:$GATEWAY_IP" \
+    -addext "subjectAltName=$TLS_ALT_NAMES" \
     -keyout /etc/onionpi/tls/onionpi.key -out /etc/onionpi/tls/onionpi.crt
 fi
 chown root:onionpi /etc/onionpi/tls/onionpi.key
 chmod 0640 /etc/onionpi/tls/onionpi.key
 chmod 0644 /etc/onionpi/tls/onionpi.crt
-sed "s/__GATEWAY_IP__/$GATEWAY_IP/g" \
+if [[ -n "$MESH_INTERFACE" ]]; then
+  MESH_HTTP_LISTEN="    listen $MESH_IP:80;"
+  MESH_HTTPS_LISTEN="    listen $MESH_IP:443 ssl http2;"
+  MESH_SERVER_NAME="$MESH_IP"
+else
+  MESH_HTTP_LISTEN='    # Écoute mesh désactivée.'
+  MESH_HTTPS_LISTEN='    # Écoute mesh désactivée.'
+  MESH_SERVER_NAME=''
+fi
+sed \
+  -e "s/__GATEWAY_IP__/$GATEWAY_IP/g" \
+  -e "s|__MESH_HTTP_LISTEN__|$MESH_HTTP_LISTEN|g" \
+  -e "s|__MESH_HTTPS_LISTEN__|$MESH_HTTPS_LISTEN|g" \
+  -e "s|__MESH_SERVER_NAME__|$MESH_SERVER_NAME|g" \
   "$PROJECT_ROOT/packaging/templates/nginx.onionpi" >/etc/nginx/sites-available/onionpi
 ln -sfn /etc/nginx/sites-available/onionpi /etc/nginx/sites-enabled/onionpi
 rm -f /etc/nginx/sites-enabled/default
@@ -617,6 +761,7 @@ install -m 0644 /run/onionpi-avahi-hosts /etc/avahi/hosts
 
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi.service" /etc/systemd/system/onionpi.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-ap.service" /etc/systemd/system/onionpi-ap.service
+install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-mesh.service" /etc/systemd/system/onionpi-mesh.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-firewall.service" /etc/systemd/system/onionpi-firewall.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-relay.service" /etc/systemd/system/onionpi-relay.service
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-relay.path" /etc/systemd/system/onionpi-relay.path
@@ -630,6 +775,7 @@ install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-accounting.service" /et
 install -m 0644 "$PROJECT_ROOT/packaging/systemd/onionpi-accounting.timer" /etc/systemd/system/onionpi-accounting.timer
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-relay-apply.sh" /usr/local/sbin/onionpi-relay-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-firewall-apply.sh" /usr/local/sbin/onionpi-firewall-apply
+install -m 0755 "$PROJECT_ROOT/packaging/onionpi-mesh-apply.sh" /usr/local/sbin/onionpi-mesh-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-devices-apply.sh" /usr/local/sbin/onionpi-devices-apply
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-accounting.sh" /usr/local/sbin/onionpi-accounting
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-agent-apply.sh" /usr/local/sbin/onionpi-agent-apply
@@ -637,6 +783,13 @@ install -m 0755 "$PROJECT_ROOT/packaging/onionpi-update.sh" /usr/local/sbin/onio
 install -m 0755 "$PROJECT_ROOT/packaging/onionpi-maintenance.sh" /usr/local/sbin/onionpi-maintenance
 install -m 0755 "$PROJECT_ROOT/packaging/verify.sh" /usr/local/sbin/onionpi-verify
 install -m 0755 "$PROJECT_ROOT/packaging/uninstall.sh" /usr/local/sbin/onionpi-uninstall
+if [[ -n "$MESH_INTERFACE" ]]; then
+  install -d -m 0755 /etc/systemd/system/nginx.service.d
+  install -m 0644 "$PROJECT_ROOT/packaging/systemd/nginx-mesh.conf" \
+    /etc/systemd/system/nginx.service.d/nginx-mesh.conf
+else
+  rm -f /etc/systemd/system/nginx.service.d/nginx-mesh.conf
+fi
 
 # --------------------------------------------------------- update client ----
 # Public half of the release signing key, in the binary form gpgv reads. It
@@ -735,7 +888,31 @@ fi
 # dedicated systemd unit below is now the only activation path, so firewall
 # failure cannot leave an unprotected AP online.
 nmcli connection modify onionpi-ap connection.autoconnect no
+
+if [[ -n "$MESH_INTERFACE" ]]; then
+  if (( ! UPGRADE )); then
+    if nmcli -t -f NAME connection show | grep -Fqx onionpi-mesh; then
+      nmcli connection delete onionpi-mesh
+    fi
+    nmcli connection add type wifi ifname "$MESH_INTERFACE" con-name onionpi-mesh ssid "$MESH_ID"
+    nmcli connection modify onionpi-mesh \
+      connection.autoconnect no connection.interface-name "$MESH_INTERFACE" \
+      802-11-wireless.mode mesh 802-11-wireless.band "$MESH_BAND" \
+      802-11-wireless.channel "$MESH_CHANNEL" 802-11-wireless.powersave 2 \
+      802-11-wireless-security.key-mgmt sae \
+      802-11-wireless-security.pmf required \
+      802-11-wireless-security.psk "$MESH_PASSWORD" \
+      ipv4.method disabled ipv6.method disabled
+  fi
+  nmcli connection modify onionpi-mesh connection.autoconnect no
+else
+  systemctl disable --now onionpi-mesh.service 2>/dev/null || true
+  if (( ! UPGRADE )) && nmcli -t -f NAME connection show | grep -Fqx onionpi-mesh; then
+    nmcli connection delete onionpi-mesh
+  fi
+fi
 unset WIFI_PASSWORD WIFI_PSK ONIONPI_WIFI_PASSWORD ONIONPI_WIFI_PSK
+unset MESH_PASSWORD ONIONPI_MESH_PASSWORD
 
 tor --verify-config -f /etc/tor/torrc
 dnsmasq --test
@@ -753,6 +930,9 @@ systemctl daemon-reload
 # Without an RTC the Pi boots in 1970 and Tor rejects every relay certificate.
 systemctl enable --now systemd-timesyncd || true
 systemctl enable tor dnsmasq nftables onionpi-firewall onionpi-ap nginx avahi-daemon NetworkManager onionpi
+if [[ -n "$MESH_INTERFACE" ]]; then
+  systemctl enable onionpi-mesh.service
+fi
 systemctl enable onionpi-boot-banner.service
 systemctl enable onionpi-update-recover.service
 systemctl enable --now onionpi-relay.path
@@ -769,6 +949,11 @@ systemctl restart tor
 # while clients are still associated. The dedicated helper replaces our table
 # atomically and onionpi-ap follows its success state.
 systemctl restart onionpi-firewall
+# The backhaul is optional but follows the same fail-closed dependency as the
+# client access point. It must own bat0 before nginx is asked to bind there.
+if [[ -n "$MESH_INTERFACE" ]]; then
+  systemctl restart onionpi-mesh.service
+fi
 # The AP is a dependent unit of the kill switch. It may briefly disconnect on
 # upgrade, but can never remain active after a failed firewall replacement.
 systemctl restart onionpi-ap

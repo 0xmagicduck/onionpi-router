@@ -1093,6 +1093,11 @@ class RackManager:
             sheet, self._desired_block(sheet, now, time.localtime(now))
         )
         result = self._call(row, "apply-policy", document)
+        if not result.get("applied"):
+            message = str(result.get("message", ""))[:200] or "Politique refusée par le nœud."
+            with self._lock:
+                self.database.update_rack_node(node_id, {"last_error": message})
+            raise NodeError(message)
         state = self._json(row.get("state"), {})
         state["policy"] = {
             "digest": document["digest"],
@@ -1167,6 +1172,7 @@ class RackManager:
                 "tor",
                 "policy",
                 "services",
+                "platform",
             )
             if key in status
         }

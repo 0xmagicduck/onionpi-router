@@ -41,7 +41,7 @@ if (( ! ASSUME_YES )); then
   [[ "$answer" =~ ^[oOyY]$ ]] || exit 0
 fi
 
-systemctl disable --now onionpi onionpi-ap onionpi-firewall onionpi-relay.path 2>/dev/null || true
+systemctl disable --now onionpi onionpi-ap onionpi-mesh onionpi-firewall onionpi-relay.path 2>/dev/null || true
 systemctl disable --now onionpi-agent.path onionpi-boot-banner.service 2>/dev/null || true
 systemctl disable --now onionpi-update.timer 2>/dev/null || true
 systemctl disable --now onionpi-update-recover.service 2>/dev/null || true
@@ -52,8 +52,13 @@ systemctl disable --now snowflake-proxy.service 2>/dev/null || true
 nft delete table inet onionpi 2>/dev/null || true
 nmcli connection down onionpi-ap 2>/dev/null || true
 nmcli connection delete onionpi-ap 2>/dev/null || true
+nmcli connection down onionpi-mesh 2>/dev/null || true
+nmcli connection delete onionpi-mesh 2>/dev/null || true
+ip link delete dev bat0 2>/dev/null || true
 
 rm -f /etc/systemd/system/onionpi.service /etc/systemd/system/onionpi-ap.service
+rm -f /etc/systemd/system/onionpi-mesh.service
+rm -f /etc/systemd/system/nginx.service.d/nginx-mesh.conf
 rm -f /etc/systemd/system/onionpi-firewall.service
 rm -f /etc/systemd/system/onionpi-relay.service /etc/systemd/system/onionpi-relay.path
 rm -f /etc/systemd/system/onionpi-agent.service /etc/systemd/system/onionpi-agent.path
@@ -63,6 +68,7 @@ rm -f /etc/systemd/system/onionpi-update-recover.service
 rm -f /etc/systemd/system/onionpi-accounting.service /etc/systemd/system/onionpi-accounting.timer
 rm -rf /etc/systemd/system/onionpi-update.timer.d
 rm -f /usr/local/sbin/onionpi-firewall-apply /usr/local/sbin/onionpi-verify
+rm -f /usr/local/sbin/onionpi-mesh-apply
 rm -f /usr/local/sbin/onionpi-relay-apply /usr/local/sbin/onionpi-devices-apply
 rm -f /usr/local/sbin/onionpi-agent-apply /usr/local/sbin/onionpi-update
 rm -f /usr/local/sbin/onionpi-accounting

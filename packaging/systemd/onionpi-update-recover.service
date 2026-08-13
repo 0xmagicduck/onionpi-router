@@ -2,7 +2,7 @@
 Description=Recover an interrupted OnionPi update
 DefaultDependencies=no
 After=local-fs.target
-Before=tor.service dnsmasq.service nftables.service onionpi-firewall.service onionpi-ap.service onionpi.service
+Before=tor.service dnsmasq.service nftables.service onionpi-firewall.service onionpi-mesh.service onionpi-ap.service onionpi.service
 ConditionPathExists=/usr/local/sbin/onionpi-update
 
 [Service]

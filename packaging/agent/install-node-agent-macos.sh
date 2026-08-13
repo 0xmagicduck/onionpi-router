@@ -62,6 +62,8 @@ HS_DIR="$BASE/hidden-service"
 LOG_DIR="$BASE/log"
 CONFIG="$BASE/agent.env"
 TOR_SOCKS_FILE="$BASE/tor-socks-port"
+TOR_TRANS_FILE="$BASE/tor-trans-port"
+TOR_DNS_FILE="$BASE/tor-dns-port"
 PF_CONF=/etc/pf.conf
 SERVICE_USER=_onionpi-node
 SERVICE_GROUP=staff
@@ -84,6 +86,11 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 (( RUNNING == 0 )) || { printf 'Les anciens services OnionPi ne se sont pas arrêtés.\n' >&2; exit 1; }
+# Releases before 0.4.2 loaded a filter-only anchor which could leave every
+# application offline. Reinstallation is also recovery: clear it before curl,
+# Homebrew or Tor need the network. The anchor attachment stays in pf.conf and
+# is upgraded later, after the replacement rules have been validated.
+/sbin/pfctl -a com.onionpi.node -F all 2>/dev/null || true
 
 port_is_free() {
   ! /usr/sbin/lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN
@@ -112,6 +119,10 @@ TOR_SOCKS_PORT="$(find_free_port "$((PORT + 1))")" \
   || { printf 'Aucun port SOCKS libre trouvé.\n' >&2; exit 1; }
 TOR_CONTROL_PORT="$(find_free_port "$((TOR_SOCKS_PORT + 1))" "$TOR_SOCKS_PORT")" \
   || { printf 'Aucun port de contrôle Tor libre trouvé.\n' >&2; exit 1; }
+TOR_TRANS_PORT="$(find_free_port "$((TOR_CONTROL_PORT + 1))" "$TOR_CONTROL_PORT")" \
+  || { printf 'Aucun TransPort Tor libre trouvé.\n' >&2; exit 1; }
+TOR_DNS_PORT="$(find_free_port "$((TOR_TRANS_PORT + 1))" "$TOR_TRANS_PORT")" \
+  || { printf 'Aucun DNSPort Tor libre trouvé.\n' >&2; exit 1; }
 
 printf '▸ Homebrew, Tor et Python\n'
 BREW="$(sudo -u "$CONSOLE_USER" -H /bin/zsh -lc 'command -v brew' 2>/dev/null || true)"
@@ -160,8 +171,10 @@ install -m 0755 "$SOURCE_DIR/render-policy-macos.py" "$LIB/render-policy-macos.p
 install -m 0755 "$SOURCE_DIR/onionpi-node-apply-macos.sh" "$LIB/onionpi-node-apply-macos.sh"
 ln -sf "$PYTHON_BINARY" "$BASE/python"
 printf '%s\n' "$TOR_SOCKS_PORT" >"$TOR_SOCKS_FILE"
-chown root:"$SERVICE_GROUP" "$TOR_SOCKS_FILE"
-chmod 0644 "$TOR_SOCKS_FILE"
+printf '%s\n' "$TOR_TRANS_PORT" >"$TOR_TRANS_FILE"
+printf '%s\n' "$TOR_DNS_PORT" >"$TOR_DNS_FILE"
+chown root:"$SERVICE_GROUP" "$TOR_SOCKS_FILE" "$TOR_TRANS_FILE" "$TOR_DNS_FILE"
+chmod 0644 "$TOR_SOCKS_FILE" "$TOR_TRANS_FILE" "$TOR_DNS_FILE"
 
 printf '▸ Identité et service onion\n'
 umask 027
@@ -191,6 +204,10 @@ fi
 cat >"$BASE/torrc" <<EOF
 DataDirectory "$TOR_DATA"
 SocksPort 127.0.0.1:$TOR_SOCKS_PORT
+TransPort 127.0.0.1:$TOR_TRANS_PORT IsolateClientAddr IsolateDestAddr IsolateDestPort
+DNSPort 127.0.0.1:$TOR_DNS_PORT
+AutomapHostsOnResolve 1
+VirtualAddrNetworkIPv4 10.192.0.0/10
 ControlPort 127.0.0.1:$TOR_CONTROL_PORT
 CookieAuthentication 1
 CookieAuthFile "$TOR_DATA/control.authcookie"
@@ -252,15 +269,34 @@ chown root:wheel /Library/LaunchDaemons/com.onionpi.node.*.plist
 
 MARK_START='# >>> OnionPi node agent'
 MARK_END='# <<< OnionPi node agent'
-if ! grep -Fq "$MARK_START" "$PF_CONF"; then
+if grep -Fq "$MARK_START" "$PF_CONF"; then
+  # Upgrade the old filter-only attachment: transparent redirection rules in
+  # the same anchor also need the explicit rdr attachment point.
+  PF_TEMP="$(mktemp /tmp/onionpi-pf.XXXXXX)"
+  /usr/bin/awk -v start="$MARK_START" -v end="$MARK_END" '
+    $0 == start {
+      print start
+      print "rdr-anchor \"com.onionpi.node\""
+      print "anchor \"com.onionpi.node\""
+      replacing = 1
+      next
+    }
+    replacing && $0 == end { print end; replacing = 0; next }
+    !replacing { print }
+  ' "$PF_CONF" >"$PF_TEMP"
+  /sbin/pfctl -nf "$PF_TEMP"
+  install -m 0644 "$PF_TEMP" "$PF_CONF"
+  rm -f -- "$PF_TEMP"
+else
   cat >>"$PF_CONF" <<EOF
 $MARK_START
+rdr-anchor "com.onionpi.node"
 anchor "com.onionpi.node"
 $MARK_END
 EOF
-  /sbin/pfctl -nf "$PF_CONF"
-  /sbin/pfctl -f "$PF_CONF"
 fi
+/sbin/pfctl -nf "$PF_CONF"
+/sbin/pfctl -f "$PF_CONF"
 /sbin/pfctl -E 2>/dev/null || true
 
 /bin/launchctl bootstrap system /Library/LaunchDaemons/com.onionpi.node.tor.plist

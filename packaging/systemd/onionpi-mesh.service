@@ -1,0 +1,19 @@
+[Unit]
+Description=OnionPi protected 802.11s mesh backhaul
+Documentation=file:/opt/onionpi/current/docs/mesh.md
+Requires=NetworkManager.service onionpi-firewall.service
+Wants=onionpi-update-recover.service
+After=NetworkManager.service onionpi-firewall.service onionpi-update-recover.service
+BindsTo=onionpi-firewall.service
+PartOf=onionpi-firewall.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/onionpi-mesh-apply start
+ExecStop=/usr/local/sbin/onionpi-mesh-apply stop
+RemainAfterExit=yes
+TimeoutStartSec=45s
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=multi-user.target

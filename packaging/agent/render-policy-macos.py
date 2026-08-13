@@ -51,23 +51,58 @@ def load(path: Path) -> dict[str, object]:
     }
 
 
-def render(policy: dict[str, object], socks_port: int) -> str:
+def render(policy: dict[str, object], socks_port: int, trans_port: int, dns_port: int) -> str:
     if policy["egress"] == "direct":
         return ""
     ports = policy["keep_open_ports"]
-    loopback_rule = (
-        "pass quick on lo0 all"
-        if not policy["isolated"]
-        else f"block return quick on lo0 proto tcp to port {socks_port} user != _onionpi-node"
+    local_networks = (
+        "{ 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, "
+        "169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 }"
     )
+    loopback_rules = [
+        (
+            f"block return quick on lo0 proto tcp to port {socks_port} user != {SERVICE_USER}"
+            if policy["isolated"]
+            else ""
+        ),
+        "pass quick on lo0 all",
+    ]
     lines = [
-        loopback_rule,
-        "block return out all",
+        f"table <onionpi_local4> const {local_networks}",
+        "table <onionpi_tor_virtual4> const { 10.192.0.0/10 }",
+        f"rdr on lo0 inet proto udp from any to any port 53 -> 127.0.0.1 port {dns_port}",
+        f"rdr on lo0 inet proto tcp from any to any port 53 -> 127.0.0.1 port {trans_port}",
+        (
+            "rdr on lo0 inet proto tcp from any to <onionpi_tor_virtual4> "
+            f"-> 127.0.0.1 port {trans_port}"
+        ),
+        f"rdr on lo0 inet proto tcp from any to ! <onionpi_local4> -> 127.0.0.1 port {trans_port}",
+        *[rule for rule in loopback_rules if rule],
+        "pass out quick inet proto udp from port 68 to 255.255.255.255 port 67 keep state",
         f"pass out quick inet proto {{ tcp, udp }} user {SERVICE_USER} keep state",
         f"pass out quick inet6 proto {{ tcp, udp }} user {SERVICE_USER} keep state",
     ]
-    if policy["isolated"]:
-        lines.append("pass quick on lo0 all")
+    if not policy["isolated"]:
+        lines += [
+            (
+                "pass out quick route-to (lo0 127.0.0.1) inet proto udp "
+                f"from any to any port 53 user != {SERVICE_USER} keep state"
+            ),
+            (
+                "pass out quick route-to (lo0 127.0.0.1) inet proto tcp "
+                f"from any to any port 53 user != {SERVICE_USER} keep state"
+            ),
+            (
+                "pass out quick route-to (lo0 127.0.0.1) inet proto tcp "
+                f"from any to <onionpi_tor_virtual4> user != {SERVICE_USER} keep state"
+            ),
+            "pass out quick inet to <onionpi_local4> keep state",
+            (
+                "pass out quick route-to (lo0 127.0.0.1) inet proto tcp "
+                f"from any to ! <onionpi_local4> user != {SERVICE_USER} keep state"
+            ),
+        ]
+    lines.append("block return out all")
     if isinstance(ports, list) and ports:
         listed = ", ".join(str(port) for port in ports)
         lines += [
@@ -78,16 +113,23 @@ def render(policy: dict[str, object], socks_port: int) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 4:
-        fail("usage: render-policy-macos.py <politique.json> <sortie.pf> <port-socks>")
+    if len(sys.argv) != 6:
+        fail(
+            "usage: render-policy-macos.py <politique.json> <sortie.pf> "
+            "<port-socks> <port-transparent> <port-dns>"
+        )
     try:
-        socks_port = int(sys.argv[3])
+        socks_port, trans_port, dns_port = map(int, sys.argv[3:6])
     except ValueError:
-        fail("port SOCKS invalide")
-    if not 1 <= socks_port <= 65535:
-        fail("port SOCKS invalide")
+        fail("port Tor invalide")
+    if any(not 1 <= port <= 65535 for port in (socks_port, trans_port, dns_port)):
+        fail("port Tor invalide")
+    if len({socks_port, trans_port, dns_port}) != 3:
+        fail("les ports Tor doivent être distincts")
     policy = load(Path(sys.argv[1]))
-    Path(sys.argv[2]).write_text(render(policy, socks_port), encoding="utf-8")
+    Path(sys.argv[2]).write_text(
+        render(policy, socks_port, trans_port, dns_port), encoding="utf-8"
+    )
     print(f"{policy['digest']} {policy['egress']}")
 
 

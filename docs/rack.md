@@ -99,13 +99,16 @@ que la clé du service onion, et c’est pourquoi le fichier vit au même endroi
 | --- | --- | --- |
 | `access` | `blocked` → blocage nftables sur la Pi | `blocked` → isolement du nœud |
 | `schedule` | plage horaire appliquée par l’ordonnanceur d’accès | même plage, poussée dans la politique |
-| `egress` | sans objet : le coupe-circuit de la Pi s’applique déjà | `tor-only` (défaut) ou `direct` |
+| `egress` | sans objet : le coupe-circuit de la Pi s’applique déjà | `tor-only` (Linux/macOS) ou `direct` |
 | `keep_open_ports` | sans objet | ports laissés joignables en entrée, 22 par défaut |
 | `exit_country` | politique Tor globale | transmis au nœud |
 
-Sur le nœud, `tor-only` signifie : sortie interdite sauf le trafic du démon
-Tor. Une application qui ignore le proxy échoue au lieu de fuir — `apt`
-compris. `direct` est une dérogation assumée, à réserver aux maintenances.
+Sous Linux, `tor-only` signifie : sortie interdite sauf le trafic du démon Tor.
+Une application qui ignore le proxy échoue au lieu de fuir — `apt` compris.
+Sous macOS, PF redirige TCP et DNS dans Tor et bloque les protocoles restants.
+Sous Windows, le mode est refusé jusqu’à la présence d’un transport TUN
+vérifié : le pare-feu seul pourrait couper Internet, pas transformer une
+connexion arbitraire en SOCKS. `direct` reste disponible sur chaque plateforme.
 
 L’isolement va plus loin que `tor-only` : les applications perdent aussi
 l’accès au port SOCKS local. La machine reste administrable et son service

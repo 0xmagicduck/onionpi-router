@@ -2,6 +2,8 @@
 
 define onionpi_lan_if = "__WIFI_INTERFACE__"
 define onionpi_lan_net = __LAN_NETWORK__
+define onionpi_mesh_if = "bat0"
+define onionpi_mesh_net = 10.43.0.0/16
 define onionpi_trans_port = 9040
 
 table inet onionpi {
@@ -72,6 +74,11 @@ table inet onionpi {
     # Client traffic only leaves this machine through Tor's own sockets.
     iifname $onionpi_lan_if counter drop
     oifname $onionpi_lan_if counter drop
+
+    # The mesh is an administration/backhaul plane, never another WAN. Even a
+    # peer with a forged default route cannot forward through this node.
+    iifname $onionpi_mesh_if counter drop
+    oifname $onionpi_mesh_if counter drop
   }
 
   chain lan_input {
@@ -86,11 +93,23 @@ __LAN_SSH_RULE__
     counter drop
   }
 
+  chain mesh_input {
+    # A mesh peer may administer this OnionPi, discover it with mDNS and test
+    # reachability. Tor's SOCKS, ControlPort and TransPort remain unreachable.
+    ct state established,related accept
+    ip saddr $onionpi_mesh_net ip protocol icmp icmp type { echo-request, destination-unreachable, time-exceeded } accept
+    ip saddr $onionpi_mesh_net udp dport 5353 accept
+    ip saddr $onionpi_mesh_net tcp dport { 80, 443 } accept
+__MESH_SSH_RULE__
+    counter drop
+  }
+
   chain protect_local {
     type filter hook input priority filter - 5; policy accept;
     # Default-deny for Wi-Fi clients: SOCKS (9050), ControlPort (9051), the
     # private app port (8080) and any other daemon on this host stay
     # unreachable. HTTPS is terminated by nginx on 443.
     iifname $onionpi_lan_if jump lan_input
+    iifname $onionpi_mesh_if jump mesh_input
   }
 }

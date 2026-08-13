@@ -572,6 +572,92 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MeshPeer": {
+        "properties": {
+          "last_seen": {
+            "title": "Last Seen",
+            "type": "string"
+          },
+          "mac": {
+            "title": "Mac",
+            "type": "string"
+          },
+          "next_hop": {
+            "title": "Next Hop",
+            "type": "string"
+          },
+          "throughput_mbps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Throughput Mbps"
+          }
+        },
+        "required": [
+          "mac",
+          "last_seen",
+          "throughput_mbps",
+          "next_hop"
+        ],
+        "title": "MeshPeer",
+        "type": "object"
+      },
+      "MeshStatus": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "interface": {
+            "title": "Interface",
+            "type": "string"
+          },
+          "mesh_id": {
+            "title": "Mesh Id",
+            "type": "string"
+          },
+          "peer_count": {
+            "title": "Peer Count",
+            "type": "integer"
+          },
+          "peers": {
+            "items": {
+              "$ref": "#/components/schemas/MeshPeer"
+            },
+            "title": "Peers",
+            "type": "array"
+          },
+          "radio_interface": {
+            "title": "Radio Interface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "active",
+          "mesh_id",
+          "radio_interface",
+          "interface",
+          "address",
+          "peers",
+          "peer_count"
+        ],
+        "title": "MeshStatus",
+        "type": "object"
+      },
       "NetworkStatus": {
         "properties": {
           "channel": {
@@ -581,6 +667,9 @@
           "gateway_ip": {
             "title": "Gateway Ip",
             "type": "string"
+          },
+          "mesh": {
+            "$ref": "#/components/schemas/MeshStatus"
           },
           "ssid": {
             "title": "Ssid",
@@ -600,7 +689,8 @@
           "wifi_interface",
           "upstream_interface",
           "gateway_ip",
-          "channel"
+          "channel",
+          "mesh"
         ],
         "title": "NetworkStatus",
         "type": "object"
