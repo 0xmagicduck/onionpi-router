@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 TEST_ROOT = Path(tempfile.mkdtemp(prefix="onionpi-tests-"))
 os.environ.update(
@@ -113,6 +114,59 @@ def test_password_change_requires_the_current_one_and_closes_sessions() -> None:
         ).status_code == 200
 
 
+def test_a_csrf_header_full_of_raw_bytes_is_refused_not_crashed() -> None:
+    """Starlette hands headers over as latin-1, so every byte is reachable.
+
+    `secrets.compare_digest` refuses non-ASCII str arguments: one accented
+    character used to answer 500 with a traceback in the journal, and a 500
+    escapes the middleware that adds the security headers.
+    """
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        login(client)
+        response = client.post(
+            "/api/v1/tor/new-identity",
+            headers=[(b"x-csrf-token", b"\xe9\xff")],
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Jeton CSRF invalide"
+        assert response.headers["x-frame-options"] == "DENY"
+
+
+def test_recovery_resets_the_existing_account_and_closes_every_session() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        csrf = login(client)
+        code = client.post(
+            "/api/v1/onboarding/recovery-code", headers={"X-CSRF-Token": csrf}
+        ).json()["code"]
+
+        # A second browser, standing in for whoever the recovery is meant to
+        # lock out: it holds a session nobody is about to hand back.
+        with TestClient(app) as intruder:
+            login(intruder)
+            assert intruder.get("/api/v1/auth/session").status_code == 200
+
+            recovered = client.post(
+                "/api/v1/auth/recover",
+                json={"recovery_code": code, "new_password": "phrase-de-secours-solide"},
+            )
+            assert recovered.status_code == 200
+            assert intruder.get("/api/v1/auth/session").status_code == 401
+
+        # One administrator, not a second one beside the compromised account.
+        assert database.stats()["users"] == 1
+        assert database.administrator()["display_name"] == "Camille"
+        assert client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": PASSWORD},
+        ).status_code == 401
+        assert client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "phrase-de-secours-solide"},
+        ).status_code == 200
+
+
 def test_health_is_public_and_unknown_api_routes_return_json_404() -> None:
     with TestClient(app) as client:
         health = client.get("/api/v1/health")
@@ -184,6 +238,58 @@ def test_upload_refuses_when_storage_reserve_is_not_met() -> None:
         finally:
             object.__setattr__(original, "storage_reserve_bytes", 512 * 1024**2)
         assert response.status_code == 507
+
+
+def test_upload_reserve_is_enforced_before_the_body_is_spooled() -> None:
+    """The parser writes the whole body to a temporary file before the handler
+    sees it, so a reserve consulted afterwards protects nothing: the card is
+    already full by the time the 507 is answered."""
+    from onionpi import main as main_module
+    from starlette import formparsers
+
+    parsed: list[bool] = []
+    original_parse = formparsers.MultiPartParser.parse
+
+    async def spy(self: formparsers.MultiPartParser) -> Any:
+        parsed.append(True)
+        return await original_parse(self)
+
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        csrf = login(client)
+        settings = main_module.settings
+        formparsers.MultiPartParser.parse = spy  # type: ignore[method-assign]
+        object.__setattr__(settings, "max_upload_bytes", 1024**2)
+        try:
+            response = client.post(
+                "/api/v1/files/upload",
+                data={"path": ""},
+                files={"file": ("enorme.bin", b"x" * (1024**2 + 64 * 1024), "text/plain")},
+                headers={"X-CSRF-Token": csrf},
+            )
+        finally:
+            formparsers.MultiPartParser.parse = original_parse  # type: ignore[method-assign]
+            object.__setattr__(settings, "max_upload_bytes", 1024**3)
+
+    assert response.status_code == 413
+    assert not parsed, "le corps ne doit pas être mis en cache avant le refus"
+
+
+def test_upload_form_fields_cannot_be_accumulated_in_memory() -> None:
+    """`max_part_size` only governs the text fields of the form: a file part is
+    streamed to a spooled file and never measured against it. Passing the
+    upload maximum therefore bounded `path` — 500 characters once it reaches
+    the handler — by a gigabyte of bytearray first."""
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        csrf = login(client)
+        response = client.post(
+            "/api/v1/files/upload",
+            data={"path": "x" * (128 * 1024)},
+            files={"file": ("petit.txt", b"contenu", "text/plain")},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert response.status_code == 400
 
 
 def test_foreign_origin_is_rejected_on_mutations() -> None:

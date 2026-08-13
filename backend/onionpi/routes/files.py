@@ -21,6 +21,27 @@ class FolderRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
 
 
+#: Boundaries, part headers and the `path` field of the import form. Generous:
+#: it only decides when a declared Content-Length is refused without reading it.
+MULTIPART_ENVELOPE_BYTES = 8 * 1024
+
+#: Ceiling for the *text* fields of the import form, which is all `max_part_size`
+#: governs: a file part is streamed to a spooled temporary file and never
+#: measured against it. Passing the upload maximum here let `path` — one string
+#: bounded to 500 characters once it reaches the handler — be accumulated in a
+#: bytearray up to a gigabyte first, which is the whole memory of the appliance.
+MAX_FORM_FIELD_BYTES = 64 * 1024
+
+
+def upload_body_budget(free_bytes: int, reserve_bytes: int, maximum: int) -> int:
+    """Bytes of an import the appliance may hold at once, given its free space.
+
+    Halved because the spooled copy and the finished file exist together, on
+    the same filesystem, for as long as the last chunk takes to land.
+    """
+    return min(maximum, max(0, (free_bytes - reserve_bytes) // 2))
+
+
 def create_router(context: RouteContext) -> APIRouter:
     router = APIRouter()
     settings = context.settings
@@ -102,15 +123,44 @@ def create_router(context: RouteContext) -> APIRouter:
             "storage": storage,
         }
 
+    def upload_budget(request: Request) -> int:
+        """Bytes this import may occupy, refused before anything is buffered.
+
+        The multipart parser spools the whole body to temporary storage before
+        the handler ever sees it, so a reserve consulted afterwards protects
+        nothing: the card is already full by the time the 507 is answered. The
+        declared length is judged here, and BodyLimitMiddleware holds the same
+        budget against a client that declares nothing at all.
+        """
+        limit = upload_body_budget(
+            shutil.disk_usage(settings.shared_dir).free,
+            settings.storage_reserve_bytes,
+            settings.max_upload_bytes,
+        )
+        if limit <= 0:
+            raise HTTPException(status_code=507, detail="Espace disque insuffisant")
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > limit + MULTIPART_ENVELOPE_BYTES:
+            raise HTTPException(
+                status_code=413 if limit == settings.max_upload_bytes else 507,
+                detail=(
+                    "Fichier trop volumineux"
+                    if limit == settings.max_upload_bytes
+                    else "Espace disque insuffisant"
+                ),
+            )
+        return limit
+
     @router.post("/api/v1/files/upload", status_code=201)
     async def upload_file(
         request: Request,
         session: dict[str, Any] = Depends(csrf_session),
     ) -> dict[str, Any]:
+        limit = upload_budget(request)
         form = await request.form(
             max_files=1,
             max_fields=2,
-            max_part_size=settings.max_upload_bytes,
+            max_part_size=MAX_FORM_FIELD_BYTES,
         )
         file = form.get("file")
         path_value = form.get("path", "")
@@ -127,10 +177,6 @@ def create_router(context: RouteContext) -> APIRouter:
             raise HTTPException(
                 status_code=409, detail="Un fichier porte déjà ce nom"
             )
-        budget = shutil.disk_usage(settings.shared_dir).free - settings.storage_reserve_bytes
-        if budget <= 0:
-            raise HTTPException(status_code=507, detail="Espace disque insuffisant")
-        limit = min(settings.max_upload_bytes, budget)
         temporary = directory / f".upload-{secrets.token_hex(10)}"
         total = 0
         try:

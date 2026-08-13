@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -16,6 +17,7 @@ from .routes.chat import ChatManager
 from .routes.chat import create_router as create_chat_router
 from .routes.context import COOKIE_NAME as COOKIE_NAME
 from .routes.context import build_route_context
+from .routes.files import MULTIPART_ENVELOPE_BYTES, upload_body_budget
 from .routes.files import create_router as create_files_router
 from .routes.network import create_router as create_network_router
 from .routes.protection import create_router as create_protection_router
@@ -104,6 +106,24 @@ async def lifespan(_: FastAPI):
     metrics.stop()
 
 
+def upload_body_limit() -> int:
+    """Whole-body ceiling for an import, tracking the free space of the moment.
+
+    A part of a multipart body is streamed to a spooled temporary file with no
+    ceiling of its own, so this middleware is the only place a body that
+    declares no length can be stopped. Reading it here keeps the storage
+    reserve meaningful against a client that simply never stops sending.
+    """
+    try:
+        free = shutil.disk_usage(settings.shared_dir).free
+    except OSError:
+        free = 0
+    budget = upload_body_budget(
+        free, settings.storage_reserve_bytes, settings.max_upload_bytes
+    )
+    return budget + MULTIPART_ENVELOPE_BYTES
+
+
 app = FastAPI(
     title="OnionPi API",
     version=settings.version,
@@ -115,7 +135,7 @@ app = FastAPI(
 app.add_middleware(
     BodyLimitMiddleware,
     request_limit=settings.max_request_bytes,
-    upload_limit=settings.max_upload_bytes + 1024**2,
+    upload_limit=upload_body_limit,
 )
 
 

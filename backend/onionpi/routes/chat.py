@@ -35,6 +35,9 @@ class ChatManager:
     async def disconnect_user(self, user_id: int) -> None:
         await self._disconnect_matching(lambda metadata: metadata[1] == user_id)
 
+    async def disconnect_all(self) -> None:
+        await self._disconnect_matching(lambda _metadata: True)
+
     async def _disconnect_matching(
         self, predicate: Callable[[tuple[str, int]], bool]
     ) -> None:

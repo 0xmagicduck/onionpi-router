@@ -187,6 +187,21 @@ class Database:
             connection.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
             return user_id
 
+    def administrator(self) -> dict[str, Any] | None:
+        """The account that administers this appliance, or None on a blank one.
+
+        install.sh creates exactly one, and nothing in the interface adds a
+        second. Recovery still asks rather than assuming the name "admin": an
+        appliance whose account was created by hand under another name would
+        otherwise gain a *second* administrator, leaving the first password —
+        and whoever knew it — valid after a recovery meant to revoke it.
+        """
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM users ORDER BY id LIMIT 1"
+            ).fetchone()
+            return dict(row) if row else None
+
     def user_by_name(self, username: str) -> dict[str, Any] | None:
         with self.connect() as connection:
             row = connection.execute(
@@ -228,6 +243,11 @@ class Database:
     def delete_session(self, token_hash: str) -> None:
         with self.connect() as connection:
             connection.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
+
+    def delete_all_sessions(self) -> None:
+        """Closes every browser on the appliance, whichever account it holds."""
+        with self.connect() as connection:
+            connection.execute("DELETE FROM sessions")
 
     def add_message(self, user_id: int | None, author: str, body: str) -> dict[str, Any]:
         now = int(time.time())

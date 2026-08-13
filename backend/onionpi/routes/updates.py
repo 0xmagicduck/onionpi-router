@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from ..access import AccessError
 from ..agent import ACTIONS, AgentError
+from ..auth import PasswordHashingBusy
 from ..backup import (
     BackupError,
     configuration_diff,
@@ -33,6 +34,7 @@ from .network import (
 
 MAX_IMPORTED_DEVICES = 512
 UPDATE_CHECK_TIMEOUT = 110.0
+BACKUP_BUSY_DETAIL = "Trop de sauvegardes simultanées. Réessayez dans un instant."
 
 
 class SystemActionRequest(BaseModel):
@@ -333,6 +335,8 @@ def create_router(context: RouteContext) -> APIRouter:
             )
         except BackupError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        except PasswordHashingBusy as error:
+            raise HTTPException(status_code=429, detail=BACKUP_BUSY_DETAIL) from error
         database.add_activity(
             "secure", f"Sauvegarde chiffrée créée par {session['display_name']}"
         )
@@ -354,6 +358,8 @@ def create_router(context: RouteContext) -> APIRouter:
             )
         except BackupError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        except PasswordHashingBusy as error:
+            raise HTTPException(status_code=429, detail=BACKUP_BUSY_DETAIL) from error
         current = await asyncio.to_thread(configuration_document)
         return {
             "valid": True,
@@ -372,6 +378,8 @@ def create_router(context: RouteContext) -> APIRouter:
             )
         except BackupError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        except PasswordHashingBusy as error:
+            raise HTTPException(status_code=429, detail=BACKUP_BUSY_DETAIL) from error
         result = await apply_configuration(restored, session)
         database.add_activity(
             "secure", f"Sauvegarde chiffrée restaurée par {session['display_name']}"
