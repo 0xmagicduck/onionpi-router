@@ -61,6 +61,7 @@ TOR_DATA="$BASE/tor"
 HS_DIR="$BASE/hidden-service"
 LOG_DIR="$BASE/log"
 CONFIG="$BASE/agent.env"
+TOR_SOCKS_FILE="$BASE/tor-socks-port"
 PF_CONF=/etc/pf.conf
 SERVICE_USER=_onionpi-node
 SERVICE_GROUP=staff
@@ -68,6 +69,49 @@ SERVICE_GROUP=staff
 CONSOLE_USER="$(stat -f '%Su' /dev/console)"
 [[ -n "$CONSOLE_USER" && "$CONSOLE_USER" != root && "$CONSOLE_USER" != loginwindow ]] \
   || { printf 'Ouvrez une session macOS avant l’installation.\n' >&2; exit 1; }
+
+# Stop a previous installation before probing ports or replacing its files.
+# launchctl bootout is asynchronous, hence the bounded wait before continuing.
+for LABEL in agent apply tor; do
+  /bin/launchctl bootout "system/com.onionpi.node.$LABEL" 2>/dev/null || true
+done
+for _ in $(seq 1 50); do
+  RUNNING=0
+  for LABEL in agent apply tor; do
+    /bin/launchctl print "system/com.onionpi.node.$LABEL" >/dev/null 2>&1 && RUNNING=1
+  done
+  (( RUNNING == 0 )) && break
+  sleep 0.2
+done
+(( RUNNING == 0 )) || { printf 'Les anciens services OnionPi ne se sont pas arrêtés.\n' >&2; exit 1; }
+
+port_is_free() {
+  ! /usr/sbin/lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN
+}
+
+find_free_port() {
+  local START="$1" EXCLUDED="${2:-}" CANDIDATE
+  (( START >= 1024 && START <= 64535 )) || START=19050
+  for OFFSET in $(seq 0 999); do
+    CANDIDATE=$((START + OFFSET))
+    if [[ "$CANDIDATE" != "$PORT" && "$CANDIDATE" != "$EXCLUDED" ]] \
+      && port_is_free "$CANDIDATE"; then
+      printf '%s' "$CANDIDATE"
+      return 0
+    fi
+  done
+  return 1
+}
+
+port_is_free "$PORT" || {
+  printf 'Le port agent %s est déjà utilisé par un autre programme.\n' "$PORT" >&2
+  /usr/sbin/lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >&2 || true
+  exit 1
+}
+TOR_SOCKS_PORT="$(find_free_port "$((PORT + 1))")" \
+  || { printf 'Aucun port SOCKS libre trouvé.\n' >&2; exit 1; }
+TOR_CONTROL_PORT="$(find_free_port "$((TOR_SOCKS_PORT + 1))" "$TOR_SOCKS_PORT")" \
+  || { printf 'Aucun port de contrôle Tor libre trouvé.\n' >&2; exit 1; }
 
 printf '▸ Homebrew, Tor et Python\n'
 BREW="$(sudo -u "$CONSOLE_USER" -H /bin/zsh -lc 'command -v brew' 2>/dev/null || true)"
@@ -115,6 +159,9 @@ install -m 0755 "$SOURCE_DIR/onionpi-node-agent.py" "$LIB/onionpi-node-agent.py"
 install -m 0755 "$SOURCE_DIR/render-policy-macos.py" "$LIB/render-policy-macos.py"
 install -m 0755 "$SOURCE_DIR/onionpi-node-apply-macos.sh" "$LIB/onionpi-node-apply-macos.sh"
 ln -sf "$PYTHON_BINARY" "$BASE/python"
+printf '%s\n' "$TOR_SOCKS_PORT" >"$TOR_SOCKS_FILE"
+chown root:"$SERVICE_GROUP" "$TOR_SOCKS_FILE"
+chmod 0644 "$TOR_SOCKS_FILE"
 
 printf '▸ Identité et service onion\n'
 umask 027
@@ -143,14 +190,14 @@ fi
 
 cat >"$BASE/torrc" <<EOF
 DataDirectory "$TOR_DATA"
-SocksPort 127.0.0.1:9050
-ControlPort 127.0.0.1:9051
+SocksPort 127.0.0.1:$TOR_SOCKS_PORT
+ControlPort 127.0.0.1:$TOR_CONTROL_PORT
 CookieAuthentication 1
 CookieAuthFile "$TOR_DATA/control.authcookie"
 HiddenServiceDir "$HS_DIR"
 HiddenServiceVersion 3
 HiddenServicePort $PORT 127.0.0.1:$PORT
-Log notice file "$LOG_DIR/tor.log"
+Log notice stdout
 EOF
 chown "$SERVICE_USER":"$SERVICE_GROUP" "$BASE/torrc"
 chmod 0600 "$BASE/torrc"
@@ -181,6 +228,7 @@ cat >/Library/LaunchDaemons/com.onionpi.node.agent.plist <<EOF
 <key>ONIONPI_NODE_STATE</key><string>$STATE</string>
 <key>ONIONPI_NODE_RESULT</key><string>$RESULT</string>
 <key>ONIONPI_NODE_TOR_COOKIE</key><string>$TOR_DATA/control.authcookie</string>
+<key>ONIONPI_NODE_TOR_CONTROL_PORT</key><string>$TOR_CONTROL_PORT</string>
 <key>ONIONPI_NODE_LOG_DIR</key><string>$LOG_DIR</string>
 <key>ONIONPI_NODE_PORT</key><string>$PORT</string>
 </dict>
@@ -204,32 +252,36 @@ chown root:wheel /Library/LaunchDaemons/com.onionpi.node.*.plist
 
 MARK_START='# >>> OnionPi node agent'
 MARK_END='# <<< OnionPi node agent'
-if grep -Fq "$MARK_START" "$PF_CONF"; then
-  sed -i '' "/^${MARK_START}$/,/^${MARK_END}$/d" "$PF_CONF"
-fi
-cat >>"$PF_CONF" <<EOF
+if ! grep -Fq "$MARK_START" "$PF_CONF"; then
+  cat >>"$PF_CONF" <<EOF
 $MARK_START
 anchor "com.onionpi.node"
 $MARK_END
 EOF
-/sbin/pfctl -f "$PF_CONF"
+  /sbin/pfctl -nf "$PF_CONF"
+  /sbin/pfctl -f "$PF_CONF"
+fi
 /sbin/pfctl -E 2>/dev/null || true
 
-for LABEL in tor apply agent; do
-  /bin/launchctl bootout "system/com.onionpi.node.$LABEL" 2>/dev/null || true
-  /bin/launchctl bootstrap system "/Library/LaunchDaemons/com.onionpi.node.$LABEL.plist"
-done
+/bin/launchctl bootstrap system /Library/LaunchDaemons/com.onionpi.node.tor.plist
 
 printf '▸ Publication\n'
 ADDRESS=""
-for _ in $(seq 1 45); do
+for _ in $(seq 1 60); do
   if [[ -s "$HS_DIR/hostname" ]]; then
     ADDRESS="$(tr -d '[:space:]' <"$HS_DIR/hostname")"
     break
   fi
   sleep 1
 done
-[[ -n "$ADDRESS" ]] || { printf 'Tor n’a pas encore publié l’adresse; consultez %s.\n' "$LOG_DIR/tor.log" >&2; exit 1; }
+if [[ -z "$ADDRESS" ]]; then
+  printf 'Tor n’a pas publié l’adresse. Derniers messages :\n' >&2
+  tail -30 "$LOG_DIR/tor.stdout.log" "$LOG_DIR/tor.stderr.log" 2>/dev/null >&2 || true
+  exit 1
+fi
+
+/bin/launchctl bootstrap system /Library/LaunchDaemons/com.onionpi.node.apply.plist
+/bin/launchctl bootstrap system /Library/LaunchDaemons/com.onionpi.node.agent.plist
 
 cat <<EOF
 

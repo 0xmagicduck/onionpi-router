@@ -45,7 +45,8 @@ fiche du nœud : la baie ne peut pas la deviner, et c’est voulu.
 
 - **Linux** applique la politique complète avec nftables et systemd.
 - **macOS** installe Tor et Python avec Homebrew, lance les services avec
-  launchd et applique le coupe-circuit avec une ancre PF dédiée.
+  launchd et applique le coupe-circuit avec une ancre PF dédiée. Les ports
+  SOCKS et de contrôle sont choisis sans gêner un Tor déjà lancé.
 - **Windows** installe Python avec winget et le Tor Expert Bundle officiel. Le
   coupe-circuit suspend les autorisations de sortie existantes, bloque les
   sorties directes et autorise Tor. Ces autorisations sont restaurées en mode
@@ -81,6 +82,16 @@ La politique par défaut, appliquée dès la première synchronisation :
 Conséquence à connaître : en mode `tor-only`, `apt` et les mises à jour
 n’aboutissent plus sans passer par Tor. Réglez la sortie sur **directe** le
 temps d’une maintenance, ou configurez `apt` sur le proxy SOCKS local.
+
+### Diagnostic macOS
+
+Les chemins contiennent des espaces et doivent rester entre guillemets :
+
+```bash
+tail -n 80 "/Library/Application Support/OnionPi Node/log/tor.stdout.log"
+tail -n 80 "/Library/Application Support/OnionPi Node/log/tor.stderr.log"
+launchctl print system/com.onionpi.node.tor
+```
 
 ## Désinstallation
 

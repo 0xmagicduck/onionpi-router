@@ -12,6 +12,7 @@ APPLIED="$RESULT_DIR/policy.applied"
 RULES="$RESULT_DIR/policy.pf"
 RENDER="$BASE/lib/render-policy-macos.py"
 PYTHON="$BASE/python"
+SOCKS_PORT_FILE="$BASE/tor-socks-port"
 LOG="$BASE/log/apply.log"
 
 install -d -m 0755 "$RESULT_DIR" "$(dirname "$LOG")"
@@ -32,7 +33,10 @@ case "$ACTION" in policy|restart-tor|reboot) ;; *) answer "$NONCE" error "Action
 case "$ACTION" in
   policy)
     [[ -s "$POLICY" ]] || { answer "$NONCE" error "Aucune politique à appliquer"; exit 0; }
-    if ! RENDERED="$("$PYTHON" "$RENDER" "$POLICY" "$RULES")"; then
+    SOCKS_PORT="$(tr -d '[:space:]' <"$SOCKS_PORT_FILE" 2>/dev/null || true)"
+    [[ "$SOCKS_PORT" =~ ^[0-9]{1,5}$ ]] && (( SOCKS_PORT >= 1 && SOCKS_PORT <= 65535 )) \
+      || { answer "$NONCE" error "Port SOCKS invalide"; exit 0; }
+    if ! RENDERED="$("$PYTHON" "$RENDER" "$POLICY" "$RULES" "$SOCKS_PORT")"; then
       answer "$NONCE" error "Politique refusée"
       exit 0
     fi
