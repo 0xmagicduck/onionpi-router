@@ -878,8 +878,11 @@ printf 'options cfg80211 ieee80211_regdom=%s\n' "$COUNTRY" >/etc/modprobe.d/onio
 chmod 0644 /etc/modprobe.d/onionpi-regdom.conf
 iw reg set "$COUNTRY"
 
-# An upgrade leaves the access point profile alone: it holds the PSK, and
-# rewriting it would drop every connected client for no gain.
+# An upgrade preserves the PSK but still reapplies non-secret security fields.
+# Older profiles did not constrain the protocol to RSN, so NetworkManager could
+# advertise WPA1 compatibility and make current Apple clients report weak
+# security. The AP is restarted later in either path, making this change
+# effective without adding another interruption.
 if (( ! UPGRADE )); then
   if nmcli -t -f NAME connection show | grep -Fqx 'onionpi-ap'; then
     nmcli connection modify onionpi-ap \
@@ -894,11 +897,16 @@ if (( ! UPGRADE )); then
     802-11-wireless.powersave 2 802-11-wireless.hidden no 802-11-wireless.ap-isolation yes \
     802-11-wireless-security.key-mgmt wpa-psk \
     802-11-wireless-security.psk "${WIFI_PSK:-$WIFI_PASSWORD}" \
-    802-11-wireless-security.pairwise ccmp \
-    802-11-wireless-security.group ccmp \
     ipv4.method manual ipv4.addresses "$GATEWAY_CIDR" ipv4.never-default yes \
     ipv4.gateway '' ipv4.dns '' ipv6.method disabled
 fi
+# RSN is the IEEE name for WPA2. Restricting both cipher lists to CCMP excludes
+# the legacy TKIP mode that macOS also classifies as weak security.
+nmcli connection modify onionpi-ap \
+  802-11-wireless-security.key-mgmt wpa-psk \
+  802-11-wireless-security.proto rsn \
+  802-11-wireless-security.pairwise ccmp \
+  802-11-wireless-security.group ccmp
 # Older releases let NetworkManager autoconnect the AP independently. The
 # dedicated systemd unit below is now the only activation path, so firewall
 # failure cannot leave an unprotected AP online.

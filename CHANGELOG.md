@@ -7,6 +7,12 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ### Sécurité
 
+- **Le point d’accès est verrouillé sur WPA2/RSN avec AES-CCMP.** Les anciens
+  profils ne limitaient pas explicitement la version du protocole ;
+  NetworkManager pouvait donc annoncer une compatibilité WPA1 que macOS
+  signalait comme « sécurité faible ». Une mise à niveau durcit aussi le profil
+  existant sans remplacer son PSK, et le diagnostic vérifie désormais le
+  protocole ainsi que les chiffrements pairwise et group.
 - **Les réponses des nœuds sont authentifiées (protocole d’agent v2).** Les
   appels étaient signés, les réponses ne l’étaient pas. Un circuit Tor
   authentifie le *service onion*, pas l’agent : tout ce qui parvenait à

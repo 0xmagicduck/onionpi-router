@@ -19,7 +19,8 @@ raccourcis.
 
 ## Ce qui fonctionne
 
-- point d’accès WPA2 géré par NetworkManager, en 2,4 ou 5 GHz ;
+- point d’accès WPA2 personnel (RSN/AES-CCMP, sans WPA1 ni TKIP) géré par
+  NetworkManager, en 2,4 ou 5 GHz ;
 - vrai backhaul maillé optionnel entre plusieurs OnionPi : 802.11s chiffré par
   WPA3-SAE, routage multi-saut batman-adv, radio dédiée et transit direct bloqué ;
 - redirection transparente du TCP vers le `TransPort` de Tor ;
