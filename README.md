@@ -349,7 +349,14 @@ un export de configuration ne contient aucune identification de nœud.
 Les verbes qu’un nœud accepte sont énumérés et revalidés des deux côtés : état,
 nouvelle identité Tor, redémarrage de Tor, lecture d’un journal d’une unité
 listée, redémarrage. Il n’y a pas de shell distant, et aucun verbe ne prend de
-commande en argument. Détails dans [`docs/rack.md`](docs/rack.md).
+commande en argument.
+
+Une baie de dix machines se tient à la main : une feuille de règles peut être
+nommée en profil et rejouée sur une sélection entière, les clients du Wi-Fi
+qu’aucune fiche ne décrit sont proposés à l’ajout avec le nom de leur bail, et
+chaque fiche porte sa disponibilité sur 24 h — la part des sondages qui ont
+répondu — ainsi que les points d’attention que ses propres lectures justifient.
+Détails dans [`docs/rack.md`](docs/rack.md).
 
 ## Audit de sécurité
 

@@ -64,6 +64,21 @@ MAX_NODES = 64
 MAX_UNITS = 42
 DEFAULT_UNITS = 12
 MAX_KEEP_OPEN_PORTS = 8
+MAX_PROFILES = 12
+
+#: The Wi-Fi reading behind a local node's line — its address, whether it
+#: answers, what it moved. Reading it means asking the kernel for its neighbour
+#: table, so the rack keeps the answer for a few seconds rather than paying
+#: that price on every poll of every page.
+WIFI_CACHE_SECONDS = 10
+#: Slots offered by the discovery panel at once. A household has a handful of
+#: machines; a list longer than this is noise, not inventory.
+MAX_DISCOVERED = 16
+
+#: Window the availability figure is read over, and the level above which a
+#: reading is called out on the node's sheet.
+HISTORY_WINDOW_SECONDS = 24 * 3600
+SATURATION_PERCENT = 90.0
 
 #: How the monitor spends its time: a tick every minute, a handful of nodes per
 #: tick, oldest reading first. A full rack is swept in about ten minutes, and
@@ -71,6 +86,11 @@ MAX_KEEP_OPEN_PORTS = 8
 MONITOR_TICK_SECONDS = 60
 MONITOR_BATCH = 6
 MONITOR_WORKERS = 3
+
+#: What a bulk call may ask for. Each one is the operation a single node
+#: already offers, run over a list: nothing here reaches further than the
+#: buttons on one node's sheet, it only saves the operator the repetition.
+BULK_OPERATIONS = ("isolate", "allow", "refresh", "profile", "unrack")
 
 NAME_PATTERN = re.compile(r"^[\w .'’()\-]{1,48}$", re.UNICODE)
 ROLE_PATTERN = re.compile(r"^[\w .'’()\-]{0,32}$", re.UNICODE)
@@ -108,6 +128,26 @@ def clean_name(value: str, field: str = "Nom") -> str:
     if not NAME_PATTERN.fullmatch(cleaned):
         raise RackError(f"{field} invalide: lettres, chiffres, espace, - _ ( ) et '.")
     return cleaned
+
+
+def _number(value: Any) -> float:
+    """A reading from the other side of a Tor circuit, or zero."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def relative_delay(seconds: int) -> str:
+    """A delay as a sentence fragment: « 12 min », « 3 h », « 2 j »."""
+    seconds = max(int(seconds), 0)
+    if seconds < 120:
+        return f"{seconds} s"
+    if seconds < 7200:
+        return f"{seconds // 60} min"
+    if seconds < 172_800:
+        return f"{seconds // 3600} h"
+    return f"{seconds // 86_400} j"
 
 
 def clean_onion(value: str) -> str:
@@ -187,6 +227,7 @@ class RackManager:
         controller: TorController,
         demo_mode: bool = False,
         on_event: Callable[[str, str], None] | None = None,
+        wifi_view: Callable[[], list[dict[str, Any]]] | None = None,
     ) -> None:
         self.database = database
         self.key_path = key_path
@@ -196,6 +237,10 @@ class RackManager:
         self.controller = controller
         self.demo_mode = demo_mode
         self.on_event = on_event
+        # Composed rather than imported: the rack reads the Wi-Fi, it does not
+        # own it, and the same page must work when nothing supplies one.
+        self.wifi_view = wifi_view or (lambda: [])
+        self._wifi_cache: tuple[float, dict[str, dict[str, Any]]] = (0.0, {})
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -268,12 +313,30 @@ class RackManager:
             return fallback
         return value if isinstance(value, type(fallback)) else fallback
 
+    def _wifi_index(self) -> dict[str, dict[str, Any]]:
+        """The Wi-Fi clients, by MAC, refreshed at most every few seconds."""
+        stamp, cached = self._wifi_cache
+        if time.monotonic() - stamp < WIFI_CACHE_SECONDS:
+            return cached
+        index: dict[str, dict[str, Any]] = {}
+        try:
+            for device in self.wifi_view():
+                mac = str(device.get("mac", "")).lower()
+                if mac:
+                    index[mac] = device
+        except Exception:  # a missing neighbour table must not empty the page
+            logger.exception("Lecture des clients Wi-Fi impossible")
+            return cached
+        self._wifi_cache = (time.monotonic(), index)
+        return index
+
     def _node_view(
         self,
         row: dict[str, Any],
         now: int,
         moment: time.struct_time,
         blocked_macs: set[str] | None = None,
+        wifi: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         try:
             rules = clean_rules(self._json(row.get("rules"), {}))
@@ -308,7 +371,77 @@ class RackManager:
         if blocked_macs is None:
             blocked_macs = self.guard.blocked_macs()
         view["status"] = self._status_of(view, blocked, now, blocked_macs)
+        view["link"] = self._link_of(view, wifi if wifi is not None else self._wifi_index())
+        view["alerts"] = self._alerts_of(view, now)
         return view
+
+    @staticmethod
+    def _link_of(
+        view: dict[str, Any], wifi: dict[str, dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """What the Wi-Fi says about a local node: address, presence, volume.
+
+        A remote node has no line here on purpose — this appliance does not
+        route it, and inventing an address for it would be a claim the rack
+        cannot back up.
+        """
+        if view["kind"] != "local":
+            return None
+        device = wifi.get(view["mac"])
+        if device is None:
+            return None
+        return {
+            "ip": str(device.get("ip", "")),
+            "online": bool(device.get("online", False)),
+            "download": int(device.get("download", 0) or 0),
+            "upload": int(device.get("upload", 0) or 0),
+        }
+
+    def _alerts_of(self, view: dict[str, Any], now: int) -> list[dict[str, str]]:
+        """Everything about this node an operator would want told, once.
+
+        The sheet already carries the facts; this reads them the way a person
+        would, so a rack of sixty machines can be scanned instead of audited.
+        """
+        alerts: list[dict[str, str]] = []
+
+        def add(level: str, message: str) -> None:
+            alerts.append({"level": level, "message": message})
+
+        if view["status"] == "offline":
+            since = relative_delay(now - view["last_seen"])
+            add("danger", f"Injoignable depuis {since}.")
+        if view["last_error"]:
+            add("danger", view["last_error"])
+        if view["kind"] == "remote":
+            if not view["onion"]:
+                add("info", "Adresse onion attendue : installez l’agent sur la machine.")
+            elif not view["client_auth"]:
+                add(
+                    "warning",
+                    "Autorisation client onion non enregistrée : l’adresse reste "
+                    "résoluble par quiconque la connaît.",
+                )
+            if view["state"].get("policy") and (
+                str(view["state"]["policy"].get("digest", "")) != view["policy_digest"]
+            ):
+                add("warning", "Le nœud n’applique pas encore les règles enregistrées.")
+            tor = view["state"].get("tor") or {}
+            if view["state"] and not tor.get("connected", True):
+                add("warning", f"Tor du nœud à {int(tor.get('bootstrap', 0))} % d’amorçage.")
+            for service in view["state"].get("services") or []:
+                if isinstance(service, dict) and not service.get("active", True):
+                    add("warning", f"Service « {service.get('label', '?')} » arrêté.")
+            for field, label in (
+                ("memory_percent", "Mémoire"),
+                ("storage_percent", "Disque"),
+            ):
+                value = float(view["state"].get(field) or 0)
+                if value >= SATURATION_PERCENT:
+                    add("warning", f"{label} du nœud à {value:.0f} %.")
+        if view["rules"]["egress"] == "direct":
+            add("warning", "Sortie directe : ce nœud ne passe pas par Tor.")
+        return alerts
 
     def _desired_block(
         self, rules: dict[str, Any], now: int, moment: time.struct_time
@@ -338,24 +471,46 @@ class RackManager:
         now = int(time.time())
         moment = time.localtime(now)
         blocked_macs = self.guard.blocked_macs()
+        wifi = self._wifi_index()
         nodes = [
-            self._node_view(row, now, moment, blocked_macs)
+            self._node_view(row, now, moment, blocked_macs, wifi)
             for row in self.database.rack_nodes()
         ]
         racks = []
         for rack in self.database.racks():
-            occupied = sum(
-                1 for node in nodes if node["rack_id"] == rack["id"] and node["position"]
+            members = [node for node in nodes if node["rack_id"] == rack["id"]]
+            racks.append(
+                {
+                    **rack,
+                    "occupied": sum(1 for node in members if node["position"]),
+                    "alerts": sum(len(node["alerts"]) for node in members),
+                }
             )
-            racks.append({**rack, "occupied": occupied})
         return {
             "racks": racks,
             "nodes": nodes,
+            "profiles": self.profiles(),
+            "discovered": self._discovered(nodes, wifi),
+            "health": {
+                "warnings": sum(
+                    1
+                    for node in nodes
+                    for alert in node["alerts"]
+                    if alert["level"] == "warning"
+                ),
+                "failures": sum(
+                    1
+                    for node in nodes
+                    for alert in node["alerts"]
+                    if alert["level"] == "danger"
+                ),
+            },
             "limits": {
                 "max_racks": MAX_RACKS,
                 "max_nodes": MAX_NODES,
                 "max_units": MAX_UNITS,
                 "default_units": DEFAULT_UNITS,
+                "max_profiles": MAX_PROFILES,
             },
             "verbs": [
                 {"id": verb, "label": AGENT_VERBS[verb][0]} for verb in MANUAL_VERBS
@@ -363,6 +518,25 @@ class RackManager:
             "egress_modes": list(EGRESS_MODES),
             "now": now,
         }
+
+    @staticmethod
+    def _discovered(
+        nodes: list[dict[str, Any]], wifi: dict[str, dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Wi-Fi clients that are not yet a node, ready to be racked."""
+        known = {node["mac"] for node in nodes if node["mac"]}
+        found = [
+            {
+                "mac": mac,
+                "name": str(device.get("name", "")) or "Appareil",
+                "ip": str(device.get("ip", "")),
+                "online": bool(device.get("online", False)),
+            }
+            for mac, device in wifi.items()
+            if mac not in known
+        ]
+        found.sort(key=lambda device: (not device["online"], device["name"].lower()))
+        return found[:MAX_DISCOVERED]
 
     def _require_node(self, node_id: str) -> dict[str, Any]:
         if not ID_PATTERN.fullmatch(node_id):
@@ -429,6 +603,76 @@ class RackManager:
             self.database.delete_rack(rack_id)
         self._notify("secure", f"Baie « {rack['name']} » supprimée")
         return self.snapshot()
+
+    def arrange_rack(self, rack_id: str) -> dict[str, Any]:
+        """Closes the gaps: the machines keep their order, U1 upwards.
+
+        Moves go through `move_rack_node` one at a time, so the slot index
+        stays the referee. A machine already in the right slot is not touched.
+        """
+        if not RACK_ID_PATTERN.fullmatch(rack_id):
+            raise RackError("Identifiant de baie invalide.")
+        if self.database.rack(rack_id) is None:
+            raise RackError("Cette baie n’existe pas.")
+        with self._lock:
+            members = sorted(
+                (
+                    row
+                    for row in self.database.rack_nodes()
+                    if str(row["rack_id"] or "") == rack_id and int(row["position"] or 0)
+                ),
+                key=lambda row: int(row["position"]),
+            )
+            for target, row in enumerate(members, start=1):
+                if int(row["position"]) != target:
+                    self.database.move_rack_node(str(row["id"]), rack_id, target)
+        return self.snapshot()
+
+    # ----------------------------------------------------------- profiles --
+
+    def profiles(self) -> list[dict[str, Any]]:
+        entries = []
+        for row in self.database.rack_profiles():
+            try:
+                rules = clean_rules(self._json(row.get("rules"), {}))
+            except RackError:
+                rules = clean_rules({})
+            entries.append({**row, "rules": rules})
+        return entries
+
+    def save_profile(self, profile_id: str, name: str, rules: Any) -> dict[str, Any]:
+        """Stores a named rule sheet. An empty id creates one."""
+        label = clean_name(name, "Nom du profil")
+        sheet = clean_rules(rules)
+        with self._lock:
+            if profile_id:
+                if not RACK_ID_PATTERN.fullmatch(profile_id):
+                    raise RackError("Identifiant de profil invalide.")
+                if self.database.rack_profile(profile_id) is None:
+                    raise RackError("Ce profil n’existe pas.")
+            else:
+                if len(self.database.rack_profiles()) >= MAX_PROFILES:
+                    raise RackError(f"{MAX_PROFILES} profils au maximum.")
+                profile_id = _rack_id()
+            self.database.save_rack_profile(profile_id, label, json.dumps(sheet))
+        return self.snapshot()
+
+    def delete_profile(self, profile_id: str) -> dict[str, Any]:
+        if not RACK_ID_PATTERN.fullmatch(profile_id):
+            raise RackError("Identifiant de profil invalide.")
+        with self._lock:
+            if self.database.rack_profile(profile_id) is None:
+                raise RackError("Ce profil n’existe pas.")
+            self.database.delete_rack_profile(profile_id)
+        return self.snapshot()
+
+    def profile_rules(self, profile_id: str) -> dict[str, Any]:
+        if not RACK_ID_PATTERN.fullmatch(profile_id):
+            raise RackError("Identifiant de profil invalide.")
+        row = self.database.rack_profile(profile_id)
+        if row is None:
+            raise RackError("Ce profil n’existe pas.")
+        return clean_rules(self._json(row.get("rules"), {}))
 
     # -------------------------------------------------------------- nodes --
 
@@ -566,7 +810,12 @@ class RackManager:
             self.database.move_rack_node(node_id, rack_id or None, position)
         return self.snapshot()
 
-    def set_rules(self, node_id: str, rules: Any) -> dict[str, Any]:
+    def set_rules(self, node_id: str, rules: Any, announce: bool = True) -> dict[str, Any]:
+        """Stores a rule sheet and hands it to whoever enforces it.
+
+        `announce` is false when a group action runs: twenty machines changed
+        in one gesture are one line in the activity feed, not twenty.
+        """
         row = self._require_node(node_id)
         sheet = clean_rules(rules)
         with self._lock:
@@ -579,8 +828,116 @@ class RackManager:
                 self.push_policy(node_id)
             except (RackError, NodeError) as error:
                 logger.info("Règles non poussées vers %s: %s", row["name"], error)
-        self._notify("secure", f"Règles de « {row['name']} » enregistrées")
+        if announce:
+            self._notify("secure", f"Règles de « {row['name']} » enregistrées")
         return self.node(node_id)
+
+    def bulk(
+        self, operation: str, node_ids: list[str], profile_id: str = ""
+    ) -> dict[str, Any]:
+        """Runs one node operation over a list, and reports each refusal.
+
+        A partial failure is the normal case — one node of twelve is offline —
+        so nothing is rolled back and nothing is hidden: what succeeded stands,
+        what failed comes back named.
+        """
+        if operation not in BULK_OPERATIONS:
+            raise RackError("Action groupée inconnue.")
+        if not node_ids:
+            raise RackError("Aucun nœud sélectionné.")
+        if len(node_ids) > MAX_NODES:
+            raise RackError(f"{MAX_NODES} nœuds au maximum par action groupée.")
+        rules = self.profile_rules(profile_id) if operation == "profile" else None
+        failures: list[dict[str, str]] = []
+        applied = 0
+        for node_id in node_ids:
+            try:
+                row = self._require_node(node_id)
+                if operation == "refresh":
+                    self.refresh(node_id)
+                elif operation == "unrack":
+                    self.move_node(node_id, "", 0)
+                elif operation == "profile":
+                    self.set_rules(node_id, rules, announce=False)
+                else:
+                    sheet = clean_rules(self._json(row.get("rules"), {}))
+                    sheet["access"] = "blocked" if operation == "isolate" else "allowed"
+                    self.set_rules(node_id, sheet, announce=False)
+                applied += 1
+            except (RackError, NodeError) as error:
+                row = self.database.rack_node(node_id)
+                failures.append(
+                    {
+                        "id": node_id,
+                        "name": str(row["name"]) if row else node_id,
+                        "message": str(error)[:200],
+                    }
+                )
+        if applied:
+            labels = {
+                "isolate": "isolés",
+                "allow": "autorisés",
+                "refresh": "interrogés",
+                "profile": "reréglés",
+                "unrack": "sortis de la baie",
+            }
+            self._notify("secure", f"{applied} nœud(s) {labels[operation]} en une action")
+        return {"snapshot": self.snapshot(), "applied": applied, "failures": failures}
+
+    def import_devices(self, macs: list[str], rack_id: str = "") -> dict[str, Any]:
+        """Turns Wi-Fi clients into local nodes, named as the lease named them.
+
+        The rack is the only thing gained: the device was already known to the
+        firewall, and a node created here starts with the default sheet, which
+        blocks nothing.
+        """
+        if not macs:
+            raise RackError("Aucun appareil sélectionné.")
+        if rack_id and self.database.rack(rack_id) is None:
+            raise RackError("Cette baie n’existe pas.")
+        wifi = self._wifi_index()
+        created: list[str] = []
+        failures: list[dict[str, str]] = []
+        for raw in macs[:MAX_DISCOVERED]:
+            try:
+                mac = normalize_mac(raw)
+            except ValueError as error:
+                failures.append({"id": str(raw)[:32], "name": str(raw)[:32], "message": str(error)})
+                continue
+            device = wifi.get(mac, {})
+            # A lease name is whatever the device announced, so it goes through
+            # the same cleaning as anything typed into the form — and falls
+            # back to the address when the machine announced nothing usable.
+            label = " ".join(str(device.get("name", "")).split())[:48]
+            try:
+                label = clean_name(label or f"Appareil {mac[-5:]}")
+            except RackError:
+                label = f"Appareil {mac[-5:]}"
+            try:
+                node = self.create_node("local", label, mac=mac)
+                created.append(node["id"])
+                if rack_id:
+                    free = self._free_position(rack_id)
+                    if free:
+                        self.move_node(node["id"], rack_id, free)
+            except RackError as error:
+                failures.append({"id": mac, "name": label, "message": str(error)[:200]})
+        return {"snapshot": self.snapshot(), "applied": len(created), "failures": failures}
+
+    def _free_position(self, rack_id: str) -> int:
+        """Lowest empty U of a rack, or 0 when it is full."""
+        rack = self.database.rack(rack_id)
+        if rack is None:
+            return 0
+        taken = {
+            int(row["position"] or 0)
+            for row in self.database.rack_nodes()
+            if str(row["rack_id"] or "") == rack_id
+        }
+        for unit in range(1, int(rack["units"]) + 1):
+            if unit not in taken:
+                return unit
+        return 0
 
     # ------------------------------------------------------ enforcement ----
 
@@ -670,6 +1027,12 @@ class RackManager:
         except NodeError as error:
             with self._lock:
                 self.database.update_rack_node(node_id, {"last_error": str(error)[:200]})
+            # Only the probe writes history. Any verb can fail, but a failed
+            # reboot says nothing about availability that the next sweep will
+            # not say better, and counting it twice would flatter or damn the
+            # figure depending on how often an operator pressed a button.
+            if verb == "status":
+                self.database.add_rack_sample(node_id, {"at": int(time.time())})
             raise
 
     def _record_status(self, node_id: str, status: dict[str, Any]) -> None:
@@ -695,15 +1058,48 @@ class RackManager:
         # The reading from the node is the truth about what it runs, but the
         # last push we made is the truth about what we asked for.
         state.setdefault("policy", previous.get("policy", {}))
+        now = int(time.time())
         with self._lock:
             self.database.update_rack_node(
                 node_id,
                 {
                     "state": json.dumps(state)[:8000],
-                    "last_seen": int(time.time()),
+                    "last_seen": now,
                     "last_error": "",
                 },
             )
+        tor = state.get("tor") if isinstance(state.get("tor"), dict) else {}
+        self.database.add_rack_sample(
+            node_id,
+            {
+                "at": now,
+                "reachable": True,
+                "load": _number(state.get("load")),
+                "memory_percent": _number(state.get("memory_percent")),
+                "storage_percent": _number(state.get("storage_percent")),
+                "bootstrap": int(_number((tor or {}).get("bootstrap"))),
+            },
+        )
+
+    def history(self, node_id: str, window: int = HISTORY_WINDOW_SECONDS) -> dict[str, Any]:
+        """The readings kept for one node, and what they say about it.
+
+        Availability is the share of probes that got an answer, not a share of
+        time: the sweep visits a node about every ten minutes, and pretending
+        to know what happened between two probes would be an invention.
+        """
+        row = self._require_node(node_id)
+        window = max(600, min(int(window), HISTORY_WINDOW_SECONDS * 7))
+        samples = self.database.rack_samples(node_id, int(time.time()) - window)
+        answered = sum(1 for sample in samples if sample["reachable"])
+        return {
+            "node_id": node_id,
+            "name": str(row["name"]),
+            "window": window,
+            "samples": samples,
+            "readings": len(samples),
+            "availability": round(100 * answered / len(samples), 1) if samples else None,
+        }
 
     # ----------------------------------------------------- client auth -----
 
@@ -900,7 +1296,9 @@ class RackManager:
                     "name": name,
                     "role": role,
                     "onion": onion,
-                    "mac": "aa:bb:cc:dd:ee:01" if kind == "local" else "",
+                    # The address of a machine the demonstration Wi-Fi also
+                    # reports, so the node carries a lease like a real one.
+                    "mac": "6a:4f:12:8b:33:21" if kind == "local" else "",
                     "rules": json.dumps(clean_rules({})),
                     "client_auth": 1 if onion else 0,
                 },
@@ -920,3 +1318,30 @@ class RackManager:
                 # A demonstration rack shows a settled installation: without
                 # this, every node would claim its rules were still pending.
                 self.push_policy(node_id)
+                self._seed_history(node_id)
+        for label, rules in (
+            ("Poste de travail", {}),
+            ("Serveur exposé", {"keep_open_ports": [22, 443]}),
+            ("Mise au placard", {"access": "blocked"}),
+        ):
+            self.database.save_rack_profile(
+                _rack_id(), label, json.dumps(clean_rules(rules))
+            )
+
+    def _seed_history(self, node_id: str) -> None:
+        """A day of plausible readings, so the availability figure has a shape."""
+        now = int(time.time())
+        for index in range(96):
+            at = now - (95 - index) * 900
+            reachable = index not in {31, 32, 33}
+            self.database.add_rack_sample(
+                node_id,
+                {
+                    "at": at,
+                    "reachable": reachable,
+                    "load": 0.1 + 0.02 * (index % 7) if reachable else 0.0,
+                    "memory_percent": 34 + (index % 11) if reachable else 0.0,
+                    "storage_percent": 51 if reachable else 0.0,
+                    "bootstrap": 100 if reachable else 0,
+                },
+            )

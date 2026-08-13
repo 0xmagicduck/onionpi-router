@@ -7,12 +7,18 @@ import io
 import tarfile
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..nodeclient import NodeError
-from ..rack import MAX_UNITS, RackError
+from ..rack import (
+    HISTORY_WINDOW_SECONDS,
+    MAX_DISCOVERED,
+    MAX_NODES,
+    MAX_UNITS,
+    RackError,
+)
 from .context import RouteContext
 
 
@@ -84,6 +90,28 @@ class NodeActionRequest(BaseModel):
     id: str = Field(min_length=16, max_length=16)
     verb: str = Field(min_length=1, max_length=32)
     unit: str = Field(default="", max_length=64)
+
+
+class ProfileRequest(BaseModel):
+    #: Empty on creation: the manager mints the identifier.
+    id: str = Field(default="", max_length=8)
+    name: str = Field(min_length=1, max_length=48)
+    rules: NodeRulesDocument
+
+
+class ProfileIdRequest(BaseModel):
+    id: str = Field(min_length=8, max_length=8)
+
+
+class BulkRequest(BaseModel):
+    operation: str = Field(min_length=1, max_length=16)
+    ids: list[str] = Field(min_length=1, max_length=MAX_NODES)
+    profile_id: str = Field(default="", max_length=8)
+
+
+class ImportRequest(BaseModel):
+    macs: list[str] = Field(min_length=1, max_length=MAX_DISCOVERED)
+    rack_id: str = Field(default="", max_length=8)
 
 
 def create_router(context: RouteContext) -> APIRouter:
@@ -190,6 +218,46 @@ def create_router(context: RouteContext) -> APIRouter:
     ) -> dict[str, Any]:
         result = await guard(rack.run_action, payload.id, payload.verb, payload.unit)
         return {"verb": payload.verb, "result": result}
+
+    @router.post("/api/v1/rack/racks/arrange")
+    async def arrange_rack(
+        payload: RackIdRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(rack.arrange_rack, payload.id)
+
+    @router.get("/api/v1/rack/nodes/{node_id}/history")
+    async def node_history(
+        node_id: str = Path(min_length=16, max_length=16),
+        window: int = Query(default=HISTORY_WINDOW_SECONDS, ge=600, le=HISTORY_WINDOW_SECONDS * 7),
+        _: dict[str, Any] = Depends(current_session),
+    ) -> dict[str, Any]:
+        return await guard(rack.history, node_id, window)
+
+    @router.post("/api/v1/rack/nodes/bulk")
+    async def bulk(
+        payload: BulkRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(rack.bulk, payload.operation, payload.ids, payload.profile_id)
+
+    @router.post("/api/v1/rack/nodes/import")
+    async def import_devices(
+        payload: ImportRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(rack.import_devices, payload.macs, payload.rack_id)
+
+    @router.post("/api/v1/rack/profiles")
+    async def save_profile(
+        payload: ProfileRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(
+            rack.save_profile, payload.id, payload.name, payload.rules.model_dump()
+        )
+
+    @router.post("/api/v1/rack/profiles/remove")
+    async def remove_profile(
+        payload: ProfileIdRequest, _: dict[str, Any] = Depends(csrf_session)
+    ) -> dict[str, Any]:
+        return await guard(rack.delete_profile, payload.id)
 
     @router.post("/api/v1/rack/nodes/enrollment")
     async def enrollment(

@@ -845,6 +845,76 @@ def test_rack_is_authenticated_and_every_mutation_needs_the_csrf_header() -> Non
         ).status_code == 200
 
 
+def test_rack_profiles_groups_and_discovery_travel_over_the_api() -> None:
+    with TestClient(app) as client:
+        database.create_user("admin", "Camille", hash_password(PASSWORD))
+        csrf = login(client)
+        headers = {"X-CSRF-Token": csrf}
+
+        rack_id = client.post(
+            "/api/v1/rack/racks",
+            json={"name": "Baie groupée", "location": "", "units": 6},
+            headers=headers,
+        ).json()["racks"][-1]["id"]
+
+        profiles = client.post(
+            "/api/v1/rack/profiles",
+            json={"id": "", "name": "Serveur exposé", "rules": {"keep_open_ports": [22, 443]}},
+            headers=headers,
+        )
+        assert profiles.status_code == 200
+        profile_id = next(
+            item["id"]
+            for item in profiles.json()["profiles"]
+            if item["name"] == "Serveur exposé"
+        )
+
+        discovered = client.get("/api/v1/rack").json()["discovered"]
+        assert discovered, "les clients du Wi-Fi non racks doivent être proposés"
+        imported = client.post(
+            "/api/v1/rack/nodes/import",
+            json={"macs": [discovered[0]["mac"]], "rack_id": rack_id},
+            headers=headers,
+        )
+        assert imported.status_code == 200
+        assert imported.json()["applied"] == 1
+        node_id = next(
+            node["id"]
+            for node in imported.json()["snapshot"]["nodes"]
+            if node["mac"] == discovered[0]["mac"]
+        )
+
+        grouped = client.post(
+            "/api/v1/rack/nodes/bulk",
+            json={"operation": "profile", "ids": [node_id], "profile_id": profile_id},
+            headers=headers,
+        )
+        assert grouped.status_code == 200
+        assert grouped.json()["applied"] == 1
+        assert client.post(
+            "/api/v1/rack/nodes/bulk",
+            json={"operation": "isolate", "ids": [node_id]},
+        ).status_code == 403
+
+        history = client.get(f"/api/v1/rack/nodes/{node_id}/history")
+        assert history.status_code == 200
+        assert history.json()["node_id"] == node_id
+        assert client.get(f"/api/v1/rack/nodes/{'z' * 16}/history").status_code == 400
+
+        assert client.post(
+            "/api/v1/rack/racks/arrange", json={"id": rack_id}, headers=headers
+        ).status_code == 200
+        assert client.post(
+            "/api/v1/rack/profiles/remove", json={"id": profile_id}, headers=headers
+        ).status_code == 200
+        assert client.post(
+            "/api/v1/rack/nodes/remove", json={"id": node_id}, headers=headers
+        ).status_code == 200
+        assert client.post(
+            "/api/v1/rack/racks/remove", json={"id": rack_id}, headers=headers
+        ).status_code == 200
+
+
 def test_rack_agent_bundle_is_a_readable_archive() -> None:
     with TestClient(app) as client:
         database.create_user("admin", "Camille", hash_password(PASSWORD))

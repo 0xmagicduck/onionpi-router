@@ -1,53 +1,36 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AlertTriangle,
+  ArrowDownUp,
   Ban,
   CircleSlash,
-  Download,
-  KeyRound,
   Laptop,
   Plus,
   RefreshCw,
+  Search,
   Server,
   ServerCog,
   ShieldCheck,
-  Terminal,
+  Sparkles,
   Trash2,
+  Wifi,
 } from 'lucide-react'
 import { api } from '../api'
 import { ConfirmDialog, Modal } from '../components/Modal'
 import { Panel } from '../components/Panel'
 import { Badge, EmptyState, LoadingPanel, StatCard } from '../components/ui'
-import { formatUptime, relativeTime } from '../lib'
 import type {
+  RackBulkAnswer,
   RackEgress,
-  RackEnrollment,
   RackFrame,
   RackNode,
   RackNodeRules,
   RackNodeStatus,
   RackPayload,
+  RackProfile,
 } from '../types'
-
-const STATUS: Record<RackNodeStatus, { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral' }> = {
-  online: { label: 'En ligne', tone: 'success' },
-  offline: { label: 'Injoignable', tone: 'danger' },
-  isolated: { label: 'Isolé', tone: 'warning' },
-  pending: { label: 'En attente', tone: 'neutral' },
-  unknown: { label: 'Jamais vu', tone: 'neutral' },
-}
-
-const EGRESS_LABELS: Record<RackEgress, string> = {
-  'tor-only': 'Tor uniquement',
-  direct: 'Sortie directe',
-}
-
-const DEFAULT_RULES: RackNodeRules = {
-  access: 'allowed',
-  egress: 'tor-only',
-  exit_country: '',
-  keep_open_ports: [22],
-  schedule: null,
-}
+import { RackNodeSheet } from './RackNodeSheet'
+import { DEFAULT_RULES, EGRESS_LABELS, STATUS } from './rackShared'
 
 type Props = {
   notify: (message: string, error?: boolean) => void
@@ -73,15 +56,29 @@ const EMPTY_DRAFT: Draft = {
   notes: '',
 }
 
+/** Les filtres proposés au-dessus de la baie, dans l’ordre où ils inquiètent. */
+const FILTERS: Array<{ id: 'all' | 'alert' | RackNodeStatus; label: string }> = [
+  { id: 'all', label: 'Tous' },
+  { id: 'alert', label: 'À surveiller' },
+  { id: 'online', label: 'En ligne' },
+  { id: 'offline', label: 'Injoignables' },
+  { id: 'isolated', label: 'Isolés' },
+]
+
 export function RackPage({ notify }: Props) {
   const [payload, setPayload] = useState<RackPayload>()
   const [error, setError] = useState('')
   const [selectedRack, setSelectedRack] = useState('')
   const [openNode, setOpenNode] = useState('')
   const [editingRack, setEditingRack] = useState<RackFrame | 'new'>()
+  const [editingProfile, setEditingProfile] = useState<RackProfile | 'new'>()
   const [drafting, setDrafting] = useState(false)
   const [dragged, setDragged] = useState('')
   const [busy, setBusy] = useState(false)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'all' | 'alert' | RackNodeStatus>('all')
+  const [selection, setSelection] = useState<string[]>([])
+  const [bulkProfile, setBulkProfile] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -102,9 +99,38 @@ export function RackPage({ notify }: Props) {
 
   const racks = payload?.racks ?? []
   const nodes = payload?.nodes ?? []
+  const profiles = payload?.profiles ?? []
+  const discovered = payload?.discovered ?? []
   const current = racks.find((rack) => rack.id === selectedRack) ?? racks[0]
-  const unracked = nodes.filter((node) => !node.rack_id || !node.position)
   const detail = nodes.find((node) => node.id === openNode)
+
+  const matches = useCallback(
+    (node: RackNode) => {
+      const needle = query.trim().toLowerCase()
+      if (needle) {
+        const haystack = `${node.name} ${node.role} ${node.mac} ${node.address} ${node.notes}`
+        if (!haystack.toLowerCase().includes(needle)) return false
+      }
+      if (filter === 'all') return true
+      if (filter === 'alert') return node.alerts.length > 0
+      return node.status === filter
+    },
+    [filter, query],
+  )
+
+  const visible = useMemo(() => nodes.filter(matches), [nodes, matches])
+  const unracked = useMemo(
+    () => visible.filter((node) => !node.rack_id || !node.position),
+    [visible],
+  )
+  const filtering = filter !== 'all' || query.trim().length > 0
+
+  // Une sélection qui survit à un nœud supprimé enverrait des actions dans le
+  // vide: elle est recoupée avec ce que la baie contient réellement.
+  const selected = useMemo(
+    () => selection.filter((id) => nodes.some((node) => node.id === id)),
+    [nodes, selection],
+  )
 
   const counts = useMemo(
     () => ({
@@ -133,6 +159,31 @@ export function RackPage({ notify }: Props) {
     [load, notify],
   )
 
+  /** Une action groupée réussit rarement partout: le compte rendu le dit. */
+  const runBulk = useCallback(
+    async (action: () => Promise<RackBulkAnswer>, verb: string) => {
+      setBusy(true)
+      try {
+        const answer = await action()
+        setPayload(answer.snapshot)
+        if (answer.failures.length) {
+          notify(
+            `${verb} : ${answer.applied} appliqué${answer.applied > 1 ? 's' : ''}, ` +
+              `${answer.failures.map((failure) => failure.name).join(', ')} en échec`,
+            true,
+          )
+        } else {
+          notify(`${verb} : ${answer.applied} nœud${answer.applied > 1 ? 's' : ''}`)
+        }
+      } catch (reason) {
+        notify(reason instanceof Error ? reason.message : 'Action refusée', true)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [notify],
+  )
+
   const place = (nodeId: string, position: number) => {
     if (!current) return
     void run(
@@ -140,6 +191,13 @@ export function RackPage({ notify }: Props) {
       `Nœud placé en U${position}`,
     )
   }
+
+  const toggle = (nodeId: string) =>
+    setSelection((previous) =>
+      previous.includes(nodeId)
+        ? previous.filter((id) => id !== nodeId)
+        : [...previous, nodeId],
+    )
 
   if (!payload && !error) return <LoadingPanel height={360} label="Chargement de la baie" />
 
@@ -161,7 +219,13 @@ export function RackPage({ notify }: Props) {
         <StatCard icon={ShieldCheck} label="Nœuds en ligne" value={counts.online} tone="good" />
         <StatCard icon={CircleSlash} label="Nœuds isolés" value={counts.isolated} tone={counts.isolated ? 'warn' : undefined} />
         <StatCard icon={Ban} label="Injoignables" value={counts.unreachable} tone={counts.unreachable ? 'bad' : undefined} />
-        <StatCard icon={Server} label="Baies" value={racks.length} foot={`${nodes.length} nœud${nodes.length > 1 ? 's' : ''} au total`} />
+        <StatCard
+          icon={AlertTriangle}
+          label="Points d’attention"
+          value={(payload?.health.warnings ?? 0) + (payload?.health.failures ?? 0)}
+          tone={payload?.health.failures ? 'bad' : payload?.health.warnings ? 'warn' : undefined}
+          foot={`${racks.length} baie${racks.length > 1 ? 's' : ''} · ${nodes.length} nœud${nodes.length > 1 ? 's' : ''}`}
+        />
       </div>
 
       <Panel
@@ -189,9 +253,38 @@ export function RackPage({ notify }: Props) {
                 onClick={() => setSelectedRack(rack.id)}
               >
                 <strong>{rack.name}</strong>
-                <span>{rack.location || `${rack.units} U`}</span>
+                <span>
+                  {rack.location || `${rack.units} U`}
+                  {rack.alerts > 0 && <em className="rack-tab-alerts"> · {rack.alerts} ⚠</em>}
+                </span>
               </button>
             ))}
+          </div>
+        )}
+
+        {nodes.length > 0 && (
+          <div className="rack-filters">
+            <label className="rack-search">
+              <Search size={14} />
+              <input
+                value={query}
+                placeholder="Chercher un nom, un rôle, une adresse…"
+                aria-label="Chercher un nœud"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <div className="rack-chips" role="group" aria-label="Filtrer les nœuds">
+              {FILTERS.map((item) => (
+                <button
+                  key={item.id}
+                  className={`rack-chip ${filter === item.id ? 'rack-chip-active' : ''}`}
+                  aria-pressed={filter === item.id}
+                  onClick={() => setFilter(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -213,7 +306,16 @@ export function RackPage({ notify }: Props) {
           <>
             <div className="rack-frame-head">
               <span className="muted">{current.location || 'Emplacement non précisé'}</span>
-              <div>
+              <div className="rack-actions">
+                <button
+                  className="button button-small button-ghost"
+                  disabled={busy || !current.occupied}
+                  onClick={() =>
+                    void run(() => api.arrangeRack(current.id), 'Baie rangée : les U sont contigus')
+                  }
+                >
+                  <ArrowDownUp size={14} /> Ranger
+                </button>
                 <button className="button button-small button-ghost" onClick={() => setEditingRack(current)}>
                   Modifier la baie
                 </button>
@@ -222,10 +324,11 @@ export function RackPage({ notify }: Props) {
             <ol className="rack-elevation" aria-label={`Emplacements de ${current.name}`}>
               {Array.from({ length: current.units }, (_, index) => index + 1).map((unit) => {
                 const node = nodes.find((item) => item.rack_id === current.id && item.position === unit)
+                const dimmed = Boolean(node && filtering && !matches(node))
                 return (
                   <li
                     key={unit}
-                    className={`rack-slot ${node ? 'rack-slot-filled' : ''}`}
+                    className={`rack-slot ${node ? 'rack-slot-filled' : ''} ${dimmed ? 'rack-slot-dimmed' : ''}`}
                     onDragOver={(event) => {
                       if (dragged) event.preventDefault()
                     }}
@@ -240,6 +343,8 @@ export function RackPage({ notify }: Props) {
                       <NodeCard
                         node={node}
                         busy={busy}
+                        selected={selected.includes(node.id)}
+                        onSelect={() => toggle(node.id)}
                         onOpen={() => setOpenNode(node.id)}
                         onDragStart={() => setDragged(node.id)}
                         onDragEnd={() => setDragged('')}
@@ -255,13 +360,11 @@ export function RackPage({ notify }: Props) {
                         }
                       />
                     ) : (
-                      <button
-                        className="rack-empty"
-                        disabled={!unracked.length || busy}
-                        onClick={() => unracked[0] && place(unracked[0].id, unit)}
-                      >
-                        {unracked.length ? `Placer ${unracked[0].name}` : 'Emplacement libre'}
-                      </button>
+                      <EmptySlot
+                        nodes={nodes.filter((item) => !item.rack_id || !item.position)}
+                        busy={busy}
+                        onPlace={(nodeId) => place(nodeId, unit)}
+                      />
                     )}
                   </li>
                 )
@@ -270,6 +373,71 @@ export function RackPage({ notify }: Props) {
           </>
         )}
       </Panel>
+
+      {selected.length > 0 && (
+        <div className="rack-bulk" role="region" aria-label="Actions groupées">
+          <strong>{selected.length} nœud{selected.length > 1 ? 's' : ''} sélectionné{selected.length > 1 ? 's' : ''}</strong>
+          <div className="rack-actions">
+            <button
+              className="button button-small button-secondary"
+              disabled={busy}
+              onClick={() => void runBulk(() => api.bulkRackNodes('isolate', selected), 'Isolement')}
+            >
+              <CircleSlash size={14} /> Isoler
+            </button>
+            <button
+              className="button button-small button-secondary"
+              disabled={busy}
+              onClick={() => void runBulk(() => api.bulkRackNodes('allow', selected), 'Autorisation')}
+            >
+              <ShieldCheck size={14} /> Autoriser
+            </button>
+            <button
+              className="button button-small button-ghost"
+              disabled={busy}
+              onClick={() => void runBulk(() => api.bulkRackNodes('refresh', selected), 'Interrogation')}
+            >
+              <RefreshCw size={14} /> Interroger
+            </button>
+            <button
+              className="button button-small button-ghost"
+              disabled={busy}
+              onClick={() => void runBulk(() => api.bulkRackNodes('unrack', selected), 'Sortie de baie')}
+            >
+              Sortir de la baie
+            </button>
+            {profiles.length > 0 && (
+              <>
+                <select
+                  value={bulkProfile}
+                  aria-label="Profil à appliquer"
+                  onChange={(event) => setBulkProfile(event.target.value)}
+                >
+                  <option value="">Profil…</option>
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.name}</option>
+                  ))}
+                </select>
+                <button
+                  className="button button-small button-primary"
+                  disabled={busy || !bulkProfile}
+                  onClick={() =>
+                    void runBulk(
+                      () => api.bulkRackNodes('profile', selected, bulkProfile),
+                      'Profil appliqué',
+                    )
+                  }
+                >
+                  Appliquer
+                </button>
+              </>
+            )}
+            <button className="button button-small button-ghost" onClick={() => setSelection([])}>
+              Tout désélectionner
+            </button>
+          </div>
+        </div>
+      )}
 
       <Panel
         title={`Nœuds hors baie (${unracked.length})`}
@@ -282,6 +450,8 @@ export function RackPage({ notify }: Props) {
                 key={node.id}
                 node={node}
                 busy={busy}
+                selected={selected.includes(node.id)}
+                onSelect={() => toggle(node.id)}
                 onOpen={() => setOpenNode(node.id)}
                 onDragStart={() => setDragged(node.id)}
                 onDragEnd={() => setDragged('')}
@@ -289,11 +459,32 @@ export function RackPage({ notify }: Props) {
             ))}
           </div>
         ) : (
-          <EmptyState icon={ServerCog} title="Tout est rangé">
-            Chaque nœud déclaré occupe un emplacement.
+          <EmptyState icon={ServerCog} title={filtering ? 'Aucun nœud ne correspond' : 'Tout est rangé'}>
+            {filtering
+              ? 'Aucun nœud hors baie ne correspond à cette recherche.'
+              : 'Chaque nœud déclaré occupe un emplacement.'}
           </EmptyState>
         )}
       </Panel>
+
+      <DiscoveryPanel
+        discovered={discovered}
+        rackId={current?.id ?? ''}
+        busy={busy}
+        onImport={(macs, rackId) =>
+          void runBulk(() => api.importRackDevices(macs, rackId), 'Import')
+        }
+      />
+
+      <ProfilesPanel
+        profiles={profiles}
+        maxProfiles={payload?.limits.max_profiles ?? 12}
+        busy={busy}
+        onEdit={(profile) => setEditingProfile(profile)}
+        onRemove={(profile) =>
+          void run(() => api.removeRackProfile(profile.id), `Profil « ${profile.name} » supprimé`)
+        }
+      />
 
       {editingRack && (
         <RackEditor
@@ -314,6 +505,18 @@ export function RackPage({ notify }: Props) {
         />
       )}
 
+      {editingProfile && (
+        <ProfileEditor
+          profile={editingProfile === 'new' ? undefined : editingProfile}
+          onClose={() => setEditingProfile(undefined)}
+          onSaved={async () => {
+            setEditingProfile(undefined)
+            await load()
+          }}
+          notify={notify}
+        />
+      )}
+
       {drafting && (
         <NodeCreator
           onClose={() => setDrafting(false)}
@@ -327,9 +530,10 @@ export function RackPage({ notify }: Props) {
       )}
 
       {detail && (
-        <NodeDetail
+        <RackNodeSheet
           node={detail}
           racks={racks}
+          profiles={profiles}
           onClose={() => setOpenNode('')}
           onChanged={load}
           notify={notify}
@@ -342,6 +546,8 @@ export function RackPage({ notify }: Props) {
 function NodeCard({
   node,
   busy,
+  selected,
+  onSelect,
   onOpen,
   onDragStart,
   onDragEnd,
@@ -350,6 +556,8 @@ function NodeCard({
 }: {
   node: RackNode
   busy: boolean
+  selected: boolean
+  onSelect: () => void
   onOpen: () => void
   onDragStart: () => void
   onDragEnd: () => void
@@ -357,14 +565,22 @@ function NodeCard({
   onEject?: () => void
 }) {
   const status = STATUS[node.status]
-  const drifted = Boolean(node.state.policy && node.state.policy.digest !== node.policy_digest)
+  const worst = node.alerts.find((alert) => alert.level === 'danger') ?? node.alerts[0]
   return (
     <article
-      className={`rack-node rack-node-${node.status}`}
+      className={`rack-node rack-node-${node.status} ${selected ? 'rack-node-selected' : ''}`}
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
+      <label className="rack-node-select">
+        <input
+          type="checkbox"
+          checked={selected}
+          aria-label={`Sélectionner ${node.name}`}
+          onChange={onSelect}
+        />
+      </label>
       <button
         className="rack-node-open"
         aria-label={`Ouvrir la fiche de ${node.name}`}
@@ -377,11 +593,16 @@ function NodeCard({
         </span>
         <span className="rack-node-meta">
           <Badge tone={status.tone} dot>{status.label}</Badge>
-          <small className="muted">{EGRESS_LABELS[node.rules.egress]}</small>
+          <small className="muted">
+            {node.link?.ip || EGRESS_LABELS[node.rules.egress]}
+          </small>
         </span>
       </button>
-      {drifted && (
-        <p className="rack-node-drift" role="status">Règles en attente d’application sur le nœud.</p>
+      {worst && (
+        <p className={`rack-node-alert rack-alert-${worst.level}`} role="status">
+          {worst.message}
+          {node.alerts.length > 1 && ` (+${node.alerts.length - 1})`}
+        </p>
       )}
       {(onMove || onEject) && (
         <div className="rack-node-controls">
@@ -399,6 +620,287 @@ function NodeCard({
         </div>
       )}
     </article>
+  )
+}
+
+/** Un emplacement libre propose les machines qui n’en ont pas, par leur nom. */
+function EmptySlot({
+  nodes,
+  busy,
+  onPlace,
+}: {
+  nodes: RackNode[]
+  busy: boolean
+  onPlace: (nodeId: string) => void
+}) {
+  if (!nodes.length) return <span className="rack-empty rack-empty-quiet">Emplacement libre</span>
+  if (nodes.length === 1) {
+    return (
+      <button className="rack-empty" disabled={busy} onClick={() => onPlace(nodes[0].id)}>
+        Placer {nodes[0].name}
+      </button>
+    )
+  }
+  return (
+    <select
+      className="rack-empty"
+      value=""
+      disabled={busy}
+      aria-label="Placer une machine ici"
+      onChange={(event) => event.target.value && onPlace(event.target.value)}
+    >
+      <option value="">Placer une machine…</option>
+      {nodes.map((node) => (
+        <option key={node.id} value={node.id}>{node.name}</option>
+      ))}
+    </select>
+  )
+}
+
+function DiscoveryPanel({
+  discovered,
+  rackId,
+  busy,
+  onImport,
+}: {
+  discovered: RackPayload['discovered']
+  rackId: string
+  busy: boolean
+  onImport: (macs: string[], rackId: string) => void
+}) {
+  const [chosen, setChosen] = useState<string[]>([])
+  const available = discovered.map((device) => device.mac)
+  const selected = chosen.filter((mac) => available.includes(mac))
+
+  return (
+    <Panel
+      title={`Clients du Wi-Fi détectés (${discovered.length})`}
+      subtitle="Ils sont déjà routés par OnionPi. Les ajouter à la baie leur donne une fiche, un emplacement et une feuille de règles."
+      action={
+        selected.length > 0 && (
+          <button
+            className="button button-small button-primary"
+            disabled={busy}
+            onClick={() => {
+              onImport(selected, rackId)
+              setChosen([])
+            }}
+          >
+            Ajouter {selected.length} appareil{selected.length > 1 ? 's' : ''}
+          </button>
+        )
+      }
+    >
+      {discovered.length ? (
+        <ul className="rack-discovery">
+          {discovered.map((device) => (
+            <li key={device.mac}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(device.mac)}
+                  aria-label={`Ajouter ${device.name} à la baie`}
+                  onChange={() =>
+                    setChosen((previous) =>
+                      previous.includes(device.mac)
+                        ? previous.filter((mac) => mac !== device.mac)
+                        : [...previous, device.mac],
+                    )
+                  }
+                />
+                <span className="rack-discovery-identity">
+                  <strong>{device.name}</strong>
+                  <em className="mono">{device.mac}</em>
+                </span>
+                <span className="rack-discovery-meta">
+                  <span className="mono muted">{device.ip || '—'}</span>
+                  <Badge tone={device.online ? 'success' : 'neutral'} dot>
+                    {device.online ? 'Présent' : 'Absent'}
+                  </Badge>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState icon={Wifi} title="Rien de nouveau">
+          Tous les appareils vus sur le Wi-Fi occupent déjà une fiche dans la baie.
+        </EmptyState>
+      )}
+    </Panel>
+  )
+}
+
+function ProfilesPanel({
+  profiles,
+  maxProfiles,
+  busy,
+  onEdit,
+  onRemove,
+}: {
+  profiles: RackProfile[]
+  maxProfiles: number
+  busy: boolean
+  onEdit: (profile: RackProfile | 'new') => void
+  onRemove: (profile: RackProfile) => void
+}) {
+  return (
+    <Panel
+      title={`Profils de règles (${profiles.length}/${maxProfiles})`}
+      subtitle="Une feuille de règles nommée, applicable à plusieurs machines d’un coup. Un profil n’exprime rien qu’une fiche ne puisse exprimer."
+      action={
+        <button
+          className="button button-small button-secondary"
+          disabled={busy || profiles.length >= maxProfiles}
+          onClick={() => onEdit('new')}
+        >
+          <Plus size={14} /> Nouveau profil
+        </button>
+      }
+    >
+      {profiles.length ? (
+        <ul className="rack-profiles">
+          {profiles.map((profile) => (
+            <li key={profile.id}>
+              <div className="rack-profile-identity">
+                <strong>{profile.name}</strong>
+                <span className="muted">
+                  {profile.rules.access === 'blocked' ? 'Isolé' : 'Autorisé'} ·{' '}
+                  {EGRESS_LABELS[profile.rules.egress]}
+                  {profile.rules.exit_country && ` · sortie ${profile.rules.exit_country}`}
+                  {profile.rules.keep_open_ports.length > 0 &&
+                    ` · ports ${profile.rules.keep_open_ports.join(', ')}`}
+                </span>
+              </div>
+              <div className="rack-actions">
+                <button className="button button-small button-ghost" onClick={() => onEdit(profile)}>
+                  Modifier
+                </button>
+                <button
+                  className="button button-small button-ghost"
+                  disabled={busy}
+                  onClick={() => onRemove(profile)}
+                >
+                  Supprimer
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState icon={Sparkles} title="Aucun profil">
+          Créez-en un pour poser les mêmes règles sur toute une famille de machines.
+        </EmptyState>
+      )}
+    </Panel>
+  )
+}
+
+function ProfileEditor({
+  profile,
+  onClose,
+  onSaved,
+  notify,
+}: {
+  profile?: RackProfile
+  onClose: () => void
+  onSaved: () => Promise<void>
+  notify: (message: string, error?: boolean) => void
+}) {
+  const [name, setName] = useState(profile?.name ?? '')
+  const [rules, setRules] = useState<RackNodeRules>({ ...DEFAULT_RULES, ...profile?.rules })
+  const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState('')
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setFailure('')
+    try {
+      await api.saveRackProfile({ id: profile?.id ?? '', name, rules })
+      notify(profile ? 'Profil modifié' : 'Profil créé')
+      await onSaved()
+    } catch (reason) {
+      setFailure(reason instanceof Error ? reason.message : 'Enregistrement impossible')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      title={profile ? `Profil ${profile.name}` : 'Nouveau profil'}
+      description="Appliquer un profil écrit exactement les règles d’une fiche : il ne peut rien demander de plus."
+      icon={<Sparkles size={22} />}
+      onClose={onClose}
+      onSubmit={submit}
+      actions={
+        <>
+          <button type="button" className="button button-secondary" onClick={onClose}>Annuler</button>
+          <button className="button button-primary" disabled={busy}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+        </>
+      }
+    >
+      <div className="settings-form">
+        <label>
+          Nom
+          <input value={name} maxLength={48} required onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label>
+          Accès
+          <select
+            value={rules.access}
+            onChange={(event) => setRules({ ...rules, access: event.target.value as RackNodeRules['access'] })}
+          >
+            <option value="allowed">Autorisé</option>
+            <option value="blocked">Isolé</option>
+          </select>
+        </label>
+        <label>
+          Sortie réseau
+          <select
+            value={rules.egress}
+            onChange={(event) => setRules({ ...rules, egress: event.target.value as RackEgress })}
+          >
+            <option value="tor-only">Tor uniquement</option>
+            <option value="direct">Directe (dérogation)</option>
+          </select>
+        </label>
+        <label>
+          Pays de sortie
+          <input
+            value={rules.exit_country}
+            maxLength={2}
+            placeholder="SE"
+            onChange={(event) =>
+              setRules({ ...rules, exit_country: event.target.value.toUpperCase().slice(0, 2) })
+            }
+          />
+        </label>
+        <label>
+          Ports laissés joignables
+          <input
+            value={rules.keep_open_ports.join(', ')}
+            placeholder="22"
+            onChange={(event) =>
+              setRules({
+                ...rules,
+                keep_open_ports: event.target.value
+                  .split(/[\s,;]+/)
+                  .map((item) => Number(item))
+                  .filter((item) => Number.isInteger(item) && item > 0 && item <= 65535)
+                  .slice(0, 8),
+              })
+            }
+          />
+        </label>
+        <p className="prose">
+          Les règles de sortie et de ports ne concernent que les machines distantes : sur un
+          client du Wi-Fi, seul l’accès est repris.
+        </p>
+        {failure && <div className="form-error" role="alert">{failure}</div>}
+      </div>
+    </Modal>
   )
 }
 
@@ -620,331 +1122,6 @@ function NodeCreator({
           </>
         )}
         {failure && <div className="form-error" role="alert">{failure}</div>}
-      </div>
-    </Modal>
-  )
-}
-
-function NodeDetail({
-  node,
-  racks,
-  onClose,
-  onChanged,
-  notify,
-}: {
-  node: RackNode
-  racks: RackFrame[]
-  onClose: () => void
-  onChanged: () => Promise<void>
-  notify: (message: string, error?: boolean) => void
-}) {
-  const [rules, setRules] = useState<RackNodeRules>({ ...DEFAULT_RULES, ...node.rules })
-  const [identity, setIdentity] = useState({
-    name: node.name,
-    role: node.role,
-    onion: node.address,
-    agent_port: node.agent_port,
-    notes: node.notes,
-  })
-  const [enrollment, setEnrollment] = useState<RackEnrollment>()
-  const [journal, setJournal] = useState<string[]>()
-  const [busy, setBusy] = useState(false)
-  const [confirming, setConfirming] = useState(false)
-
-  const act = async (action: () => Promise<unknown>, message: string) => {
-    setBusy(true)
-    try {
-      await action()
-      notify(message)
-      await onChanged()
-    } catch (reason) {
-      notify(reason instanceof Error ? reason.message : 'Action refusée', true)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (confirming) {
-    return (
-      <ConfirmDialog
-        title={`Retirer ${node.name} ?`}
-        description="La fiche et ses règles sont supprimées. L’agent installé sur la machine, lui, reste en place : désinstallez-le depuis le nœud."
-        confirmLabel="Retirer le nœud"
-        icon={<Trash2 size={22} />}
-        busy={busy}
-        onClose={() => setConfirming(false)}
-        onConfirm={async () => {
-          await act(() => api.removeRackNode(node.id), `${node.name} retiré`)
-          onClose()
-        }}
-      />
-    )
-  }
-
-  const status = STATUS[node.status]
-  return (
-    <Modal
-      title={node.name}
-      description={node.address || node.mac || 'Adresse non renseignée'}
-      icon={node.kind === 'remote' ? <Server size={22} /> : <Laptop size={22} />}
-      onClose={onClose}
-      actions={
-        <>
-          <button type="button" className="button button-danger" onClick={() => setConfirming(true)}>
-            Retirer
-          </button>
-          <button type="button" className="button button-secondary" onClick={onClose}>Fermer</button>
-        </>
-      }
-    >
-      <div className="rack-detail">
-        <div className="rack-detail-head">
-          <Badge tone={status.tone} dot>{status.label}</Badge>
-          {node.kind === 'remote' && node.client_auth && (
-            <Badge tone="success"><KeyRound size={13} /> Autorisation client active</Badge>
-          )}
-          {node.last_seen > 0 && <span className="muted">Vu {relativeTime(node.last_seen).toLowerCase()}</span>}
-        </div>
-        {node.last_error && <div className="form-error" role="alert">{node.last_error}</div>}
-
-        {node.state.agent_version && (
-          <dl className="rack-readout">
-            <div><dt>Agent</dt><dd>{node.state.agent_version}</dd></div>
-            <div><dt>Hôte</dt><dd className="mono">{node.state.hostname ?? '—'}</dd></div>
-            <div><dt>Uptime</dt><dd>{formatUptime(node.state.uptime_seconds ?? 0)}</dd></div>
-            <div><dt>Charge</dt><dd className="tabular">{node.state.load ?? '—'}</dd></div>
-            <div><dt>Mémoire</dt><dd className="tabular">{node.state.memory_percent ?? 0} %</dd></div>
-            <div><dt>Disque</dt><dd className="tabular">{node.state.storage_percent ?? 0} %</dd></div>
-            <div><dt>Tor</dt><dd>{node.state.tor?.connected ? 'Connecté' : `Bootstrap ${node.state.tor?.bootstrap ?? 0} %`}</dd></div>
-          </dl>
-        )}
-
-        <section className="rack-section">
-          <h3>Règles</h3>
-          <div className="settings-form">
-            <label>
-              Accès
-              <select
-                value={rules.access}
-                onChange={(event) => setRules({ ...rules, access: event.target.value as RackNodeRules['access'] })}
-              >
-                <option value="allowed">Autorisé</option>
-                <option value="blocked">Isolé</option>
-              </select>
-            </label>
-            {node.kind === 'remote' && (
-              <>
-                <label>
-                  Sortie réseau
-                  <select
-                    value={rules.egress}
-                    onChange={(event) => setRules({ ...rules, egress: event.target.value as RackEgress })}
-                  >
-                    <option value="tor-only">Tor uniquement</option>
-                    <option value="direct">Directe (dérogation)</option>
-                  </select>
-                </label>
-                <label>
-                  Ports laissés joignables
-                  <input
-                    value={rules.keep_open_ports.join(', ')}
-                    placeholder="22"
-                    onChange={(event) =>
-                      setRules({
-                        ...rules,
-                        keep_open_ports: event.target.value
-                          .split(/[\s,;]+/)
-                          .map((item) => Number(item))
-                          .filter((item) => Number.isInteger(item) && item > 0 && item <= 65535)
-                          .slice(0, 8),
-                      })
-                    }
-                  />
-                </label>
-                <p className="prose">
-                  En sortie « Tor uniquement », tout ce qui ne passe pas par Tor est jeté sur le
-                  nœud, <code>apt</code> compris. Gardez au moins un port joignable : un serveur
-                  distant sans porte d’entrée ne se répare pas.
-                </p>
-              </>
-            )}
-            <div className="rack-actions">
-              <button
-                className="button button-primary button-small"
-                disabled={busy}
-                onClick={() => void act(() => api.setRackNodeRules(node.id, rules), 'Règles enregistrées')}
-              >
-                Appliquer les règles
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {node.kind === 'remote' && (
-          <>
-            <section className="rack-section">
-              <h3>Identité</h3>
-              <div className="settings-form">
-                <label>
-                  Nom
-                  <input value={identity.name} maxLength={48} onChange={(event) => setIdentity({ ...identity, name: event.target.value })} />
-                </label>
-                <label>
-                  Rôle
-                  <input value={identity.role} maxLength={32} onChange={(event) => setIdentity({ ...identity, role: event.target.value })} />
-                </label>
-                <label>
-                  Adresse onion
-                  <input
-                    value={identity.onion}
-                    maxLength={80}
-                    placeholder="Rendue par l’installateur"
-                    onChange={(event) => setIdentity({ ...identity, onion: event.target.value })}
-                  />
-                </label>
-                <div className="rack-actions">
-                  <button
-                    className="button button-small button-secondary"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(
-                        () => api.updateRackNode({ id: node.id, ...identity, notes: identity.notes }),
-                        'Fiche enregistrée',
-                      )
-                    }
-                  >
-                    Enregistrer la fiche
-                  </button>
-                  <button
-                    className="button button-small button-ghost"
-                    disabled={busy || !node.onion}
-                    onClick={() => void act(() => api.refreshRackNode(node.id), 'Nœud interrogé')}
-                  >
-                    <RefreshCw size={14} /> Interroger
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section className="rack-section">
-              <h3>Actions</h3>
-              <div className="rack-actions">
-                <button
-                  className="button button-small button-secondary"
-                  disabled={busy || !node.onion}
-                  onClick={() => void act(() => api.runRackNodeAction(node.id, 'new-identity'), 'Nouvelle identité demandée')}
-                >
-                  Nouvelle identité Tor
-                </button>
-                <button
-                  className="button button-small button-secondary"
-                  disabled={busy || !node.onion}
-                  onClick={() => void act(() => api.runRackNodeAction(node.id, 'restart-tor'), 'Redémarrage de Tor demandé')}
-                >
-                  Redémarrer Tor
-                </button>
-                <button
-                  className="button button-small button-ghost"
-                  disabled={busy || !node.onion}
-                  onClick={async () => {
-                    setBusy(true)
-                    try {
-                      const answer = await api.runRackNodeAction(node.id, 'journal', 'tor')
-                      setJournal((answer.result.lines as string[]) ?? [])
-                    } catch (reason) {
-                      notify(reason instanceof Error ? reason.message : 'Journal indisponible', true)
-                    } finally {
-                      setBusy(false)
-                    }
-                  }}
-                >
-                  <Terminal size={14} /> Journal de Tor
-                </button>
-              </div>
-              {journal && (
-                <pre className="rack-journal" aria-label="Journal du nœud">{journal.join('\n') || 'Journal vide'}</pre>
-              )}
-            </section>
-
-            <section className="rack-section">
-              <h3>Enrôlement</h3>
-              <p className="prose">
-                Le jeton et la clé sont dérivés du secret de la baie : ils ne sont stockés nulle
-                part et peuvent être réaffichés. Le renouvellement invalide immédiatement les
-                anciens, et l’agent doit alors être réinstallé avec les nouveaux.
-              </p>
-              <div className="rack-actions">
-                <button
-                  className="button button-small button-secondary"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true)
-                    try {
-                      setEnrollment(await api.rackNodeEnrollment(node.id))
-                    } catch (reason) {
-                      notify(reason instanceof Error ? reason.message : 'Jeton indisponible', true)
-                    } finally {
-                      setBusy(false)
-                    }
-                  }}
-                >
-                  <KeyRound size={14} /> Afficher la commande
-                </button>
-                <a className="button button-small button-ghost" href="/api/v1/rack/agent-bundle" download>
-                  <Download size={14} /> Télécharger l’agent
-                </a>
-                <button
-                  className="button button-small button-ghost"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true)
-                    try {
-                      setEnrollment(await api.rotateRackNodeToken(node.id))
-                      notify('Jeton renouvelé : réinstallez l’agent')
-                      await onChanged()
-                    } catch (reason) {
-                      notify(reason instanceof Error ? reason.message : 'Renouvellement refusé', true)
-                    } finally {
-                      setBusy(false)
-                    }
-                  }}
-                >
-                  Renouveler le jeton
-                </button>
-              </div>
-              {enrollment && (
-                <pre className="rack-enrollment" aria-label="Commande d’installation">{enrollment.command}</pre>
-              )}
-            </section>
-          </>
-        )}
-
-        <section className="rack-section">
-          <h3>Emplacement</h3>
-          <div className="rack-actions">
-            <select
-              value={node.rack_id}
-              disabled={busy}
-              onChange={(event) =>
-                void act(
-                  () =>
-                    api.moveRackNode({
-                      id: node.id,
-                      rack_id: event.target.value,
-                      position: event.target.value ? Math.max(1, node.position) : 0,
-                    }),
-                  'Nœud déplacé',
-                )
-              }
-            >
-              <option value="">Hors baie</option>
-              {racks.map((rack) => (
-                <option key={rack.id} value={rack.id}>{rack.name}</option>
-              ))}
-            </select>
-            {node.rack_id && <span className="muted">Emplacement U{node.position}</span>}
-          </div>
-        </section>
       </div>
     </Modal>
   )

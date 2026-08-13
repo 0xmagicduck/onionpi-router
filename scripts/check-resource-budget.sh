@@ -23,6 +23,10 @@ grep -Fqx 'MAX_RACKS = 8' "$PROJECT_ROOT/backend/onionpi/rack.py"
 grep -Fqx 'MAX_NODES = 64' "$PROJECT_ROOT/backend/onionpi/rack.py"
 grep -Fqx 'MONITOR_BATCH = 6' "$PROJECT_ROOT/backend/onionpi/rack.py"
 grep -Fqx 'MONITOR_WORKERS = 3' "$PROJECT_ROOT/backend/onionpi/rack.py"
+grep -Fqx 'MAX_PROFILES = 12' "$PROJECT_ROOT/backend/onionpi/rack.py"
+# History is the only table the rack grows on its own, and it grows once per
+# probe per node: the per-node ceiling is what keeps a full rack bounded.
+grep -Fqx 'MAX_SAMPLES_PER_NODE = 288' "$PROJECT_ROOT/backend/onionpi/database.py"
 grep -Fqx 'MemoryMax=128M' "$PROJECT_ROOT/packaging/agent/systemd/onionpi-node-agent.service"
 # Two counter sets, each bounded on the kernel side as well: a full set stops
 # accepting elements instead of growing.

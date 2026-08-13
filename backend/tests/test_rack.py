@@ -16,6 +16,7 @@ from onionpi.database import (
 from onionpi.nodeclient import NodeClient, NodeError, sign
 from onionpi.rack import (
     MAX_NODES,
+    MAX_PROFILES,
     MAX_RACKS,
     RackError,
     RackManager,
@@ -87,6 +88,26 @@ class RecordingClient(NodeClient):
         return super().call(**kwargs)
 
 
+WIFI = [
+    {
+        "name": "Portable Camille",
+        "ip": "10.42.0.10",
+        "mac": "aa:bb:cc:dd:ee:01",
+        "download": 1_000,
+        "upload": 200,
+        "online": True,
+    },
+    {
+        "name": "Tablette",
+        "ip": "10.42.0.11",
+        "mac": "aa:bb:cc:dd:ee:02",
+        "download": 0,
+        "upload": 0,
+        "online": False,
+    },
+]
+
+
 @pytest.fixture
 def manager(tmp_path: Path) -> RackManager:
     database = Database(tmp_path / "rack.db")
@@ -98,6 +119,7 @@ def manager(tmp_path: Path) -> RackManager:
         FakeAccess(),
         RecordingClient(),
         FakeController(),
+        wifi_view=lambda: [dict(device) for device in WIFI],
     )
 
 
@@ -270,6 +292,125 @@ def test_a_status_reading_is_folded_into_the_node(manager: RackManager) -> None:
     assert refreshed["state"]["agent_version"]
     assert refreshed["last_seen"] > 0
     assert refreshed["status"] == "online"
+
+
+# ---------------------------------------------------------------- profils ---
+
+
+def test_a_profile_writes_the_same_rules_a_node_form_writes(manager: RackManager) -> None:
+    manager.save_profile("", "Serveur exposé", {"keep_open_ports": [22, 443]})
+    profile = manager.snapshot()["profiles"][0]
+    assert profile["rules"]["keep_open_ports"] == [22, 443]
+    node = manager.create_node("remote", "vps", onion=ONION)
+    manager.bulk("profile", [node["id"]], profile["id"])
+    assert manager.node(node["id"])["rules"]["keep_open_ports"] == [22, 443]
+    with pytest.raises(RackError):
+        manager.save_profile("", "Impossible", {"egress": "clair"})
+
+
+def test_profiles_respect_their_ceiling_and_can_be_replaced(manager: RackManager) -> None:
+    for index in range(MAX_PROFILES):
+        manager.save_profile("", f"Profil {index}", {})
+    with pytest.raises(RackError):
+        manager.save_profile("", "Un de trop", {})
+    first = manager.snapshot()["profiles"][0]
+    manager.save_profile(first["id"], "Renommé", {"access": "blocked"})
+    replaced = next(
+        item for item in manager.snapshot()["profiles"] if item["id"] == first["id"]
+    )
+    assert replaced["name"] == "Renommé"
+    assert replaced["rules"]["access"] == "blocked"
+    assert len(manager.snapshot()["profiles"]) == MAX_PROFILES
+    manager.delete_profile(first["id"])
+    assert len(manager.snapshot()["profiles"]) == MAX_PROFILES - 1
+
+
+# ------------------------------------------------------------- en nombre ----
+
+
+def test_a_group_action_reports_what_it_could_not_do(manager: RackManager) -> None:
+    reachable = manager.create_node("remote", "vps", onion=ONION)["id"]
+    pending = manager.create_node("remote", "vps-sans-adresse")["id"]
+    manager.client.fail = True
+    answer = manager.bulk("refresh", [reachable, pending, "0" * 16])
+    # The node without an address is not a failure: refreshing it is a no-op.
+    assert answer["applied"] == 1
+    assert [failure["id"] for failure in answer["failures"]] == [reachable, "0" * 16]
+    assert "injoignable" in answer["failures"][0]["message"]
+    with pytest.raises(RackError):
+        manager.bulk("rm -rf", [reachable])
+
+
+def test_isolating_a_group_goes_through_the_same_rule_sheet(manager: RackManager) -> None:
+    first = manager.create_node("local", "Poste", mac="aa:bb:cc:dd:ee:01")["id"]
+    second = manager.create_node("local", "Console", mac="aa:bb:cc:dd:ee:02")["id"]
+    manager.bulk("isolate", [first, second])
+    assert manager.guard.blocked_macs() == {"aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"}
+    manager.bulk("allow", [first, second])
+    assert manager.guard.blocked_macs() == set()
+
+
+# ------------------------------------------------------------ découverte ----
+
+
+def test_wifi_clients_are_offered_until_they_are_racked(manager: RackManager) -> None:
+    assert {device["mac"] for device in manager.snapshot()["discovered"]} == {
+        "aa:bb:cc:dd:ee:01",
+        "aa:bb:cc:dd:ee:02",
+    }
+    rack_id = manager.create_rack("Baie", "", 4)["racks"][0]["id"]
+    answer = manager.import_devices(["aa:bb:cc:dd:ee:01", "pas-une-adresse"], rack_id)
+    assert answer["applied"] == 1
+    assert answer["failures"][0]["id"] == "pas-une-adresse"
+    snapshot = answer["snapshot"]
+    imported = next(node for node in snapshot["nodes"] if node["mac"] == "aa:bb:cc:dd:ee:01")
+    assert imported["name"] == "Portable Camille"
+    assert (imported["rack_id"], imported["position"]) == (rack_id, 1)
+    # Its lease is read on the node's line, and it is no longer offered twice.
+    assert imported["link"] == {"ip": "10.42.0.10", "online": True, "download": 1_000, "upload": 200}
+    assert [device["mac"] for device in snapshot["discovered"]] == ["aa:bb:cc:dd:ee:02"]
+
+
+def test_arranging_a_rack_closes_the_gaps_without_reordering(manager: RackManager) -> None:
+    rack_id = manager.create_rack("Baie", "", 8)["racks"][0]["id"]
+    first = manager.create_node("remote", "vps-a", onion=ONION)["id"]
+    second = manager.create_node("remote", "vps-b", onion=OTHER_ONION)["id"]
+    manager.move_node(first, rack_id, 4)
+    manager.move_node(second, rack_id, 7)
+    positions = {
+        node["id"]: node["position"] for node in manager.arrange_rack(rack_id)["nodes"]
+    }
+    assert (positions[first], positions[second]) == (1, 2)
+
+
+# --------------------------------------------------------------- lecture ----
+
+
+def test_availability_counts_answered_probes_not_elapsed_time(
+    manager: RackManager,
+) -> None:
+    node_id = manager.create_node("remote", "vps", onion=ONION)["id"]
+    manager.refresh(node_id)
+    manager.refresh(node_id)
+    manager.client.fail = True
+    with pytest.raises(NodeError):
+        manager.refresh(node_id)
+    history = manager.history(node_id)
+    assert history["readings"] == 3
+    assert history["availability"] == pytest.approx(66.7)
+    assert history["samples"][0]["memory_percent"] > 0
+    assert history["samples"][-1]["reachable"] == 0
+
+
+def test_a_node_carries_the_alerts_its_own_sheet_justifies(manager: RackManager) -> None:
+    node_id = manager.create_node("remote", "vps", onion=ONION)["id"]
+    manager.set_rules(node_id, {"egress": "direct"})
+    messages = " ".join(alert["message"] for alert in manager.node(node_id)["alerts"])
+    assert "Sortie directe" in messages
+    quiet = manager.create_node("local", "Poste", mac="aa:bb:cc:dd:ee:01")
+    assert quiet["alerts"] == []
+    waiting = manager.create_node("remote", "vps-neuf")
+    assert [alert["level"] for alert in waiting["alerts"]] == ["info"]
 
 
 # ---------------------------------------------------------------- secrets ---

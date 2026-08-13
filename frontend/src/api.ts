@@ -14,7 +14,9 @@ import type {
   OnionClientCreated,
   OnionState,
   OnboardingState,
+  RackBulkAnswer,
   RackEnrollment,
+  RackHistory,
   RackNode,
   RackNodeRules,
   RackPayload,
@@ -167,6 +169,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ id, verb, unit }),
     }),
+  arrangeRack: (id: string) =>
+    request<RackPayload>('/api/v1/rack/racks/arrange', { method: 'POST', body: JSON.stringify({ id }) }),
+  rackNodeHistory: (id: string) => request<RackHistory>(`/api/v1/rack/nodes/${id}/history`),
+  bulkRackNodes: (operation: string, ids: string[], profile_id = '') =>
+    request<RackBulkAnswer>('/api/v1/rack/nodes/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ operation, ids, profile_id }),
+    }),
+  importRackDevices: (macs: string[], rack_id = '') =>
+    request<RackBulkAnswer>('/api/v1/rack/nodes/import', {
+      method: 'POST',
+      body: JSON.stringify({ macs, rack_id }),
+    }),
+  saveRackProfile: (body: { id: string; name: string; rules: RackNodeRules }) =>
+    request<RackPayload>('/api/v1/rack/profiles', { method: 'POST', body: JSON.stringify(body) }),
+  removeRackProfile: (id: string) =>
+    request<RackPayload>('/api/v1/rack/profiles/remove', { method: 'POST', body: JSON.stringify({ id }) }),
   rackNodeEnrollment: (id: string) =>
     request<RackEnrollment>('/api/v1/rack/nodes/enrollment', { method: 'POST', body: JSON.stringify({ id }) }),
   rotateRackNodeToken: (id: string) =>
