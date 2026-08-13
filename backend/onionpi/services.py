@@ -23,6 +23,7 @@ from .circumvention import CircumventionManager
 from .config import Settings
 from .database import Database
 from .maintenance import MaintenanceWindow
+from .mesh import MeshCoordinator
 from .netcontrol import DeviceGuard, DnsFilter
 from .nodeclient import NodeClient
 from .onboarding import OnboardingManager
@@ -137,6 +138,7 @@ def build_app_services(settings: Settings) -> AppServices:
         access,
         NodeClient(settings.tor_socks_port, settings.demo_mode),
         tor,
+        MeshCoordinator(settings.mesh_key_path, database, settings.demo_mode),
         demo_mode=settings.demo_mode,
         on_event=lambda kind, message: database.add_activity(kind, message),
         wifi_view=wifi_view,

@@ -150,6 +150,18 @@ class Settings:
         return self.data_dir / "rack.key"
 
     @property
+    def mesh_key_path(self) -> Path:
+        """Ed25519 key the overlay's network maps are signed with.
+
+        Deliberately not derived from `rack.key`: that secret can mint any
+        node's token, and a maillage where the centre can be any of its members
+        is a maillage with one point of compromise. This one only signs maps —
+        losing it means re-signing them, never re-enrolling the machines, whose
+        identities are their own.
+        """
+        return self.data_dir / "mesh.key"
+
+    @property
     def agent_request_path(self) -> Path:
         return self.data_dir / "agent.request"
 

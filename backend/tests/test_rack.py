@@ -13,6 +13,7 @@ from onionpi.database import (
     RACK_NODE_UPDATE,
     Database,
 )
+from onionpi.mesh import MeshCoordinator
 from onionpi.nodeclient import (
     NodeClient,
     NodeError,
@@ -133,6 +134,7 @@ def manager(tmp_path: Path) -> RackManager:
         FakeAccess(),
         RecordingClient(),
         FakeController(),
+        MeshCoordinator(tmp_path / "mesh.key", database),
         wifi_view=lambda: [dict(device) for device in WIFI],
     )
 
@@ -146,7 +148,7 @@ def remote(manager: RackManager, name: str = "vps", onion: str = ONION) -> dict[
 
 def test_the_written_statements_cover_every_mutable_column() -> None:
     """The two literal statements and the field order must not drift apart."""
-    for statement, placeholders in ((RACK_NODE_INSERT, 18), (RACK_NODE_UPDATE, 16)):
+    for statement, placeholders in ((RACK_NODE_INSERT, 24), (RACK_NODE_UPDATE, 22)):
         assert statement.count("?") == placeholders
         for field in RACK_NODE_FIELDS:
             assert field in statement

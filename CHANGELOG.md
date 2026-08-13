@@ -60,8 +60,49 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- **OnionMesh : les nœuds se parlent enfin entre eux.** La baie savait
+  administrer des machines distantes ; deux d’entre elles ne pouvaient pas
+  s’adresser la parole, et seul le centre initiait. Les quatre étapes de
+  [`docs/onionmesh.md`](docs/onionmesh.md) sont en place.
+  - **L’identité appartient au nœud.** Il engendre au premier démarrage une clé
+    Ed25519 et une clé statique X25519 signée par elle, et n’en transmet que les
+    moitiés publiques. Le jeton dérivé du secret de baie reste, rétrogradé au
+    rôle qu’il tient bien : le canal d’enrôlement. La baie **autorise** un
+    nœud ; elle ne peut plus l’**être**.
+  - **L’adresse se déduit de la clé** — `fd7a:0000:` suivi de 96 bits de
+    SHA-256. Rien à attribuer, aucune collision à corriger à la main, et prendre
+    l’adresse d’un autre demanderait une préimage de SHA-256. Le plan
+    `10.43.X.Y`, dérivé de deux octets de MAC, reste l’adressage du lien radio.
+  - **Une carte du réseau signée**, refusée si son numéro de série n’augmente
+    pas — sinon un rejeu réinstalle un pair révoqué, et une révocation qui se
+    rejoue n’en est pas une —, si elle est périmée, si elle s’adresse à un autre
+    nœud, ou si la clé statique d’un pair n’est pas signée par son identité.
+  - **Un plan de données Noise IK** (`Noise_IK_25519_ChaChaPoly_BLAKE2s`, la
+    construction de WireGuard) au-dessus d’un flux onion ou du lien radio. Un
+    service onion authentifie le *service* joint ; Noise authentifie
+    l’*identité* du pair, si bien qu’une adresse recopiée de travers donne
+    « aucun pair » plutôt qu’un mauvais pair. Le mode est le transfert de flux —
+    un port distant présenté localement, comme `ssh -L` — parce qu’un flux onion
+    est du TCP et qu’y faire passer de l’IP empile deux contrôles de congestion.
+  - **Chemin direct et chemin relayé, une seule session.** Un pair à portée du
+    maillage 802.11s est joint par `bat0` en une milliseconde ; les autres par un
+    circuit Tor. C’est la distinction Tailscale entre lien direct et relais, et
+    elle réconcilie les deux réseaux du dépôt : la dorsale radio devient le
+    chemin rapide d’un seul maillage.
+  - **Verrou de maillage K-sur-N.** Épinglé sur chaque nœud dans un fichier que
+    la baie n’écrit pas, il fait qu’une clé de pair nouvelle n’est acceptée que
+    contresignée par K garants. La Pi cesse d’être le point unique dont la
+    compromission ouvre tout. `onionpi-admin mesh-trustee` et `mesh-endorse`
+    créent et utilisent les clés de garant.
+  - Les habilitations sont appliquées **aux deux extrémités** : ce qu’on a
+    raconté à l’initiateur n’entre pas dans la décision du répondeur.
+  - Les primitives sont écrites en Python pur — le nœud n’a que la bibliothèque
+    standard — et validées contre les vecteurs des RFC 8032, 7748 et 8439.
+  - **Mise à jour des nœuds requise** : un agent antérieur à 0.6 n’a pas de
+    maillage. Réinstallez-le depuis **Préparer l’installation** ; la commande
+    porte désormais `--coordinator-key`.
 - **[`docs/onionmesh.md`](docs/onionmesh.md).** L’architecture du réseau
-  superposé visé : un réseau privé entre ses machines à la manière de
+  superposé : un réseau privé entre ses machines à la manière de
   Tailscale, mais dont le transport est Tor — pas de port ouvert, pas de STUN,
   pas de relais tiers, et un plan de contrôle qui n’apprend jamais où sont les
   machines. Identités générées sur le nœud, adresses IPv6 dérivées des clés
@@ -86,7 +127,9 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 - **La version du document de politique n’est plus celle du protocole d’appel.**
   Une seule constante servait aux deux ; faire évoluer le protocole faisait
   refuser la politique par les trois exécutants privilégiés, sans que rien ne le
-  dise.
+  dise. Le document passe en version 2 avec les deux champs du maillage, et un
+  test vérifie que les quatre moitiés — baie, agent, `render-policy.py`,
+  `render-policy-macos.py`, exécutant Windows — lisent le même numéro.
 - **`scripts/check.sh` génère les types API avec le Python du `venv`**, au lieu
   du `python3` que le PATH propose — qui est rarement celui où FastAPI est
   installé, et dont l’échec se lisait comme un contrat rompu.

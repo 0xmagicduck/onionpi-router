@@ -29,7 +29,10 @@ try {
                 exit 0
             }
             $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
-            if ($policy.version -ne 1) { throw "Version de politique inconnue" }
+            # Version 2: elle ajoute les champs du maillage, dont le chemin
+            # direct sur bat0, qui n'existe pas sous Windows. Le maillage y
+            # passe par Tor et ne demande aucune regle de pare-feu.
+            if ($policy.version -ne 2) { throw "Version de politique inconnue" }
             if ($policy.egress -notin @("tor-only", "direct")) { throw "Mode de sortie invalide" }
             if ($policy.exit_country -and $policy.exit_country -notmatch '^[A-Z]{2}$') { throw "Pays invalide" }
             if ($policy.digest -notmatch '^[0-9a-f]{64}$') { throw "Empreinte invalide" }

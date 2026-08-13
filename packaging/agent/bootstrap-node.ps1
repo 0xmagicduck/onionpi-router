@@ -8,8 +8,11 @@ param(
     [string]$Token = "",
     [switch]$TokenStdin,
     [int]$Port = 9080,
+    [int]$MeshPort = 9081,
     [string]$ClientKey = "",
     [string]$ClientName = "baie",
+    [string]$CoordinatorKey = "",
+    [string]$MeshLock = "",
     [string]$Repository = "0xmagicduck/onionpi-router",
     [string]$Ref = "main",
     [string]$BundleDigest = "",
@@ -103,8 +106,11 @@ try {
         Node = $Node
         Token = $Token
         Port = $Port
+        MeshPort = $MeshPort
         ClientKey = $ClientKey
         ClientName = $ClientName
+        CoordinatorKey = $CoordinatorKey
+        MeshLock = $MeshLock
         SourceRoot = $installer.DirectoryName
         Yes = $Yes
     }

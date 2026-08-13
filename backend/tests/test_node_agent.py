@@ -28,6 +28,11 @@ AGENT_DIR = Path(__file__).resolve().parents[2] / "packaging" / "agent"
 
 
 def load(name: str, filename: str) -> ModuleType:
+    # The agent imports its two mesh modules by plain name. On a node they sit
+    # beside it in /usr/local/lib/onionpi-node, which is `sys.path[0]` for a
+    # program run from there; loading by path here has to reproduce that.
+    if str(AGENT_DIR) not in sys.path:
+        sys.path.insert(0, str(AGENT_DIR))
     spec = importlib.util.spec_from_file_location(name, AGENT_DIR / filename)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -89,11 +94,25 @@ def test_both_halves_compute_the_same_answer_signature(agent: ModuleType) -> Non
     )
 
 
-def test_the_policy_document_version_is_not_the_protocol_version(agent: ModuleType) -> None:
+def test_the_policy_document_version_is_not_the_protocol_version(
+    agent: ModuleType, renderer: ModuleType, macos_renderer: ModuleType
+) -> None:
     """The two used to be one constant, and bumping the protocol silently made
-    every privileged renderer refuse the policy it was handed."""
-    assert agent.POLICY_VERSION == 1
-    assert agent.PROTOCOL_VERSION != agent.POLICY_VERSION
+    every privileged renderer refuse the policy it was handed.
+
+    They now happen to hold the same number, so equality proves nothing either
+    way. What must hold is that both halves and all three privileged renderers
+    read the *policy* version — a renderer left behind refuses every policy it
+    is handed, and a node stops being filtered at all.
+    """
+    from onionpi.rack import POLICY_VERSION as APPLIANCE_POLICY_VERSION
+
+    assert agent.POLICY_VERSION == APPLIANCE_POLICY_VERSION
+    assert renderer.POLICY_VERSION == APPLIANCE_POLICY_VERSION
+    assert macos_renderer.POLICY_VERSION == APPLIANCE_POLICY_VERSION
+    windows = (AGENT_DIR / "onionpi-node-apply-windows.ps1").read_text(encoding="utf-8")
+    assert f"$policy.version -ne {APPLIANCE_POLICY_VERSION}" in windows
+    assert agent.PROTOCOL_VERSION == PROTOCOL_VERSION
 
 
 def test_a_nonce_is_accepted_once(agent: ModuleType) -> None:
@@ -379,11 +398,14 @@ def test_direct_egress_is_an_exception_that_still_filters_what_comes_in(
 @pytest.mark.parametrize(
     "broken",
     [
-        {"version": 2, "egress": "tor-only", "digest": "0" * 64},
-        {"version": 1, "egress": "rien", "digest": "0" * 64},
-        {"version": 1, "egress": "tor-only", "digest": "0" * 63},
-        {"version": 1, "egress": "tor-only", "digest": "0" * 64, "keep_open_ports": [1] * 9},
-        {"version": 1, "egress": "tor-only", "digest": "0" * 64, "keep_open_ports": [True]},
+        {"version": 3, "egress": "tor-only", "digest": "0" * 64},
+        {"version": 1, "egress": "tor-only", "digest": "0" * 64},
+        {"version": 2, "egress": "rien", "digest": "0" * 64},
+        {"version": 2, "egress": "tor-only", "digest": "0" * 63},
+        {"version": 2, "egress": "tor-only", "digest": "0" * 64, "keep_open_ports": [1] * 9},
+        {"version": 2, "egress": "tor-only", "digest": "0" * 64, "keep_open_ports": [True]},
+        {"version": 2, "egress": "tor-only", "digest": "0" * 64, "mesh_port": 70000},
+        {"version": 2, "egress": "tor-only", "digest": "0" * 64, "mesh_port": True},
     ],
 )
 def test_the_renderer_refuses_before_writing_a_rule(

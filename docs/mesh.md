@@ -73,9 +73,10 @@ adresse lors de l’installation.
 - `bat0` n’a ni DHCP ni route par défaut. nftables bloque tout transit entrant
   ou sortant par `bat0`; un pair ne peut pas emprunter l’Ethernet d’un autre
   nœud pour contourner Tor.
-- Seuls ICMP, mDNS et l’administration HTTP(S) — plus SSH si autorisé à
-  l’installation — atteignent un nœud par le mesh. SOCKS, ControlPort et
-  TransPort de Tor restent fermés aux pairs.
+- Seuls ICMP, mDNS, l’administration HTTP(S) et le port 9081 du plan de données
+  OnionMesh — plus SSH si autorisé à l’installation — atteignent un nœud par le
+  mesh. SOCKS, ControlPort et TransPort de Tor restent fermés aux pairs. Rien
+  n’écoute sur 9081 tant que l’agent de nœud n’est pas installé.
 - Tor transporte TCP et DNS vers Internet. Tor ne devient pas le protocole de
   routage du mesh : 802.11s et batman-adv assurent le multi-saut local, Tor
   assure l’anonymisation de chaque sortie.
@@ -86,4 +87,14 @@ adresse lors de l’installation.
 Le noyau Linux documente `batman-adv` comme un commutateur virtuel de couche 2
 auquel on attache les interfaces physiques ; `bat0` est donc la seule interface
 qui reçoit l’adresse IP du plan mesh.
+
+## Ce que ce maillage est devenu
+
+Cette dorsale radio est aussi le **chemin direct** du réseau superposé décrit
+dans [`docs/onionmesh.md`](onionmesh.md). Un nœud dont l’agent participe au
+maillage écoute son port de plan de données (9081 par défaut) sur son adresse
+`10.43.X.Y`, et un pair à portée radio l’y joint sans payer six sauts Tor. Ce
+qui circule alors est du Noise : `bat0` reste un transport, jamais une frontière
+de confiance — `batman-adv` n’authentifie pas ses annonces d’originator au-delà
+du lien, et qui détient la phrase SAE peut usurper une MAC.
 

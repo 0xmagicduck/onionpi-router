@@ -35,6 +35,7 @@ import type {
   RackProfile,
 } from '../types'
 import { CableInspector, RackCableLayer } from './RackCabling'
+import { MeshOverview } from './RackMesh'
 import { RackNodeSheet } from './RackNodeSheet'
 import {
   DatacenterOperations,
@@ -623,6 +624,15 @@ export function RackPage({ notify }: Props) {
         }
       />
 
+      {payload?.mesh && (
+        <Panel
+          title="Réseau superposé OnionMesh"
+          subtitle="Les nœuds se parlent entre eux, par le lien radio quand il existe et par Tor sinon."
+        >
+          <MeshOverview mesh={payload.mesh} notify={notify} onChanged={load} />
+        </Panel>
+      )}
+
       <ProfilesPanel
         profiles={profiles}
         maxProfiles={payload?.limits.max_profiles ?? 12}
@@ -681,6 +691,8 @@ export function RackPage({ notify }: Props) {
           node={detail}
           racks={racks}
           profiles={profiles}
+          peers={nodes.filter((node) => node.kind === 'remote' && node.id !== detail.id)}
+          meshLocked={payload?.mesh?.lock.enabled ?? false}
           onClose={() => setOpenNode('')}
           onChanged={load}
           notify={notify}

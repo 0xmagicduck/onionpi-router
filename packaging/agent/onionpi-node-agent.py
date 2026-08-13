@@ -43,13 +43,18 @@ from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "0.5.0"
+# Installés côté à côté dans /usr/local/lib/onionpi-node, donc trouvés par le
+# répertoire du programme. Aucune dépendance externe n'entre par là.
+from onionpi_mesh import Identity, NetmapError, ed25519_sign
+from onionpi_mesh_runtime import MeshRuntime
+
+VERSION = "0.6.0"
 PROTOCOL_VERSION = 2
 #: Version du document de politique, indépendante du protocole d'appel: c'est
 #: elle que `render-policy*` et `onionpi-node-apply-windows.ps1` exigent avant
 #: d'écrire une règle. Les deux ont vécu confondues, et faire évoluer l'une
 #: cassait silencieusement l'application des règles sur les trois plateformes.
-POLICY_VERSION = 1
+POLICY_VERSION = 2
 
 STATE_DIR = Path(os.environ.get("ONIONPI_NODE_STATE", "/var/lib/onionpi-node"))
 RESULT_DIR = Path(os.environ.get("ONIONPI_NODE_RESULT", "/var/lib/onionpi-node-privileged"))
@@ -57,6 +62,16 @@ REQUEST_PATH = STATE_DIR / "apply.request"
 RESULT_PATH = RESULT_DIR / "apply.result"
 POLICY_PATH = STATE_DIR / "policy.json"
 APPLIED_PATH = RESULT_DIR / "policy.applied"
+#: L'identité du maillage. Générée ici, en 0600, et jamais transmise: seules
+#: ses moitiés publiques remontent à la baie.
+IDENTITY_PATH = STATE_DIR / "identity.json"
+#: Le verrou de maillage, épinglé par l'installateur et appartenant à root.
+#: L'agent le lit, il ne l'écrit pas: un verrou que la carte pourrait remplacer
+#: ne verrouillerait rien.
+LOCK_PATH = Path(os.environ.get("ONIONPI_NODE_MESH_LOCK", "/etc/onionpi-node/mesh.lock"))
+#: Le domaine signé par l'ancienne clé quand le nœud en change. Identique à
+#: `ROTATION_BINDING` côté baie.
+ROTATION_BINDING = b"onionpi-mesh/1/rotate"
 
 TOR_COOKIE = Path(os.environ.get("ONIONPI_NODE_TOR_COOKIE", "/run/tor/control.authcookie"))
 TOR_CONTROL_PORT = int(os.environ.get("ONIONPI_NODE_TOR_CONTROL_PORT", "9051"))
@@ -76,7 +91,16 @@ LOG_DIR = Path(LOG_DIR_VALUE) if LOG_DIR_VALUE else None
 
 #: Le même vocabulaire que côté baie. Un verbe absent d'ici n'existe pas, quelle
 #: que soit la signature qui l'accompagne.
-VERBS = ("status", "apply-policy", "new-identity", "restart-tor", "journal", "reboot")
+VERBS = (
+    "status",
+    "apply-policy",
+    "new-identity",
+    "restart-tor",
+    "journal",
+    "reboot",
+    "netmap",
+    "mesh-rotate",
+)
 
 #: Unités dont le journal peut être lu. Une liste blanche: un nom arbitraire
 #: transformerait cette lecture en fuite du journal complet de la machine.
@@ -107,6 +131,9 @@ def load_config() -> dict[str, str]:
         sys.exit("NODE_ID invalide")
     if not re.fullmatch(r"[0-9a-f]{64}", values["TOKEN"]):
         sys.exit("TOKEN invalide")
+    coordinator = values.get("COORDINATOR_KEY", "")
+    if coordinator and not re.fullmatch(r"ed25519:[0-9a-f]{64}", coordinator):
+        sys.exit("COORDINATOR_KEY invalide")
     return values
 
 
@@ -280,7 +307,27 @@ class TorControl:
         self.command("SIGNAL NEWNYM")
 
 
-def read_status(tor: TorControl) -> dict[str, object]:
+def direct_address(device: str = "bat0") -> str:
+    """L'adresse `10.43.X.Y` du lien radio, ou une chaîne vide.
+
+    Lue à chaud parce qu'elle appartient au lien: `onionpi-mesh-apply` peut la
+    poser après le démarrage de l'agent, et un nœud sans radio n'en a jamais.
+    """
+    try:
+        output = subprocess.run(  # noqa: S603
+            ["ip", "-4", "-o", "addr", "show", "dev", device],
+            capture_output=True,
+            text=True,
+            timeout=4,
+            check=False,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    match = re.search(r"inet (10\.43\.\d{1,3}\.\d{1,3})/", output)
+    return match.group(1) if match else ""
+
+
+def read_status(tor: TorControl, mesh: MeshRuntime | None = None) -> dict[str, object]:
     usage = shutil.disk_usage("/")
     try:
         applied = json.loads(APPLIED_PATH.read_text(encoding="utf-8"))
@@ -314,6 +361,9 @@ def read_status(tor: TorControl) -> dict[str, object]:
                 "non pris en charge"
             ),
         },
+        # L'annonce du maillage: les moitiés publiques, la signature qui les
+        # lie, et ce que le nœud fait de sa carte. Rien de privé ne part d'ici.
+        "mesh": mesh.status() if mesh is not None else {},
     }
 
 
@@ -480,12 +530,19 @@ def store_policy(document: dict[str, object]) -> dict[str, object]:
     digest = str(document.get("digest", ""))
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise ValueError("Empreinte de politique invalide")
+    mesh_port = document.get("mesh_port", 0)
+    if not isinstance(mesh_port, int) or isinstance(mesh_port, bool) or not 0 <= mesh_port <= 65535:
+        raise ValueError("Port de maillage invalide")
     body = {
         "version": POLICY_VERSION,
         "egress": egress,
         "exit_country": country,
         "keep_open_ports": sorted({int(port) for port in ports}),
         "isolated": bool(document.get("isolated", False)),
+        # La seule exception que le coupe-circuit ouvre pour le maillage, et
+        # uniquement pour le chemin direct: le chemin relayé passe par Tor.
+        "mesh_enabled": bool(document.get("mesh_enabled", False)),
+        "mesh_port": mesh_port,
         "digest": digest,
     }
     temporary = POLICY_PATH.with_suffix(".tmp")
@@ -496,6 +553,35 @@ def store_policy(document: dict[str, object]) -> dict[str, object]:
         "applied": answer.get("status") == "ok",
         "digest": digest,
         "message": str(answer.get("message", "")),
+    }
+
+
+def rotate_identity(mesh: MeshRuntime) -> dict[str, object]:
+    """Remplace l'identité de maillage du nœud, et prouve que c'est bien lui.
+
+    La nouvelle clé est engendrée ici; l'ancienne signe le changement. La baie
+    n'a donc jamais eu ni la première ni la seconde, et une rotation qu'elle
+    n'aurait pas demandée reste vérifiable par tous les pairs.
+    """
+    previous = mesh.identity
+    fresh = Identity.generate()
+    proof = ed25519_sign(
+        previous.identity_seed,
+        ROTATION_BINDING
+        + b"\n"
+        + f"{previous.announcement()['identity']}\n{fresh.announcement()['identity']}".encode(),
+    )
+    fresh.save(IDENTITY_PATH)
+    mesh.identity = fresh
+    logger.info("Clé de maillage renouvelée: %s", fresh.address)
+    return {
+        "ok": True,
+        "mesh": {
+            **fresh.announcement(),
+            "rotation_signature": proof.hex(),
+            "port": mesh.port,
+        },
+        "message": "Clé de maillage renouvelée",
     }
 
 
@@ -537,6 +623,7 @@ class Handler(BaseHTTPRequestHandler):
     config: dict[str, str] = {}
     replay = ReplayGuard()
     tor = TorControl()
+    mesh: MeshRuntime | None = None
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         logger.info("%s %s", self.address_string(), format % args)
@@ -612,7 +699,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch(self, verb: str, payload: dict[str, object]) -> dict[str, object]:
         if verb == "status":
-            return read_status(self.tor)
+            return read_status(self.tor, self.mesh)
+        if verb in ("netmap", "mesh-rotate"):
+            return self.dispatch_mesh(verb, payload)
         if verb == "apply-policy":
             return store_policy(payload)
         if verb == "new-identity":
@@ -628,6 +717,23 @@ class Handler(BaseHTTPRequestHandler):
             PrivilegedRequest().submit("reboot")
             return {"ok": True, "message": "Redémarrage demandé"}
         raise ValueError("Action inconnue")
+
+    def dispatch_mesh(self, verb: str, payload: dict[str, object]) -> dict[str, object]:
+        """Les deux verbes du maillage. Refusés tant qu'aucune clé n'est épinglée.
+
+        Un agent sans `COORDINATOR_KEY` n'a pas de coordinateur à croire: il le
+        dit, plutôt que d'accepter la première carte qui se présente.
+        """
+        if self.mesh is None:
+            raise ValueError(
+                "Maillage inactif: réinstallez l'agent avec --coordinator-key."
+            )
+        if verb == "netmap":
+            try:
+                return self.mesh.accept(payload)
+            except NetmapError as error:
+                raise ValueError(str(error)) from error
+        return rotate_identity(self.mesh)
 
     def respond(
         self,
@@ -675,6 +781,7 @@ def main() -> None:
     Handler.config = load_config()
     port = int(os.environ.get("ONIONPI_NODE_PORT", Handler.config.get("PORT", "9080")))
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    Handler.mesh = start_mesh(Handler.config)
     # Boucle locale uniquement: ce qui rend l'agent joignable est le service
     # onion, jamais une interface réseau.
     server = BoundedHTTPServer(("127.0.0.1", port), Handler)
@@ -685,6 +792,47 @@ def main() -> None:
         pass
     finally:
         server.server_close()
+        if Handler.mesh is not None:
+            Handler.mesh.stop()
+
+
+def start_mesh(config: dict[str, str]) -> MeshRuntime | None:
+    """Démarre le plan de données, ou explique pourquoi il reste éteint.
+
+    L'identité est créée à la première exécution, même sans coordinateur
+    épinglé: elle est ce que le nœud *est*, indépendamment de qui l'administre,
+    et l'annoncer permet à la baie de l'enregistrer avant qu'un maillage
+    existe.
+    """
+    identity = Identity.load(IDENTITY_PATH)
+    coordinator = config.get("COORDINATOR_KEY", "")
+    mesh_port = int(os.environ.get("ONIONPI_NODE_MESH_PORT", config.get("MESH_PORT", "9081")))
+    socks_port = int(config.get("SOCKS_PORT", "9050"))
+    runtime = MeshRuntime(
+        identity,
+        STATE_DIR,
+        config["NODE_ID"],
+        coordinator_key=coordinator,
+        lock_path=LOCK_PATH,
+        port=mesh_port,
+        socks_port=socks_port,
+        direct_address=direct_address(),
+    )
+    if not coordinator:
+        logger.info(
+            "Maillage inactif: aucune clé de coordinateur épinglée. Adresse %s",
+            identity.address,
+        )
+        return runtime
+    runtime.start()
+    logger.info(
+        "Maillage %s sur le port %d, carte série %d, verrou %s",
+        identity.address,
+        mesh_port,
+        runtime.serial(),
+        "actif" if runtime.lock is not None else "absent",
+    )
+    return runtime
 
 
 if __name__ == "__main__":

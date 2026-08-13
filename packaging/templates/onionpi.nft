@@ -4,6 +4,7 @@ define onionpi_lan_if = "__WIFI_INTERFACE__"
 define onionpi_lan_net = __LAN_NETWORK__
 define onionpi_mesh_if = "bat0"
 define onionpi_mesh_net = 10.43.0.0/16
+define onionpi_mesh_port = 9081
 define onionpi_trans_port = 9040
 
 table inet onionpi {
@@ -100,6 +101,11 @@ __LAN_SSH_RULE__
     ip saddr $onionpi_mesh_net ip protocol icmp icmp type { echo-request, destination-unreachable, time-exceeded } accept
     ip saddr $onionpi_mesh_net udp dport 5353 accept
     ip saddr $onionpi_mesh_net tcp dport { 80, 443 } accept
+    # The overlay's data plane, when this appliance also runs a node agent
+    # (docs/onionmesh.md). What crosses it is Noise: the radio link is a
+    # transport, never a trust boundary, so this rule opens a port and not a
+    # privilege. Nothing listens on it unless that agent is installed.
+    ip saddr $onionpi_mesh_net tcp dport $onionpi_mesh_port accept
 __MESH_SSH_RULE__
     counter drop
   }
