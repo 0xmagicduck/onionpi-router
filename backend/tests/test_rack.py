@@ -464,6 +464,7 @@ def test_credentials_are_derived_and_never_stored(manager: RackManager) -> None:
     assert "curl --proto '=https' --tlsv1.2 -fsSL" in bundle["commands"]["linux"]
     assert "--platform macos" in bundle["commands"]["macos"]
     assert "curl.exe --proto '=https' --tlsv1.2 -fsSL" in bundle["commands"]["windows"]
+    assert "if ($LASTEXITCODE -ne 0)" in bundle["commands"]["windows"]
     assert bundle["token"] in bundle["commands"]["windows"]
     row = manager.database.rack_node(node["id"])
     assert row is not None

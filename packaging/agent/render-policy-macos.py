@@ -51,12 +51,17 @@ def load(path: Path) -> dict[str, object]:
     }
 
 
-def render(policy: dict[str, object]) -> str:
+def render(policy: dict[str, object], socks_port: int) -> str:
     if policy["egress"] == "direct":
         return ""
     ports = policy["keep_open_ports"]
+    loopback_rule = (
+        "pass quick on lo0 all"
+        if not policy["isolated"]
+        else f"block return quick on lo0 proto tcp to port {socks_port} user != _onionpi-node"
+    )
     lines = [
-        "pass quick on lo0 all" if not policy["isolated"] else "block return quick on lo0 proto tcp to port 9050 user != _onionpi-node",
+        loopback_rule,
         "block return out all",
         f"pass out quick inet proto {{ tcp, udp }} user {SERVICE_USER} keep state",
         f"pass out quick inet6 proto {{ tcp, udp }} user {SERVICE_USER} keep state",
@@ -73,10 +78,16 @@ def render(policy: dict[str, object]) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        fail("usage: render-policy-macos.py <politique.json> <sortie.pf>")
+    if len(sys.argv) != 4:
+        fail("usage: render-policy-macos.py <politique.json> <sortie.pf> <port-socks>")
+    try:
+        socks_port = int(sys.argv[3])
+    except ValueError:
+        fail("port SOCKS invalide")
+    if not 1 <= socks_port <= 65535:
+        fail("port SOCKS invalide")
     policy = load(Path(sys.argv[1]))
-    Path(sys.argv[2]).write_text(render(policy), encoding="utf-8")
+    Path(sys.argv[2]).write_text(render(policy, socks_port), encoding="utf-8")
     print(f"{policy['digest']} {policy['egress']}")
 
 

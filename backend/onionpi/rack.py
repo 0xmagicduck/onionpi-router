@@ -1285,8 +1285,10 @@ class RackManager:
             ),
             "windows": (
                 "$p=Join-Path $env:TEMP 'onionpi-node.ps1'; "
+                "Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue; "
                 "curl.exe --proto '=https' --tlsv1.2 -fsSL "
                 f"{windows_bootstrap} -o $p; "
+                "if ($LASTEXITCODE -ne 0) { throw 'Telechargement GitHub refuse' }; "
                 "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p"
                 f" -Node {node_id} -Port {port} -Token {token}"
                 f" -ClientKey {public} -Yes"

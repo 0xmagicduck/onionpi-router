@@ -200,7 +200,7 @@ def test_macos_policy_blocks_direct_output_and_keeps_tor(
 ) -> None:
     path = tmp_path / "p.json"
     path.write_text(json.dumps(policy_document(clean_rules({}), False)), encoding="utf-8")
-    ruleset = macos_renderer.render(macos_renderer.load(path))
+    ruleset = macos_renderer.render(macos_renderer.load(path), 19050)
     assert "block return out all" in ruleset
     assert "pass out quick inet proto { tcp, udp } user _onionpi-node" in ruleset
     assert "pass in quick proto tcp to port { 22 }" in ruleset
@@ -214,8 +214,8 @@ def test_macos_isolation_precedes_the_loopback_allow(
         json.dumps(policy_document(clean_rules({"access": "blocked"}), True)),
         encoding="utf-8",
     )
-    ruleset = macos_renderer.render(macos_renderer.load(path))
-    isolation = "block return quick on lo0 proto tcp to port 9050 user != _onionpi-node"
+    ruleset = macos_renderer.render(macos_renderer.load(path), 19050)
+    isolation = "block return quick on lo0 proto tcp to port 19050 user != _onionpi-node"
     assert ruleset.index(isolation) < ruleset.index("pass quick on lo0 all")
 
 
@@ -225,3 +225,11 @@ def test_windows_kill_switch_suspends_and_restores_existing_output_rules() -> No
     assert "Set-NetFirewallProfile -All -DefaultOutboundAction Block" in script
     assert "Enable-NetFirewallRule -Name $ruleName" in script
     assert 'New-NetFirewallRule -DisplayName "OnionPi Node — Tor"' in script
+
+
+def test_windows_bootstrap_is_ascii_and_adds_a_bom_before_execution() -> None:
+    bootstrap = (AGENT_DIR / "bootstrap-node.ps1").read_bytes()
+    text = bootstrap.decode("ascii")
+    assert "[Text.UTF8Encoding]::new($true)" in text
+    assert "[IO.File]::WriteAllText($_.FullName, $scriptText, $utf8WithBom)" in text
+    assert text.index("WriteAllText") < text.index("& $installer.FullName")

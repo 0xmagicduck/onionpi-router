@@ -361,7 +361,7 @@ def read_journal(unit: str, lines: int) -> list[str]:
     count = max(1, min(int(lines), MAX_JOURNAL_LINES))
     if PLATFORM in {"darwin", "windows"} and LOG_DIR is not None:
         filenames = {
-            "tor": "tor.log",
+            "tor": "tor.stdout.log" if PLATFORM == "darwin" else "tor.log",
             "onionpi-node-agent": "agent.log",
             "onionpi-node-apply": "apply.log",
         }
