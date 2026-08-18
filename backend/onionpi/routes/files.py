@@ -52,14 +52,13 @@ def create_router(context: RouteContext) -> APIRouter:
     def safe_path(relative: str, require_exists: bool = False) -> Path:
         cleaned = relative.strip().lstrip("/")
         try:
+            # resolve() collapses ".." segments and follows any symlink (including
+            # one planted inside the share) before the containment check below
+            # ever runs, so the check sees where the path actually lands.
             candidate = (settings.shared_dir / cleaned).resolve()
-            inside = (
-                os.path.commonpath([str(settings.shared_dir), str(candidate)])
-                == str(settings.shared_dir)
-            )
         except ValueError as error:
             raise HTTPException(status_code=400, detail="Chemin invalide") from error
-        if not inside:
+        if not candidate.is_relative_to(settings.shared_dir):
             raise HTTPException(status_code=400, detail="Chemin invalide")
         if require_exists and not candidate.exists():
             raise HTTPException(status_code=404, detail="Fichier introuvable")
