@@ -1,0 +1,27 @@
+backend/onionpi/routes/files.py
+  s_46d43f7fbec06c::t_2228cabf5dc92a 55-57,61
+backend/requirements.txt
+  s_46d43f7fbec06c::t_e01c4baee47db6 7
+frontend/package.json
+  s_46d43f7fbec06c::t_26c61c442b3ea1 23
+backend/requirements-dev.txt
+  s_46d43f7fbec06c::t_8abb8972de38bf 2-3
+CHANGELOG.md
+  s_46d43f7fbec06c::t_a2e751d7435d19 10-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "910c0d5e4c236298924e60d32a022964a749eabe",
+  "prompts": {},
+  "sessions": {
+    "s_46d43f7fbec06c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a85e4d4-9b2c-4285-ae70-6bdecd9892d1",
+        "model": "unknown"
+      },
+      "human_author": "0xmagicduck <0xmagicduck@proton.me>"
+    }
+  }
+}
