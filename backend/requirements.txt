@@ -4,7 +4,7 @@ uvicorn[standard]==0.52.1
 python-multipart==0.0.32
 psutil==7.2.2
 httpx[socks]==0.28.1
-cryptography==45.0.6
+cryptography==50.0.0
 
 # Complete transitive lock for the signed arm64 wheelhouse. Keeping it here
 # makes a release rebuild resolve to the same wheel files instead of whatever

@@ -7,6 +7,29 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 
 ### Sécurité
 
+- **Dépendances mises à niveau contre des CVE signalées par Semgrep et
+  Dependabot.** `cryptography` (45.0.6 → 50.0.0) corrigeait un OpenSSL
+  vulnérable statiquement lié aux roues PyPI (GHSA-537c-gmf6-5ccf) ainsi que
+  plusieurs failles de validation de certificats, de dépassement de tampon et
+  de déni de service dans la construction de chaînes (GHSA-jwv3-5hgf-82ww,
+  GHSA-g6cj-pr64-35w5, GHSA-r6ph-v2qm-q3c2, CVE-2026-69248, CVE-2026-39892,
+  CVE-2026-34073). `vite` (5.4.21 → 6.4.3, dépendance de développement
+  uniquement) corrigeait un contournement de `server.fs.deny` sous Windows,
+  une traversée de chemin dans les `.map` des dépendances optimisées et une
+  divulgation NTLM via `launch-editor` (CVE-2026-53571, CVE-2026-39365,
+  CVE-2026-53632) ; `esbuild`, embarqué par Vite, passe du même coup à 0.25.x
+  et referme le CORS ouvert du serveur de développement
+  (GHSA-67mh-4wv8-2f99). `pytest` (8.4.1 → 9.1.1, avec `pytest-asyncio` en
+  1.4.0 pour rester compatible) corrigeait une création de répertoire
+  temporaire prévisible (CVE-2025-71176).
+- **Le téléchargement de fichiers partagés reconstruit son garde-fou de
+  chemin avec `Path.is_relative_to()`.** L’ancienne vérification manuelle par
+  `os.path.commonpath()` était déjà sûre — testée par
+  `test_mutations_require_csrf_and_paths_stay_in_share` — mais l’analyse
+  statique (Semgrep) ne pouvait pas la reconnaître comme un assainisseur à
+  travers la fermeture `safe_path`. La nouvelle forme est l’idiome standard
+  de la bibliothèque, avec la même sémantique : `resolve()` réduit les `..`
+  et suit tout lien symbolique avant que le confinement ne soit vérifié.
 - **Le point d’accès est verrouillé sur WPA2/RSN avec AES-CCMP.** Les anciens
   profils ne limitaient pas explicitement la version du protocole ;
   NetworkManager pouvait donc annoncer une compatibilité WPA1 que macOS
