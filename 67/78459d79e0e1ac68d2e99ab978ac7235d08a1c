@@ -1,0 +1,19 @@
+CHANGELOG.md
+  s_0d296dbe0fcc33::t_fe6fbf3dee64ec 147-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6778459d79e0e1ac68d2e99ab978ac7235d08a1c",
+  "prompts": {},
+  "sessions": {
+    "s_0d296dbe0fcc33": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66b5e7b7-123f-42eb-8b57-47554cd2dd1c",
+        "model": "unknown"
+      },
+      "human_author": "0xmagicduck <0xmagicduck@proton.me>"
+    }
+  }
+}
