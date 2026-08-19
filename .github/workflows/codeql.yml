@@ -27,7 +27,7 @@ concurrency:
 jobs:
   analyze:
     name: Analyse ${{ matrix.language }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     permissions:
       contents: read
       security-events: write
@@ -43,6 +43,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+
+      # GitHub-hosted ubuntu-latest ships Node.js; a self-hosted runner may
+      # not. The javascript-typescript extractor needs `node` on PATH even
+      # with build-mode: none.
+      - if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
 
       - uses: github/codeql-action/init@faaa5d804fc648d0fdb28822a8e36cf7d0a6132c # v4.37.7
         with:

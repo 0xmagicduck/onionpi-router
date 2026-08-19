@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     outputs:
       version: ${{ steps.version.outputs.version }}
       channel: ${{ steps.version.outputs.channel }}
@@ -74,6 +74,16 @@ jobs:
           sudo apt-get install -y --no-install-recommends nftables iproute2 iputils-ping
           sudo packaging/tests/fail-closed-vm.sh
           sudo packaging/tests/traffic-accounting-netns.sh
+
+      # Self-hosted runners reuse this checkout across jobs, unlike a
+      # GitHub-hosted VM that is thrown away afterwards. The sudo tests above
+      # can leave root-owned files (e.g. Python bytecode cache written while
+      # exercising accounting.py under a root network namespace), which then
+      # breaks `actions/checkout`'s clean step for whatever job lands on this
+      # runner next.
+      - name: Give the workspace back to the runner user
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" .
 
       - name: Build the interface
         run: |
@@ -131,7 +141,7 @@ jobs:
   # this isolated publication job.
   publish:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     environment: stable-release-signing
     permissions:
       contents: write

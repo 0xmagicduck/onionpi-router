@@ -23,7 +23,7 @@ concurrency:
 jobs:
   backend:
     name: Backend (ruff + pytest)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -40,7 +40,7 @@ jobs:
 
   frontend:
     name: Frontend (typecheck + build)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -59,7 +59,7 @@ jobs:
 
   shell:
     name: Shell (shellcheck + syntax)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -101,9 +101,19 @@ jobs:
           done
           exit 0
 
+      # Self-hosted runners reuse this checkout across jobs, unlike a
+      # GitHub-hosted VM that is thrown away afterwards. The sudo test above
+      # can leave root-owned files (e.g. Python bytecode cache written while
+      # exercising accounting.py under a root network namespace), which then
+      # breaks `actions/checkout`'s clean step for whatever job lands on this
+      # runner next.
+      - name: Give the workspace back to the runner user
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" .
+
   consistency:
     name: Version and packaging consistency
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -149,7 +159,7 @@ jobs:
 
   workflows:
     name: Workflow security (actionlint + zizmor)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -185,7 +195,7 @@ jobs:
 
   secrets:
     name: No credentials in the tree
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
