@@ -75,6 +75,16 @@ jobs:
           sudo packaging/tests/fail-closed-vm.sh
           sudo packaging/tests/traffic-accounting-netns.sh
 
+      # Self-hosted runners reuse this checkout across jobs, unlike a
+      # GitHub-hosted VM that is thrown away afterwards. The sudo tests above
+      # can leave root-owned files (e.g. Python bytecode cache written while
+      # exercising accounting.py under a root network namespace), which then
+      # breaks `actions/checkout`'s clean step for whatever job lands on this
+      # runner next.
+      - name: Give the workspace back to the runner user
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" .
+
       - name: Build the interface
         run: |
           npm ci --no-audit --no-fund

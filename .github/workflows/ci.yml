@@ -101,6 +101,16 @@ jobs:
           done
           exit 0
 
+      # Self-hosted runners reuse this checkout across jobs, unlike a
+      # GitHub-hosted VM that is thrown away afterwards. The sudo test above
+      # can leave root-owned files (e.g. Python bytecode cache written while
+      # exercising accounting.py under a root network namespace), which then
+      # breaks `actions/checkout`'s clean step for whatever job lands on this
+      # runner next.
+      - name: Give the workspace back to the runner user
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" .
+
   consistency:
     name: Version and packaging consistency
     runs-on: [self-hosted, Linux, X64]
