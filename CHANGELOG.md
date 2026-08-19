@@ -144,6 +144,14 @@ numérotation [SemVer](https://semver.org/lang/fr/).
 - **`scripts/check.sh` génère les types API avec le Python du `venv`**, au lieu
   du `python3` que le PATH propose — qui est rarement celui où FastAPI est
   installé, et dont l’échec se lisait comme un contrat rompu.
+- **Espacement de l’interface web.** `<fieldset>` n’était jamais réinitialisé :
+  le groupe de radios « Mode de connexion » de Contournement héritait de la
+  bordure « groove » et du padding par défaut du navigateur au lieu du design
+  system. Le rythme vertical entre panneaux, qui passait de 16 à 20px selon la
+  page, est unifié ; la description de la liste de contrôle Tor ne se coupe
+  plus au milieu d’un mot dans une colonne étroite ; les bandeaux de
+  notification (« Mesh désactivé », etc.) ne s’étirent plus à vide dans les
+  panneaux larges.
 
 - **Centre de données virtuel.** La baie devient un plan de contrôle du fabric
   Tor : couverture de sortie, amorçage des agents, autorisations client,
