@@ -238,9 +238,11 @@
 }
 
 /* ----------------------------------------------------------------- grids */
-.operational-page { display: grid; gap: var(--space-4); }
+/* One rhythm for every stacked page, not a 16px cadence on some screens and
+ * 20px on others (the old .status-page override) — flipping between Réseau
+ * and Protection shouldn't feel like the app changed its mind about spacing. */
+.operational-page { display: grid; gap: var(--space-5); }
 .operational-page > .page-title { margin-bottom: 0; }
-.status-page { gap: var(--space-5); }
 .two-column { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: var(--space-5); align-items: start; }
 .dashboard-main,

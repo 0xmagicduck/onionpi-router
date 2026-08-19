@@ -291,16 +291,28 @@ input[type="radio"] { accent-color: var(--accent); }
 .check-list { margin: 0; padding: var(--space-2) var(--space-5) var(--space-4); list-style: none; }
 .check-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  column-gap: var(--space-3);
+  row-gap: 2px;
   min-height: 40px;
-  padding: var(--space-2) 0;
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-soft);
   color: var(--text-primary);
   font-size: var(--text-sm);
 }
 .check-list li:last-child { border-bottom: 0; }
-.check-list li small { margin-left: auto; max-width: 55%; color: var(--text-tertiary); text-align: right; font-size: var(--text-xs); }
+/* flex-basis: 100% always forces the detail onto its own row under the
+ * label, left-aligned — a fixed right-aligned column used to ragged-wrap
+ * mid-sentence the moment a panel narrowed (see the two-column Tor screen). */
+.check-list li small {
+  flex: 1 1 100%;
+  margin-left: calc(17px + var(--space-3));
+  color: var(--text-tertiary);
+  text-align: left;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
 .check-list svg { flex: 0 0 auto; width: 17px; height: 17px; color: var(--success); }
 .check-list .protection-check-failed { color: var(--danger-text); }
 .check-list .protection-check-failed svg { color: var(--danger); }
@@ -334,7 +346,11 @@ input[type="radio"] { accent-color: var(--accent); }
   background: var(--success-soft);
 }
 .callout > svg { flex: 0 0 auto; color: var(--success); }
-.callout p { color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-normal); }
+/* Capped so two lines of copy don't stretch edge-to-edge inside a wide
+ * panel — an unbounded paragraph in a full-bleed flex row just wraps at
+ * whatever the panel happens to measure, which reads as a mostly-empty
+ * banner on the Réseau screen's "Mesh désactivé" notice. */
+.callout p { max-width: 64ch; color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-normal); }
 .callout strong { display: block; margin-bottom: 2px; color: var(--text-primary); }
 .callout-warning { border-color: var(--warning-line); background: var(--warning-soft); }
 .callout-warning > svg { color: var(--warning); }
@@ -419,7 +435,7 @@ input[type="radio"] { accent-color: var(--accent); }
   display: grid;
   justify-items: center;
   gap: var(--space-3);
-  padding: var(--space-8) var(--space-5);
+  padding: var(--space-7) var(--space-5);
   text-align: center;
 }
 .empty-state > svg {
