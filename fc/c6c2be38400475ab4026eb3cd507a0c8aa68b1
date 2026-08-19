@@ -1,0 +1,31 @@
+.github/workflows/ci.yml
+  s_3f11fa53704817::t_8e6df00940f795 26,43,62,106,152,188
+.github/workflows/codeql.yml
+  s_d8b6ca2cee111c::t_b2745ab5e33e33 30
+.github/workflows/release.yml
+  s_3f11fa53704817::t_9f124bb6ce87fd 31,134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fcc6c2be38400475ab4026eb3cd507a0c8aa68b1",
+  "prompts": {},
+  "sessions": {
+    "s_3f11fa53704817": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7b9a5c1e-b500-4e93-91c4-888c2fbac65f",
+        "model": "unknown"
+      },
+      "human_author": "0xmagicduck <0xmagicduck@proton.me>"
+    },
+    "s_d8b6ca2cee111c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "119a1535-e429-47b3-93ca-3ec8bc963f50",
+        "model": "unknown"
+      },
+      "human_author": "0xmagicduck <0xmagicduck@proton.me>"
+    }
+  }
+}
