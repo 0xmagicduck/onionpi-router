@@ -1,0 +1,23 @@
+frontend/src/styles/base.css
+  s_0d296dbe0fcc33::t_8da5952863c1e5 33-39
+frontend/src/styles/components.css
+  s_0d296dbe0fcc33::t_f1215558aa80d6 294,296-297,299,305-315,349-353,438
+frontend/src/styles/layout.css
+  s_0d296dbe0fcc33::t_d3491429fddeda 241-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b85564d8b96cc4cfa66c878640efc052832e2359",
+  "prompts": {},
+  "sessions": {
+    "s_0d296dbe0fcc33": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66b5e7b7-123f-42eb-8b57-47554cd2dd1c",
+        "model": "unknown"
+      },
+      "human_author": "0xmagicduck <0xmagicduck@proton.me>"
+    }
+  }
+}
