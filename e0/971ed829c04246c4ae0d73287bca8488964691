@@ -1,0 +1,19 @@
+.github/workflows/codeql.yml
+  s_d8b6ca2cee111c::t_f6b83792b30eac 47-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e0971ed829c04246c4ae0d73287bca8488964691",
+  "prompts": {},
+  "sessions": {
+    "s_d8b6ca2cee111c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "119a1535-e429-47b3-93ca-3ec8bc963f50",
+        "model": "unknown"
+      },
+      "human_author": "0xmagicduck <0xmagicduck@proton.me>"
+    }
+  }
+}
