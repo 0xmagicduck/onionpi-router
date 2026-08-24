@@ -23,7 +23,7 @@ idna==3.18
 pycparser==3.0
 pydantic==2.13.4
 pydantic-core==2.46.4
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 PyYAML==6.0.3
 socksio==1.0.0
 typing-extensions==4.16.0
